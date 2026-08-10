@@ -1,6 +1,12 @@
-// Protocol v1 (FROZEN — extend, never change existing fields).
-// u,v = proportion of physical screen, origin top-left. t = phone Date.now().
-// q = tracking confidence 1 | 0.5.
+/**
+ * WebSocket wire protocol between the phone and the PC server.
+ *
+ * v1 is FROZEN — fields are extended, never changed. `u`,`v` are proportions
+ * of the physical screen (origin top-left), `t` is the phone's `Date.now()`,
+ * `q` is tracking confidence (1 good / 0.5 limited).
+ *
+ * @module
+ */
 
 interface AimMsg {
   type: "aim";
@@ -30,10 +36,16 @@ interface ButtonMsg {
   id: string;
   down: boolean;
 }
+
+/** Every message a phone client may send, v1 + v2. */
 export type ClientMsg = AimMsg | FireMsg | CalibMsg | StateMsg | ButtonMsg;
 
-// Returns null for anything that isn't a valid v1 message; the server must
-// never crash on garbage input.
+/**
+ * Parses and validates a raw WebSocket payload.
+ *
+ * @returns The typed message, or `null` for anything that isn't a valid
+ * message — the server must never crash on garbage input.
+ */
 export function parseMessage(raw: string | Buffer): ClientMsg | null {
   let d: unknown;
   try {

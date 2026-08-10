@@ -1,19 +1,28 @@
 import fs from "node:fs";
 import type { MouseButton, MouseLike } from "./cursor.ts";
 
-// Button system (protocol v2, additive): the phone renders up to 20 buttons
-// from public/buttons.json and sends {"type":"button","id":"b1","down":true}.
-// The SAME file maps each id to a PC action here. Actions:
-//   "key:<combo>"  e.g. "key:r", "key:enter", "key:ctrl+shift+f"
-//   "mouse:left" | "mouse:right" | "mouse:middle"
-//   ""             unassigned (button does nothing PC-side)
-// down=true presses, down=false releases — so holds work (autofire, ducking).
+/**
+ * Configurable button system (protocol v2, additive).
+ *
+ * The phone renders up to 20 buttons from `public/buttons.json` and sends
+ * `{"type":"button","id":"b1","down":true}`. The SAME file maps each id to a
+ * PC action here. Actions:
+ * - `key:<combo>` — e.g. `key:r`, `key:enter`, `key:ctrl+shift+f`
+ * - `mouse:left` | `mouse:right` | `mouse:middle`
+ * - `""` — unassigned (button does nothing PC-side)
+ *
+ * down=true presses, down=false releases — so holds work (autofire, ducking).
+ *
+ * @module
+ */
 
+/** Everything the server needs from a keyboard; implemented in `lib/input`. */
 export interface KeyboardLike {
   pressKeys(keys: string[]): Promise<void>;
   releaseKeys(keys: string[]): Promise<void>;
 }
 
+/** A parsed button action: a key combo or a mouse button. */
 export type ButtonAction = { kind: "key"; keys: string[] } | { kind: "mouse"; button: MouseButton };
 
 // Normalized key names — must match nut-js Key enum members (validated again
@@ -55,6 +64,10 @@ function normalizeKey(raw: string): string | null {
   return null;
 }
 
+/**
+ * Parses an action spec like `key:ctrl+shift+f` or `mouse:right`.
+ * @returns The parsed action, or `null` for unknown keys/malformed specs.
+ */
 export function parseAction(spec: string): ButtonAction | null {
   if (spec.startsWith("mouse:")) {
     const button = spec.slice("mouse:".length);
@@ -82,11 +95,16 @@ interface ButtonDef {
   visible: boolean;
 }
 
+/** Result of loading buttons.json: the id→action map plus any config problems. */
 export interface ButtonConfig {
   actions: Map<string, ButtonAction>;
   problems: string[];
 }
 
+/**
+ * Loads and validates `buttons.json`. Unreadable files or bad actions are
+ * reported in `problems`, never thrown — buttons degrade, the gun keeps working.
+ */
 export function loadButtonConfig(filePath: string): ButtonConfig {
   const actions = new Map<string, ButtonAction>();
   const problems: string[] = [];
@@ -115,6 +133,11 @@ export function loadButtonConfig(filePath: string): ButtonConfig {
   return { actions, problems };
 }
 
+/**
+ * Builds the handler that turns `(id, down)` into device input. Key combos
+ * press in declared order (modifiers first) and release in reverse.
+ * @returns An async executor resolving to `false` when the id has no action.
+ */
 export function createButtonExecutor(
   actions: Map<string, ButtonAction>,
   mouse: MouseLike,

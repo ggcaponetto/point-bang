@@ -1,8 +1,18 @@
-// Apply-latest pattern: the phone sends ~60Hz; we only ever apply the newest
-// sample, so a slow mouse call never builds a queue of stale positions.
+/**
+ * Cursor movement: screen-space scaling and the 2ms pull loop that keeps the
+ * OS cursor on the (predicted) aim point without ever queueing stale moves.
+ *
+ * @module
+ */
 
+/** Physical mouse buttons an action can press. */
 export type MouseButton = "left" | "right" | "middle";
 
+/**
+ * Everything the server needs from a pointing device. Implemented by the
+ * nut-js adapter in `lib/input` and by test fakes; a future SendInput/koffi
+ * path slots in behind the same interface.
+ */
 export interface MouseLike {
   setPosition(x: number, y: number): Promise<void>;
   click(): Promise<void>;
@@ -11,6 +21,7 @@ export interface MouseLike {
   screenSize(): Promise<{ w: number; h: number }>;
 }
 
+/** Maps normalized aim (u,v) to clamped pixel coordinates for a w×h screen. */
 export function scaleToScreen(
   u: number,
   v: number,
@@ -23,13 +34,16 @@ export function scaleToScreen(
   };
 }
 
+/** Handle for a running cursor loop. */
 export interface CursorLoop {
   stop(): void;
 }
 
-// Pull model: every tick asks getTarget() for where the cursor should be NOW
-// (typically an AimPredictor projection) and moves only when the target pixel
-// changed. A slow setPosition call can never queue stale positions.
+/**
+ * Pull model: every tick asks `getTarget()` for where the cursor should be
+ * NOW (typically an AimPredictor projection) and moves only when the target
+ * pixel changed. A slow `setPosition` call can never queue stale positions.
+ */
 export function createCursorLoop(
   mouse: MouseLike,
   getSize: () => { w: number; h: number },

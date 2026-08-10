@@ -1,7 +1,15 @@
 import { execSync } from "node:child_process";
 
-// Sets up the USB tunnel so the phone's localhost:<port> reaches this PC.
-// The mapping dies on cable replug / adb restart — start:adb re-runs it each time.
+/**
+ * adb USB tunnel setup.
+ * @module
+ */
+
+/**
+ * Runs `adb reverse` so the phone's `localhost:<port>` reaches this PC.
+ * The mapping dies on cable replug / adb restart — `start:adb` re-runs it
+ * each time. Failure is reported, never thrown; the server starts anyway.
+ */
 export function adbReverse(
   port: number,
   exec: (cmd: string) => void = (cmd) => execSync(cmd, { stdio: ["ignore", "pipe", "pipe"] }),

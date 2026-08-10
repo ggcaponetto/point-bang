@@ -2,3 +2,6 @@ coverage/
 certs/
 test/fixtures/
 package-lock.json
+docs/api/
+docs/.vitepress/dist/
+docs/.vitepress/cache/

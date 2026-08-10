@@ -17,6 +17,10 @@
     "format:check": "prettier --check .",
     "knip": "knip",
     "validate": "npm run format:check && npm run typecheck && npm run knip && npm test",
+    "docs:api": "typedoc",
+    "docs:dev": "npm run docs:api && vitepress dev docs",
+    "docs:build": "npm run docs:api && vitepress build docs",
+    "docs:preview": "vitepress preview docs",
     "prepare": "husky"
   },
   "engines": {
@@ -33,7 +37,11 @@
     "husky": "^9.1.7",
     "knip": "^6.32.1",
     "prettier": "^3.9.6",
+    "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.12.0",
+    "typedoc-vitepress-theme": "^1.1.3",
     "typescript": "^5.8.0",
+    "vitepress": "^1.6.4",
     "vitest": "^3.2.0"
   }
 }

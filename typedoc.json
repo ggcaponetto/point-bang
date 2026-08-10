@@ -1,0 +1,15 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["server.ts", "lib/*.ts"],
+  "out": "docs/api",
+  "plugin": ["typedoc-plugin-markdown", "typedoc-vitepress-theme"],
+  "docsRoot": "docs",
+  "readme": "none",
+  "cleanOutputDir": true,
+  "excludePrivate": true,
+  "sidebar": {
+    "autoConfiguration": true,
+    "format": "vitepress",
+    "collapsed": true
+  }
+}

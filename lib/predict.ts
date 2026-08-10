@@ -1,8 +1,12 @@
-// PC-side extrapolation (roadmap Phase 3): least-squares velocity over the
-// last ~120ms of aim samples, projected slightly ahead of the newest sample.
-// This hides network jitter and ~1 frame of delay, and lets the 2ms cursor
-// loop move smoothly BETWEEN 60Hz phone frames. It is prediction, not
-// smoothing — One Euro stays phone-side (don't double-smooth).
+/**
+ * PC-side aim extrapolation (roadmap Phase 3): least-squares velocity over
+ * the last ~120ms of samples, projected slightly ahead of the newest one.
+ * This hides network jitter and ~1 frame of delay, and lets the 2ms cursor
+ * loop move smoothly BETWEEN 60Hz phone frames. It is prediction, not
+ * smoothing — One Euro stays phone-side (don't double-smooth).
+ *
+ * @module
+ */
 
 interface Sample {
   u: number;
@@ -10,6 +14,11 @@ interface Sample {
   t: number; // PC arrival time (ms) — phone clock offset is unknown
 }
 
+/**
+ * Ring buffer of timestamped aim samples with a capped linear projection.
+ * `add()` samples as they arrive, `predict(now)` for the cursor target;
+ * `reset()` when tracking is lost so stale velocity can't keep extrapolating.
+ */
 export class AimPredictor {
   private samples: Sample[] = [];
   private lookaheadMs: number;

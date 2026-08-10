@@ -1,7 +1,13 @@
-// Parses `netsh wlan show interfaces` output. Windows only. Parsing avoids
-// locale-specific labels where possible (the "GHz" unit and "SSID" label
-// survive translation; channel label is matched across common locales).
+/**
+ * WiFi band detection via `netsh wlan show interfaces` (Windows only).
+ * Parsing avoids locale-specific labels where possible: the "GHz" unit and
+ * "SSID" label survive translation; the channel label is matched across
+ * common locales.
+ *
+ * @module
+ */
 
+/** Parsed connection info; `connected: false` when no SSID is present. */
 export interface WifiReport {
   connected: boolean;
   ssid?: string;
@@ -10,10 +16,12 @@ export interface WifiReport {
   signal?: string | null;
 }
 
+/** Infers the band when netsh has no explicit Band line (ch 1–14 = 2.4 GHz). */
 export function bandFromChannel(channel: number): string {
   return channel <= 14 ? "2.4 GHz" : "5 GHz"; // ch 1-14 = 2.4
 }
 
+/** Extracts SSID, band, channel and signal from raw netsh output. */
 export function parseNetsh(output: string): WifiReport {
   const lines = output.split(/\r?\n/);
   const val = (re: RegExp): string | null => {
@@ -31,6 +39,7 @@ export function parseNetsh(output: string): WifiReport {
   };
 }
 
+/** Renders the `npm run wifi` report, including the 2.4 GHz warning. */
 export function renderWifiReport(r: WifiReport): string[] {
   if (!r.connected) return ["Not connected to WiFi."];
   let verdict = r.band;

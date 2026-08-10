@@ -1,15 +1,17 @@
-// Lightgun POC server: serves the phone page, receives aim over WebSocket,
-// moves the PC cursor with absolute positioning.
-//
-//   npm install
-//   npm start
-//   adb reverse tcp:8443 tcp:8443     (phone connected via USB, USB debugging on)
-//   Phone Chrome -> http://localhost:8443
-//
-// WiFi (no adb): put mkcert certs in certs/ (see README) and open
-//   https://<PC-LAN-IP>:8444 on the phone. HTTP on 8443 keeps working.
-//
-// Emergency stop: Ctrl+C in this terminal.
+/**
+ * Lightgun POC server: serves the phone page, receives aim over WebSocket,
+ * moves the PC cursor with absolute positioning.
+ *
+ * ```
+ * npm install
+ * npm run start:adb    # USB tunnel flow — phone opens http://localhost:8443
+ * npm run start:wifi   # same-WiFi flow — prints the URLs to open
+ * ```
+ *
+ * Emergency stop: Ctrl+C in the terminal.
+ *
+ * @module
+ */
 
 import http from "node:http";
 import https from "node:https";
@@ -30,17 +32,22 @@ import { adbReverse } from "./lib/adb.ts";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
-// adb  = USB tunnel dev flow: http only, no WiFi noise in the logs.
-// wifi = same-network flow: https+wss when certs exist, otherwise prints the
-//        Chrome-flag (Option A) URLs. No USB instructions.
-// all  = both (plain `npm start`, the never-break default).
+/**
+ * How the server presents itself:
+ * - `adb` — USB tunnel dev flow: http only, no WiFi noise in the logs.
+ * - `wifi` — same-network flow: https+wss when certs exist, otherwise prints
+ *   the Chrome-flag (Option A) URLs. No USB instructions.
+ * - `all` — both (plain `npm start`, the never-break default).
+ */
 export type ServerMode = "adb" | "wifi" | "all";
 
+/** Parses `--mode=adb|wifi` from argv; anything else means `all`. */
 export function parseMode(argv: string[]): ServerMode {
   const arg = argv.find((a) => a.startsWith("--mode="))?.slice("--mode=".length);
   return arg === "adb" || arg === "wifi" ? arg : "all";
 }
 
+/** Options for {@link startServer}; every device/port is injectable for tests. */
 export interface ServerOptions {
   mode?: ServerMode;
   port?: number;
@@ -55,12 +62,17 @@ export interface ServerOptions {
   predictMs?: number; // extrapolation lookahead; 0 keeps prediction minimal
 }
 
+/** A started server: bound ports plus a full-teardown `close()`. */
 export interface RunningServer {
   httpPort: number;
   httpsPort: number | null;
   close(): Promise<void>;
 }
 
+/**
+ * Boots the whole PC side: static file serving, WebSocket intake, aim
+ * prediction, the 2ms cursor loop, button execution and jitter stats.
+ */
 export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
   const log = opts.log ?? console.log;
   const mode = opts.mode ?? "all";

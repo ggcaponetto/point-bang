@@ -1,7 +1,13 @@
-// Phone and PC clocks differ by an unknown offset, so absolute latency can't
-// be computed from timestamps alone. But (arrival - t) minus its window
-// minimum = jitter above best case, which is the number that hurts feel.
+/**
+ * Transport jitter measurement. Phone and PC clocks differ by an unknown
+ * offset, so absolute latency can't be computed from timestamps alone — but
+ * (arrival − t) minus its window minimum is the jitter above best case,
+ * which is the number that hurts feel. Judge changes by p95, not p50.
+ *
+ * @module
+ */
 
+/** One window's jitter percentiles in milliseconds. */
 export interface JitterSummary {
   count: number;
   p50: number;
@@ -9,10 +15,12 @@ export interface JitterSummary {
   max: number;
 }
 
+/** Nearest-rank percentile of an already-sorted array. */
 export function percentile(sorted: number[], q: number): number {
   return sorted[Math.floor(q * (sorted.length - 1))];
 }
 
+/** Accumulates (arrival − t) diffs and summarizes them per window. */
 export class JitterWindow {
   private diffs: number[] = [];
 
@@ -37,6 +45,7 @@ export class JitterWindow {
   }
 }
 
+/** Renders a summary as the server's one-line jitter print. */
 export function formatJitter(s: JitterSummary, windowSecs: number): string {
   return `aim msgs: ${s.count}/${windowSecs}s  jitter p50=${s.p50.toFixed(1)}ms p95=${s.p95.toFixed(1)}ms max=${s.max.toFixed(1)}ms`;
 }
