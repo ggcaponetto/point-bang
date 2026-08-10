@@ -1,0 +1,26 @@
+{
+  "//": "20 assignable buttons. The phone shows the visible ones in a strip during play; each press sends its id, and the PC runs the action. Actions: 'key:<combo>' (e.g. key:r, key:enter, key:ctrl+shift+f), 'mouse:left'|'mouse:right'|'mouse:middle', or '' for unassigned. Edit labels/actions/visible freely, restart the server, reload the phone page.",
+  "buttons": [
+    { "id": "fire", "label": "FIRE", "action": "mouse:left", "visible": true },
+    { "id": "b1", "label": "RIGHTC", "action": "mouse:right", "visible": true },
+    { "id": "b2", "label": "LEFTC", "action": "mouse:left", "visible": true },
+    { "id": "b3", "label": "A", "action": "key:a", "visible": true },
+    { "id": "b4", "label": "B", "action": "key:b", "visible": true },
+    { "id": "b5", "label": "B5", "action": "", "visible": false },
+    { "id": "b6", "label": "B6", "action": "", "visible": false },
+    { "id": "b7", "label": "B7", "action": "", "visible": false },
+    { "id": "b8", "label": "B8", "action": "", "visible": false },
+    { "id": "b9", "label": "B9", "action": "", "visible": false },
+    { "id": "b10", "label": "B10", "action": "", "visible": false },
+    { "id": "b11", "label": "B11", "action": "", "visible": false },
+    { "id": "b12", "label": "B12", "action": "", "visible": false },
+    { "id": "b13", "label": "B13", "action": "", "visible": false },
+    { "id": "b14", "label": "B14", "action": "", "visible": false },
+    { "id": "b15", "label": "B15", "action": "", "visible": false },
+    { "id": "b16", "label": "B16", "action": "", "visible": false },
+    { "id": "b17", "label": "B17", "action": "", "visible": false },
+    { "id": "b18", "label": "B18", "action": "", "visible": false },
+    { "id": "b19", "label": "B19", "action": "", "visible": false },
+    { "id": "b20", "label": "B20", "action": "", "visible": false }
+  ]
+}

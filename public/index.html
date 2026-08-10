@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>Lightgun POC</title>
+    <style>
+      :root {
+        --fg: #e8e8e8;
+        --dim: #9a9a9a;
+        --ok: #37d67a;
+        --warn: #f5a623;
+        --bad: #e5484d;
+        --acc: #4aa3ff;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        background: #111;
+        color: var(--fg);
+        font:
+          16px/1.45 system-ui,
+          sans-serif;
+      }
+      #setup {
+        padding: 24px;
+        max-width: 480px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      label {
+        color: var(--dim);
+        font-size: 14px;
+      }
+      select,
+      input[type="text"] {
+        background: #222;
+        color: var(--fg);
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 16px;
+        flex: 1;
+      }
+      button {
+        background: var(--acc);
+        color: #04121f;
+        border: 0;
+        border-radius: 10px;
+        padding: 14px;
+        font-size: 17px;
+        font-weight: 600;
+      }
+      button:disabled {
+        background: #333;
+        color: #666;
+      }
+      #err {
+        color: var(--bad);
+        font-size: 14px;
+        white-space: pre-wrap;
+      }
+
+      /* dom-overlay UI (visible during AR) */
+      #overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+      #overlay.active {
+        display: block;
+      }
+      #hud {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        padding: 10px 12px;
+        background: rgba(0, 0, 0, 0.55);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 14px;
+        font-size: 13px;
+      }
+      #hud b {
+        font-weight: 600;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      #cross {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 26px;
+        height: 26px;
+        transform: translate(-50%, -50%);
+      }
+      #cross:before,
+      #cross:after {
+        content: "";
+        position: absolute;
+        background: var(--ok);
+      }
+      #cross:before {
+        left: 12px;
+        top: 0;
+        width: 2px;
+        height: 26px;
+      }
+      #cross:after {
+        left: 0;
+        top: 12px;
+        width: 26px;
+        height: 2px;
+      }
+      #instr {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 144px;
+        text-align: center;
+        background: rgba(0, 0, 0, 0.6);
+        border-radius: 12px;
+        padding: 12px;
+        font-size: 16px;
+      }
+      #controls {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 16px;
+        display: flex;
+        gap: 10px;
+        pointer-events: auto;
+      }
+      #controls button {
+        flex: 1;
+        padding: 20px 10px;
+        font-size: 18px;
+      }
+      #btnFire {
+        background: var(--bad);
+        color: #fff;
+      }
+      #btnFire.held {
+        background: #ff7076;
+      }
+      /* aim adjust: nudge pad (offset correction) + smoothing slider */
+      #aimAdj {
+        position: absolute;
+        right: 12px;
+        bottom: 144px;
+        pointer-events: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        align-items: center;
+        background: rgba(0, 0, 0, 0.45);
+        border-radius: 12px;
+        padding: 8px;
+      }
+      #nudge {
+        display: grid;
+        grid-template-columns: repeat(3, 44px);
+        gap: 4px;
+      }
+      .nbtn {
+        padding: 10px 0;
+        font-size: 14px;
+        background: #2a2a2a;
+        color: #eee;
+        border: 1px solid #444;
+        border-radius: 8px;
+        font-weight: 600;
+      }
+      #nReset {
+        font-size: 11px;
+        color: var(--dim);
+      }
+      #smooth {
+        width: 140px;
+      }
+      /* configurable button strip (buttons.json) */
+      #btnStrip {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 88px;
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        pointer-events: auto;
+      }
+      .pbtn {
+        flex: 0 0 auto;
+        min-width: 76px;
+        padding: 12px 10px;
+        font-size: 15px;
+        background: #2a2a2a;
+        color: #eee;
+        border: 1px solid #444;
+      }
+      .pbtn.held {
+        background: var(--acc);
+        color: #04121f;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="setup">
+      <h1>Lightgun POC — phase 2–4</h1>
+      <div class="row">
+        <label for="method">Calibration</label>
+        <select id="method">
+          <option value="hittest">Hit-test corners (1 tap/corner)</option>
+          <option value="tworay">Two-ray corners (2 taps/corner)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="aspect">Monitor aspect</label>
+        <input id="aspect" type="text" value="16:9" />
+      </div>
+      <button id="btnStart" disabled>Checking WebXR…</button>
+      <div id="err"></div>
+      <p style="color: var(--dim); font-size: 13px">
+        Serve via <code>adb reverse tcp:8443 tcp:8443</code> and open
+        <code>http://localhost:8443</code>, or over WiFi open
+        <code>https://&lt;PC-IP&gt;:8444</code> (needs mkcert certs — see README). WebSocket
+        connects to this same host.
+      </p>
+    </div>
+
+    <div id="overlay">
+      <div id="hud">
+        <span>track <b id="hTrack" class="bad">—</b></span>
+        <span>ws <b id="hWs" class="bad">—</b></span>
+        <span>u <b id="hU">—</b></span>
+        <span>v <b id="hV">—</b></span>
+        <span>aspect <b id="hAsp">—</b></span>
+        <span>fps <b id="hFps">—</b></span>
+      </div>
+      <div id="cross"></div>
+      <div id="instr">Starting…</div>
+      <div id="aimAdj" style="display: none" oncontextmenu="return false;">
+        <div id="nudge" title="shift aim if calibration is slightly off">
+          <span></span>
+          <button class="nbtn" id="nUp">▲</button>
+          <span></span>
+          <button class="nbtn" id="nLeft">◀</button>
+          <button class="nbtn" id="nReset">0,0</button>
+          <button class="nbtn" id="nRight">▶</button>
+          <span></span>
+          <button class="nbtn" id="nDown">▼</button>
+          <span></span>
+        </div>
+        <input
+          id="smooth"
+          type="range"
+          min="0"
+          max="100"
+          value="40"
+          title="left: smooth/laggy — right: snappy/jittery"
+        />
+      </div>
+      <div id="btnStrip" style="display: none" oncontextmenu="return false;"></div>
+      <div id="controls">
+        <button id="btnCapture">CAPTURE</button>
+        <button id="btnRestart" style="flex: 0 1 130px; background: #333; color: #ddd">
+          Recalibrate
+        </button>
+      </div>
+    </div>
+
+    <script type="module">
+      // Pure math lives in math.js (shared with the vitest suite). This inline
+      // script keeps only DOM/XR/WS glue — the page stays buildless.
+      import {
+        V,
+        forwardFromQuat,
+        closestPointTwoRays,
+        planeFromCorners,
+        aspectFromCorners,
+        intersectUV,
+        OneEuro,
+      } from "./math.js";
+
+      let fu = new OneEuro(),
+        fv = new OneEuro();
+      // Slider = smoothing <-> snappy. Left: heavy smoothing (steady but laggy).
+      // Right: near-raw (minCutoff 6Hz kills rest lag, beta 0.5 kills motion lag).
+      const smoothEl = document.getElementById("smooth");
+      let rawAim = false; // slider at max = bypass the filter entirely
+      function applySmoothing() {
+        const s = +smoothEl.value / 100;
+        rawAim = s >= 0.995;
+        fu.mc = fv.mc = 1 + s * 5;
+        fu.beta = fv.beta = s * 0.5;
+      }
+      smoothEl.oninput = applySmoothing;
+      applySmoothing();
+
+      // ============================== aim offset (nudge pad) ==============================
+      // Corrects small calibration error by translating the sent u,v. Applied
+      // AFTER the filter so nudges take effect instantly. Zeroed on recalibrate.
+      let offU = 0,
+        offV = 0;
+      const OFF_STEP = 0.005; // 0.5% of the screen per tap
+      function setOffset(du, dv) {
+        offU = du;
+        offV = dv;
+        document.getElementById("nReset").textContent =
+          du === 0 && dv === 0 ? "0,0" : `${(du * 100).toFixed(1)},${(dv * 100).toFixed(1)}`;
+      }
+      document.getElementById("nUp").onclick = () => setOffset(offU, offV - OFF_STEP);
+      document.getElementById("nDown").onclick = () => setOffset(offU, offV + OFF_STEP);
+      document.getElementById("nLeft").onclick = () => setOffset(offU - OFF_STEP, offV);
+      document.getElementById("nRight").onclick = () => setOffset(offU + OFF_STEP, offV);
+      document.getElementById("nReset").onclick = () => setOffset(0, 0);
+
+      // ============================== configurable buttons ==============================
+      // Rendered from buttons.json (same file maps ids to PC actions).
+      // pointerdown/up => {"type":"button",id,down} so press-and-hold works.
+      // The button with id "fire" is config-driven like the rest, but renders
+      // into the big red slot in #controls instead of the strip. All buttons
+      // fire on pointerDOWN — a "click" listener would add the whole tap
+      // duration (~100ms) before the shot registers.
+      async function loadButtons() {
+        try {
+          const cfg = await (await fetch("./buttons.json")).json();
+          const strip = document.getElementById("btnStrip");
+          for (const b of (cfg.buttons ?? []).filter((b) => b.visible)) {
+            const isFire = b.id === "fire";
+            const el = document.createElement("button");
+            if (isFire) {
+              el.id = "btnFire";
+              el.style.display = "none"; // revealed after calibration
+            } else {
+              el.className = "pbtn";
+            }
+            el.textContent = b.label || b.id;
+            const release = () => {
+              if (!el.classList.contains("held")) return;
+              el.classList.remove("held");
+              send({ type: "button", id: b.id, down: false });
+            };
+            el.addEventListener("pointerdown", (e) => {
+              e.preventDefault();
+              el.classList.add("held");
+              send({ type: "button", id: b.id, down: true });
+            });
+            el.addEventListener("pointerup", release);
+            el.addEventListener("pointercancel", release);
+            el.addEventListener("pointerleave", release);
+            if (isFire) {
+              const controls = document.getElementById("controls");
+              controls.insertBefore(el, document.getElementById("btnRestart"));
+            } else {
+              strip.appendChild(el);
+            }
+          }
+        } catch (e) {
+          console.warn("buttons.json load failed:", e);
+        }
+      }
+      loadButtons();
+
+      // ============================== WebSocket ==============================
+      let ws = null,
+        wsOpen = false;
+      function connectWS() {
+        ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
+        ws.onopen = () => {
+          wsOpen = true;
+          setHud("hWs", "open", "ok");
+        };
+        ws.onclose = () => {
+          wsOpen = false;
+          setHud("hWs", "closed", "bad");
+          setTimeout(connectWS, 1000);
+        };
+        ws.onerror = () => {};
+      }
+      function send(o) {
+        if (wsOpen) ws.send(JSON.stringify(o));
+      }
+
+      // ============================== UI helpers ==============================
+      const $ = (id) => document.getElementById(id);
+      // btnFire is created from buttons.json, so it may not exist yet (or at all)
+      function show(id, on) {
+        const el = $(id);
+        if (el) el.style.display = on ? "" : "none";
+      }
+      function setHud(id, txt, cls) {
+        const el = $(id);
+        el.textContent = txt;
+        el.className = cls || "";
+      }
+      function instr(t) {
+        $("instr").textContent = t;
+      }
+
+      // ============================== calibration state ==============================
+      const CORNERS = ["TOP-LEFT", "TOP-RIGHT", "BOTTOM-LEFT"];
+      let method = "hittest";
+      let expectedAspect = 16 / 9;
+      let calib = null; // { corners:[p0,p1,p2] as vec3, anchors:[XRAnchor|null] }
+      let calStage = 0; // which corner
+      let rayCaptures = []; // two-ray mode: pending first captures for current corner
+      let plane = null; // { origin, right, down } rebuilt each frame
+
+      function resetCalibration() {
+        if (calib?.anchors) for (const a of calib.anchors) a?.delete?.();
+        calib = { corners: [null, null, null], anchors: [null, null, null] };
+        calStage = 0;
+        rayCaptures = [];
+        plane = null;
+        fu.reset();
+        fv.reset();
+        $("btnCapture").style.display = "";
+        show("btnFire", false);
+        show("aimAdj", false);
+        show("btnStrip", false);
+        setOffset(0, 0);
+        promptStage();
+      }
+      function promptStage() {
+        const c = CORNERS[calStage];
+        if (method === "hittest")
+          instr(`Aim crosshair at ${c} corner of the monitor, press CAPTURE`);
+        else
+          instr(
+            rayCaptures.length === 0
+              ? `Aim at ${c} corner, press CAPTURE (1/2)`
+              : `Step ~50cm sideways, aim at the SAME ${c} corner, press CAPTURE (2/2)`,
+          );
+      }
+      function finishCorner(point, anchor) {
+        calib.corners[calStage] = point;
+        calib.anchors[calStage] = anchor || null;
+        send({
+          type: "calib",
+          stage: "corner",
+          i: calStage,
+          x: point[0],
+          y: point[1],
+          z: point[2],
+        });
+        calStage++;
+        rayCaptures = [];
+        if (calStage < 3) {
+          promptStage();
+          return;
+        }
+        // done: sanity check
+        const [tl, tr, bl] = calib.corners;
+        const asp = aspectFromCorners(tl, tr, bl);
+        const off = Math.abs(asp - expectedAspect) / expectedAspect;
+        setHud("hAsp", asp.toFixed(2), off < 0.08 ? "ok" : "warn");
+        instr(
+          off < 0.08
+            ? `Calibrated (aspect ${asp.toFixed(2)}). Aim at the screen — cursor should follow. FIRE = left click.`
+            : `Aspect ${asp.toFixed(2)} vs expected ${expectedAspect.toFixed(2)} — sloppy taps? Recalibrate if aim is off.`,
+        );
+        $("btnCapture").style.display = "none";
+        show("btnFire", true);
+        show("aimAdj", true);
+        show("btnStrip", true);
+      }
+
+      // ============================== XR ==============================
+      let session = null,
+        refSpace = null,
+        viewerSpace = null,
+        hitSource = null,
+        gl = null;
+      let lastHit = null; // latest hit-test point as vec3 (refSpace)
+      let lastPose = null; // latest viewer pose {pos, dir}
+      let frameCount = 0,
+        fpsT = performance.now();
+      let lastTrackState = "";
+
+      async function start() {
+        method = $("method").value;
+        const m = $("aspect").value.split(":").map(Number);
+        if (m.length === 2 && m[0] > 0 && m[1] > 0) expectedAspect = m[0] / m[1];
+
+        try {
+          const opts = {
+            requiredFeatures: ["hit-test", "dom-overlay"],
+            optionalFeatures: ["local-floor", "anchors"],
+            domOverlay: { root: $("overlay") },
+          };
+          session = await navigator.xr.requestSession("immersive-ar", opts);
+        } catch (e) {
+          $("err").textContent = "requestSession failed:\n" + e;
+          return;
+        }
+
+        $("setup").style.display = "none";
+        $("overlay").classList.add("active");
+        connectWS();
+        try {
+          await navigator.wakeLock?.request("screen");
+        } catch (_) {}
+
+        // throwaway GL layer (AR sessions must render; we render nothing)
+        const canvas = document.createElement("canvas");
+        gl = canvas.getContext("webgl", { xrCompatible: true, alpha: true });
+        await gl.makeXRCompatible();
+        session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+
+        try {
+          refSpace = await session.requestReferenceSpace("local-floor");
+        } catch (_) {
+          refSpace = await session.requestReferenceSpace("local");
+        }
+        viewerSpace = await session.requestReferenceSpace("viewer");
+        if (method === "hittest") {
+          try {
+            hitSource = await session.requestHitTestSource({ space: viewerSpace });
+          } catch (e) {
+            instr("hit-test unavailable — falling back to two-ray");
+            method = "tworay";
+          }
+        }
+
+        session.addEventListener("end", () => location.reload());
+        resetCalibration();
+        session.requestAnimationFrame(onFrame);
+      }
+
+      function onFrame(time, frame) {
+        session.requestAnimationFrame(onFrame);
+
+        // mandatory no-op render
+        const layer = session.renderState.baseLayer;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        // viewer pose
+        const pose = frame.getViewerPose(refSpace);
+        const trackState = !pose ? "lost" : pose.emulatedPosition ? "limited" : "good";
+        setHud(
+          "hTrack",
+          trackState,
+          trackState === "good" ? "ok" : trackState === "limited" ? "warn" : "bad",
+        );
+        if (trackState !== lastTrackState) {
+          send({ type: "state", tracking: trackState });
+          lastTrackState = trackState;
+        }
+        if (!pose) {
+          lastPose = null;
+          return;
+        }
+        const p = pose.transform.position,
+          q = pose.transform.orientation;
+        lastPose = { pos: [p.x, p.y, p.z], dir: forwardFromQuat(q) };
+
+        // hit test (calibration aid)
+        if (hitSource) {
+          const hits = frame.getHitTestResults(hitSource);
+          if (hits.length > 0) {
+            const hp = hits[0].getPose(refSpace);
+            lastHit = hp
+              ? {
+                  point: [
+                    hp.transform.position.x,
+                    hp.transform.position.y,
+                    hp.transform.position.z,
+                  ],
+                  result: hits[0],
+                }
+              : null;
+          } else lastHit = null;
+        }
+
+        // keep calibration glued to anchors (they self-correct as ARCore refines)
+        if (calib && calStage >= 3) {
+          for (let i = 0; i < 3; i++) {
+            const a = calib.anchors[i];
+            if (!a || !frame.trackedAnchors?.has(a)) continue;
+            const ap = frame.getPose(a.anchorSpace, refSpace);
+            if (ap)
+              calib.corners[i] = [
+                ap.transform.position.x,
+                ap.transform.position.y,
+                ap.transform.position.z,
+              ];
+          }
+          const [tl, tr, bl] = calib.corners;
+          plane = planeFromCorners(tl, tr, bl);
+        }
+
+        // aim -> u,v -> send
+        if (plane && lastPose) {
+          const uv = intersectUV(plane, lastPose.pos, lastPose.dir);
+          if (uv) {
+            const u = (rawAim ? uv.u : fu.filter(uv.u, time)) + offU,
+              v = (rawAim ? uv.v : fv.filter(uv.v, time)) + offV;
+            send({ type: "aim", u, v, t: Date.now(), q: trackState === "good" ? 1 : 0.5 });
+            if ((frameCount & 7) === 0) {
+              setHud("hU", u.toFixed(3));
+              setHud("hV", v.toFixed(3));
+            }
+          }
+        }
+
+        // fps
+        frameCount++;
+        const now = performance.now();
+        if (now - fpsT > 1000) {
+          setHud("hFps", frameCount);
+          frameCount = 0;
+          fpsT = now;
+        }
+      }
+
+      // ============================== capture button ==============================
+      $("btnCapture").addEventListener("click", async () => {
+        if (!lastPose) {
+          instr("No tracking — move the phone around slowly, then retry");
+          return;
+        }
+        if (method === "hittest") {
+          if (!lastHit) {
+            instr("No surface under crosshair — sweep the phone a bit, aim again");
+            return;
+          }
+          let anchor = null;
+          try {
+            anchor = await lastHit.result.createAnchor();
+          } catch (_) {}
+          finishCorner(lastHit.point, anchor);
+        } else {
+          rayCaptures.push({ pos: lastPose.pos, dir: lastPose.dir });
+          if (rayCaptures.length < 2) {
+            promptStage();
+            return;
+          }
+          const [r1, r2] = rayCaptures;
+          const res = closestPointTwoRays(r1.pos, r1.dir, r2.pos, r2.dir);
+          if (!res || res.gap > 0.12) {
+            rayCaptures = [];
+            instr(
+              `Rays didn't meet well (gap ${res ? (res.gap * 100).toFixed(0) : "∞"}cm) — step further sideways, redo this corner`,
+            );
+            return;
+          }
+          finishCorner(res.point, null);
+        }
+      });
+      $("btnRestart").addEventListener("click", resetCalibration);
+
+      // ============================== boot ==============================
+      (async () => {
+        if (!("xr" in navigator)) {
+          $("err").textContent = "navigator.xr missing (need HTTPS or localhost + a WebXR browser)";
+          return;
+        }
+        const ok = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
+        const b = $("btnStart");
+        if (ok) {
+          b.disabled = false;
+          b.textContent = "START AR";
+          b.onclick = start;
+        } else b.textContent = "immersive-ar not supported on this device";
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,151 @@
+import { describe, it, expect } from "vitest";
+import {
+  V,
+  forwardFromQuat,
+  closestPointTwoRays,
+  planeFromCorners,
+  aspectFromCorners,
+  intersectUV,
+  OneEuro,
+} from "../public/math.js";
+
+const close = (a: number[], b: number[], eps = 1e-9) =>
+  a.forEach((x, i) => expect(x).toBeCloseTo(b[i], eps < 1e-6 ? 9 : 5));
+
+describe("V (vec3)", () => {
+  it("sub/add/scale", () => {
+    close(V.sub([3, 2, 1], [1, 1, 1]), [2, 1, 0]);
+    close(V.add([1, 2, 3], [4, 5, 6]), [5, 7, 9]);
+    close(V.scale([1, -2, 3], 2), [2, -4, 6]);
+  });
+  it("dot/cross/len", () => {
+    expect(V.dot([1, 2, 3], [4, 5, 6])).toBe(32);
+    close(V.cross([1, 0, 0], [0, 1, 0]), [0, 0, 1]);
+    expect(V.len([3, 4, 0])).toBe(5);
+  });
+});
+
+describe("forwardFromQuat", () => {
+  it("identity quat looks along -Z", () => {
+    close(forwardFromQuat({ x: 0, y: 0, z: 0, w: 1 }), [0, 0, -1]);
+  });
+  it("90° yaw about Y rotates forward to -X", () => {
+    const s = Math.SQRT1_2;
+    close(forwardFromQuat({ x: 0, y: s, z: 0, w: s }), [-1, 0, 0]);
+  });
+  it("90° pitch up about X rotates forward to +Y", () => {
+    const s = Math.SQRT1_2;
+    close(forwardFromQuat({ x: s, y: 0, z: 0, w: s }), [0, 1, 0]);
+  });
+});
+
+describe("closestPointTwoRays", () => {
+  it("finds an exact intersection with zero gap", () => {
+    const res = closestPointTwoRays([0, 0, 0], [1, 0, 0], [5, 5, 0], [0, -1, 0])!;
+    close(res.point, [5, 0, 0]);
+    expect(res.gap).toBeCloseTo(0, 9);
+  });
+  it("returns midpoint and gap for skew rays", () => {
+    const res = closestPointTwoRays([0, 0, 0], [1, 0, 0], [5, 5, 1], [0, -1, 0])!;
+    close(res.point, [5, 0, 0.5]);
+    expect(res.gap).toBeCloseTo(1, 9);
+  });
+  it("rejects near-parallel rays", () => {
+    expect(closestPointTwoRays([0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 0, 0])).toBeNull();
+  });
+  it("works with unnormalized directions", () => {
+    const res = closestPointTwoRays([0, 0, 0], [2, 0, 0], [5, 5, 0], [0, -3, 0])!;
+    close(res.point, [5, 0, 0]);
+  });
+});
+
+describe("plane helpers", () => {
+  const tl: [number, number, number] = [0, 1, -2];
+  const tr: [number, number, number] = [0.4, 1, -2];
+  const bl: [number, number, number] = [0, 0.775, -2];
+
+  it("planeFromCorners builds origin/right/down", () => {
+    const p = planeFromCorners(tl, tr, bl);
+    close(p.origin, tl);
+    close(p.right, [0.4, 0, 0]);
+    close(p.down, [0, -0.225, 0]);
+  });
+
+  it("aspectFromCorners measures |right|/|down|", () => {
+    expect(aspectFromCorners(tl, tr, bl)).toBeCloseTo(16 / 9, 9);
+  });
+
+  describe("intersectUV", () => {
+    const p = planeFromCorners(tl, tr, bl);
+    it("maps screen center aim to (0.5, 0.5)", () => {
+      const uv = intersectUV(p, [0.2, 0.8875, 0], [0, 0, -1])!;
+      expect(uv.u).toBeCloseTo(0.5, 9);
+      expect(uv.v).toBeCloseTo(0.5, 9);
+    });
+    it("maps top-left corner aim to (0, 0)", () => {
+      const uv = intersectUV(p, [0, 1, 0], [0, 0, -1])!;
+      expect(uv.u).toBeCloseTo(0, 9);
+      expect(uv.v).toBeCloseTo(0, 9);
+    });
+    it("does NOT clamp off-screen aim (future reload gesture)", () => {
+      const uv = intersectUV(p, [-0.4, 1, 0], [0, 0, -1])!;
+      expect(uv.u).toBeCloseTo(-1, 9);
+    });
+    it("returns null when aiming away from the plane", () => {
+      expect(intersectUV(p, [0.2, 0.9, 0], [0, 0, 1])).toBeNull();
+    });
+    it("returns null when aiming parallel to the plane", () => {
+      expect(intersectUV(p, [0.2, 0.9, 0], [1, 0, 0])).toBeNull();
+    });
+  });
+});
+
+describe("OneEuro", () => {
+  it("returns the first sample unfiltered", () => {
+    expect(new OneEuro().filter(0.7, 0)).toBe(0.7);
+  });
+  it("converges to a constant input", () => {
+    const f = new OneEuro(1, 0, 1);
+    let out = f.filter(0, 0);
+    for (let t = 16; t < 5000; t += 16) out = f.filter(1, t);
+    expect(out).toBeCloseTo(1, 3);
+  });
+  it("higher minCutoff responds faster (less rest lag)", () => {
+    const slow = new OneEuro(1, 0, 1);
+    const fast = new OneEuro(6, 0, 1);
+    slow.filter(0, 0);
+    fast.filter(0, 0);
+    let a = 0,
+      b = 0;
+    for (let t = 16; t <= 160; t += 16) {
+      a = slow.filter(1, t);
+      b = fast.filter(1, t);
+    }
+    expect(b).toBeGreaterThan(a);
+  });
+  it("beta makes fast motion track closer than beta=0", () => {
+    const noBeta = new OneEuro(1, 0, 1);
+    const withBeta = new OneEuro(1, 0.5, 1);
+    noBeta.filter(0, 0);
+    withBeta.filter(0, 0);
+    let a = 0,
+      b = 0;
+    for (let t = 16; t <= 96; t += 16) {
+      a = noBeta.filter(t / 100, t);
+      b = withBeta.filter(t / 100, t);
+    }
+    expect(Math.abs(b - 0.96)).toBeLessThan(Math.abs(a - 0.96));
+  });
+  it("clamps non-increasing timestamps instead of dividing by zero", () => {
+    const f = new OneEuro();
+    f.filter(0, 100);
+    expect(Number.isFinite(f.filter(1, 100))).toBe(true);
+  });
+  it("reset() forgets state", () => {
+    const f = new OneEuro();
+    f.filter(0.2, 0);
+    f.filter(0.4, 16);
+    f.reset();
+    expect(f.filter(0.9, 32)).toBe(0.9);
+  });
+});

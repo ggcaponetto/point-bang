@@ -1,0 +1,301 @@
+import { describe, it, expect, afterEach, vi } from "vitest";
+import path from "node:path";
+import net from "node:net";
+import https from "node:https";
+import { fileURLToPath } from "node:url";
+import WebSocket from "ws";
+import { startServer, parseMode, type RunningServer } from "../server.ts";
+import type { MouseLike } from "../lib/cursor.ts";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURES = path.join(HERE, "fixtures");
+const PUBLIC = path.join(HERE, "..", "public");
+
+function fakeMouse() {
+  const moves: [number, number][] = [];
+  const clicks: number[] = [];
+  const buttons: string[] = [];
+  const mouse: MouseLike = {
+    async setPosition(x, y) {
+      moves.push([x, y]);
+    },
+    async click() {
+      clicks.push(1);
+    },
+    async press(b) {
+      buttons.push(`press:${b}`);
+    },
+    async release(b) {
+      buttons.push(`release:${b}`);
+    },
+    async screenSize() {
+      return { w: 1920, h: 1080 };
+    },
+  };
+  return { mouse, moves, clicks, buttons };
+}
+
+function fakeKeyboard() {
+  const keys: string[] = [];
+  return {
+    keys,
+    keyboard: {
+      async pressKeys(names: string[]) {
+        keys.push(`press:${names.join("+")}`);
+      },
+      async releaseKeys(names: string[]) {
+        keys.push(`release:${names.join("+")}`);
+      },
+    },
+  };
+}
+
+const until = async (cond: () => boolean, ms = 2000) => {
+  const t0 = Date.now();
+  while (!cond()) {
+    if (Date.now() - t0 > ms) throw new Error("condition not met in time");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+};
+
+const wsOpen = (url: string): Promise<WebSocket> =>
+  new Promise((resolve, reject) => {
+    const ws = new WebSocket(url, { rejectUnauthorized: false });
+    ws.on("open", () => resolve(ws));
+    ws.on("error", reject);
+  });
+
+let running: RunningServer | null = null;
+afterEach(async () => {
+  await running?.close();
+  running = null;
+});
+
+describe("startServer (http only)", () => {
+  async function boot() {
+    const f = fakeMouse();
+    const k = fakeKeyboard();
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      publicDir: PUBLIC,
+      mouse: f.mouse,
+      keyboard: k.keyboard,
+      log: (l) => logs.push(l),
+      statsIntervalMs: 50,
+    });
+    return { ...f, ...k, logs, srv: running };
+  }
+
+  it("serves the phone page and math module, 404s the rest", async () => {
+    const { srv, logs } = await boot();
+    expect(srv.httpsPort).toBeNull();
+    expect(logs.join("\n")).toContain("HTTPS off");
+
+    const base = `http://127.0.0.1:${srv.httpPort}`;
+    const page = await fetch(base + "/");
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type")).toBe("text/html");
+    expect(await page.text()).toContain("Lightgun");
+
+    const js = await fetch(base + "/math.js");
+    expect(js.status).toBe(200);
+    expect(js.headers.get("content-type")).toBe("text/javascript");
+
+    expect((await fetch(base + "/nope.js")).status).toBe(404);
+  });
+
+  it("rejects path traversal attempts end-to-end", async () => {
+    const { srv } = await boot();
+    // "/../" is clamped inside root by path.normalize (unit-tested in
+    // static.test.ts), and Node's parser 400s slash-less request targets
+    // before our handler — the safeResolve guard is defense-in-depth.
+    const line = (target: string) =>
+      new Promise<string>((resolve, reject) => {
+        const sock = net.connect(srv.httpPort, "127.0.0.1", () => {
+          sock.write(`GET ${target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`);
+        });
+        let buf = "";
+        sock.on("data", (d) => (buf += d));
+        sock.on("end", () => resolve(buf.split("\r\n")[0]));
+        sock.on("error", reject);
+      });
+    expect(await line("../server.ts")).toContain("400");
+    expect(await line("/../package.json")).toContain("404");
+  });
+
+  it("moves the cursor on aim (scaled + clamped) and clicks on fire", async () => {
+    const { srv, moves, clicks } = await boot();
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5, t: Date.now(), q: 1 }));
+    await until(() => moves.length > 0);
+    expect(moves[0]).toEqual([960, 540]);
+
+    ws.send(JSON.stringify({ type: "aim", u: 2, v: -1 }));
+    await until(() => moves.length > 1);
+    expect(moves[1]).toEqual([1919, 0]);
+
+    ws.send(JSON.stringify({ type: "fire" }));
+    await until(() => clicks.length > 0);
+    ws.close();
+  });
+
+  it("executes configured buttons: mouse hold, key, fire slot, unknown id", async () => {
+    const { srv, buttons, keys, logs } = await boot();
+    expect(logs.some((l) => l.includes("buttons: 5 action(s) mapped"))).toBe(true);
+
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    // b1 = mouse:right in public/buttons.json
+    ws.send(JSON.stringify({ type: "button", id: "b1", down: true }));
+    await until(() => buttons.length > 0);
+    ws.send(JSON.stringify({ type: "button", id: "b1", down: false }));
+    await until(() => buttons.length > 1);
+    expect(buttons).toEqual(["press:right", "release:right"]);
+
+    // fire is a regular config-driven button now (mouse:left, hold-capable)
+    ws.send(JSON.stringify({ type: "button", id: "fire", down: true }));
+    ws.send(JSON.stringify({ type: "button", id: "fire", down: false }));
+    await until(() => buttons.length > 3);
+    expect(buttons.slice(2)).toEqual(["press:left", "release:left"]);
+
+    // b3 = key:a
+    ws.send(JSON.stringify({ type: "button", id: "b3", down: true }));
+    ws.send(JSON.stringify({ type: "button", id: "b3", down: false }));
+    await until(() => keys.length > 1);
+    expect(keys).toEqual(["press:A", "release:A"]);
+
+    // unmapped id is logged, not crashed
+    ws.send(JSON.stringify({ type: "button", id: "b99", down: true }));
+    await until(() => logs.some((l) => l.includes("button b99: no action mapped")));
+    ws.close();
+  });
+
+  it("logs calib and state messages, survives garbage", async () => {
+    const { srv, logs } = await boot();
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send("{{{ not json");
+    ws.send(JSON.stringify({ type: "calib", stage: "corner", i: 0, x: 0.1, y: 1.2, z: -0.5 }));
+    ws.send(JSON.stringify({ type: "calib", stage: "begin" }));
+    ws.send(JSON.stringify({ type: "state", tracking: "limited" }));
+    await until(() => logs.some((l) => l.startsWith("tracking:")));
+    expect(logs.find((l) => l.includes("calib corner #0"))).toContain("(0.100, 1.200, -0.500)");
+    expect(logs).toContain("tracking: limited");
+    ws.close();
+    await until(() => logs.includes("phone disconnected"));
+  });
+
+  it("prints jitter stats once enough timestamped aims arrive", async () => {
+    const { srv, logs, moves } = await boot();
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    for (let i = 0; i < 15; i++)
+      ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5, t: Date.now() - i }));
+    await until(() => logs.some((l) => l.includes("jitter p50=")), 3000);
+    expect(moves.length).toBeGreaterThan(0);
+    ws.close();
+  });
+
+  it("reports fire errors without crashing", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const f = fakeMouse();
+    f.mouse.click = async () => {
+      throw new Error("no permission");
+    };
+    running = await startServer({
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      publicDir: PUBLIC,
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: () => {},
+    });
+    const ws = await wsOpen(`ws://127.0.0.1:${running.httpPort}`);
+    ws.send(JSON.stringify({ type: "fire" }));
+    await until(() => errSpy.mock.calls.length > 0);
+    expect(errSpy).toHaveBeenCalledWith("no permission");
+    ws.close();
+    errSpy.mockRestore();
+  });
+});
+
+describe("parseMode", () => {
+  it("recognizes the two explicit modes and defaults to all", () => {
+    expect(parseMode(["--mode=adb"])).toBe("adb");
+    expect(parseMode(["--mode=wifi"])).toBe("wifi");
+    expect(parseMode([])).toBe("all");
+    expect(parseMode(["--mode=warp"])).toBe("all");
+  });
+});
+
+describe("startServer modes", () => {
+  async function bootMode(mode: "adb" | "wifi", certsDir: string) {
+    const f = fakeMouse();
+    const logs: string[] = [];
+    running = await startServer({
+      mode,
+      port: 0,
+      httpsPort: 0,
+      certsDir,
+      publicDir: PUBLIC,
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: (l) => logs.push(l),
+    });
+    return { logs, srv: running };
+  }
+
+  it("adb mode: http only, no WiFi noise, even when certs exist", async () => {
+    const { srv, logs } = await bootMode("adb", FIXTURES);
+    expect(srv.httpsPort).toBeNull();
+    expect(logs.some((l) => l.startsWith("USB:"))).toBe(true);
+    expect(logs.some((l) => l.startsWith("WiFi:"))).toBe(false);
+  });
+
+  it("wifi mode with certs: https URLs, no USB instructions", async () => {
+    const { srv, logs } = await bootMode("wifi", FIXTURES);
+    expect(srv.httpsPort).not.toBeNull();
+    expect(logs.some((l) => l.startsWith("WiFi: open https://"))).toBe(true);
+    expect(logs.some((l) => l.startsWith("USB:"))).toBe(false);
+  });
+
+  it("wifi mode without certs: prints Chrome-flag Option A URLs", async () => {
+    const { srv, logs } = await bootMode("wifi", path.join(HERE, "no-such-dir"));
+    expect(srv.httpsPort).toBeNull();
+    expect(logs.some((l) => l.includes("unsafe-treat-insecure-origin-as-secure"))).toBe(true);
+    expect(logs.some((l) => l.includes(`http://`) && l.includes(`:${srv.httpPort}`))).toBe(true);
+  });
+});
+
+describe("startServer (with TLS certs)", () => {
+  it("additionally serves https+wss and prints WiFi URLs", async () => {
+    const f = fakeMouse();
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      httpsPort: 0,
+      certsDir: FIXTURES,
+      publicDir: PUBLIC,
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: (l) => logs.push(l),
+    });
+    expect(running.httpsPort).not.toBeNull();
+    expect(logs.some((l) => l.startsWith("WiFi: open https://"))).toBe(true);
+
+    const status = await new Promise<number>((resolve, reject) => {
+      https
+        .get(
+          { host: "127.0.0.1", port: running!.httpsPort!, path: "/", rejectUnauthorized: false },
+          (res) => resolve(res.statusCode ?? 0),
+        )
+        .on("error", reject);
+    });
+    expect(status).toBe(200);
+
+    const ws = await wsOpen(`wss://127.0.0.1:${running.httpsPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0, v: 0 }));
+    await until(() => f.moves.length > 0);
+    expect(f.moves[0]).toEqual([0, 0]);
+    ws.close();
+  });
+});

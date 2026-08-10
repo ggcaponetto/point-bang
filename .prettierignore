@@ -1,0 +1,4 @@
+coverage/
+certs/
+test/fixtures/
+package-lock.json
