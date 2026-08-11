@@ -25,42 +25,62 @@ export interface KeyboardLike {
 /** A parsed button action: a key combo or a mouse button. */
 export type ButtonAction = { kind: "key"; keys: string[] } | { kind: "mouse"; button: MouseButton };
 
-// Normalized key names — must match nut-js Key enum members (validated again
-// at adapter creation). Aliases cover common spellings.
+// Names below are libnut's own vocabulary — what `lib/input` hands to
+// keyToggle verbatim. Aliases cover the spellings people actually type;
+// anything not resolvable here is rejected at config load rather than
+// throwing mid-game on the first press.
 const KEY_ALIASES: Record<string, string> = {
-  ctrl: "LeftControl",
-  control: "LeftControl",
-  shift: "LeftShift",
-  alt: "LeftAlt",
-  win: "LeftSuper",
-  meta: "LeftSuper",
-  super: "LeftSuper",
-  cmd: "LeftSuper",
-  enter: "Enter",
-  return: "Enter",
-  esc: "Escape",
-  escape: "Escape",
-  space: "Space",
-  tab: "Tab",
-  backspace: "Backspace",
-  delete: "Delete",
-  del: "Delete",
-  up: "Up",
-  down: "Down",
-  left: "Left",
-  right: "Right",
-  home: "Home",
-  end: "End",
-  pageup: "PageUp",
-  pagedown: "PageDown",
+  ctrl: "control",
+  control: "control",
+  shift: "shift",
+  alt: "alt",
+  option: "alt",
+  // These are three genuinely different keys to libnut, so keep them apart
+  // instead of collapsing everything onto one "super".
+  win: "win",
+  cmd: "cmd",
+  command: "cmd",
+  meta: "meta",
+  super: "meta",
+  enter: "enter",
+  return: "return",
+  esc: "escape",
+  escape: "escape",
+  space: "space",
+  tab: "tab",
+  backspace: "backspace",
+  delete: "delete",
+  del: "delete",
+  insert: "insert",
+  ins: "insert",
+  up: "up",
+  down: "down",
+  left: "left",
+  right: "right",
+  home: "home",
+  end: "end",
+  pageup: "pageup",
+  pgup: "pageup",
+  pagedown: "pagedown",
+  pgdn: "pagedown",
+  capslock: "caps_lock",
+  numlock: "num_lock",
+  scrolllock: "scroll_lock",
+  printscreen: "printscreen",
+  menu: "menu",
 };
+
+// Punctuation libnut addresses by the character itself. "+" is missing on
+// purpose: it is the combo separator.
+const PUNCTUATION = new Set(["`", "-", "=", "[", "]", "\\", ";", "'", ",", ".", "/"]);
 
 function normalizeKey(raw: string): string | null {
   const k = raw.trim().toLowerCase();
   if (KEY_ALIASES[k]) return KEY_ALIASES[k];
-  if (/^[a-z]$/.test(k)) return k.toUpperCase();
-  if (/^[0-9]$/.test(k)) return `Num${k}`;
-  if (/^f([1-9]|1[0-9]|2[0-4])$/.test(k)) return `F${k.slice(1)}`;
+  if (/^[a-z0-9]$/.test(k)) return k;
+  if (/^f([1-9]|1[0-9]|2[0-4])$/.test(k)) return k;
+  if (/^numpad[0-9]$/.test(k)) return `numpad_${k.slice(6)}`;
+  if (PUNCTUATION.has(k)) return k;
   return null;
 }
 
@@ -102,15 +122,31 @@ export interface ButtonConfig {
 }
 
 /**
- * Loads and validates `buttons.json`. Unreadable files or bad actions are
- * reported in `problems`, never thrown — buttons degrade, the gun keeps working.
+ * Loads and validates `buttons.json` from disk. Unreadable files or bad
+ * actions are reported in `problems`, never thrown — buttons degrade, the gun
+ * keeps working.
  */
 export function loadButtonConfig(filePath: string): ButtonConfig {
+  try {
+    return parseButtonConfig(fs.readFileSync(filePath, "utf8"));
+  } catch (e) {
+    return {
+      actions: new Map(),
+      problems: [`buttons.json unreadable (${(e as Error).message}) — buttons disabled`],
+    };
+  }
+}
+
+/**
+ * Validates already-read `buttons.json` text — the form the single executable
+ * uses, where the config is a SEA asset rather than a file.
+ */
+export function parseButtonConfig(text: string): ButtonConfig {
   const actions = new Map<string, ButtonAction>();
   const problems: string[] = [];
   let defs: ButtonDef[];
   try {
-    defs = JSON.parse(fs.readFileSync(filePath, "utf8")).buttons ?? [];
+    defs = JSON.parse(text).buttons ?? [];
   } catch (e) {
     return {
       actions,

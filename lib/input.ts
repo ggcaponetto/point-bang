@@ -1,68 +1,72 @@
 import type { MouseButton, MouseLike } from "./cursor.ts";
 import type { KeyboardLike } from "./buttons.ts";
+import { loadLibNut, type LibNut } from "./native.ts";
 
 /**
- * nut-js adapters behind the MouseLike/KeyboardLike interfaces (so a future
- * koffi/SendInput absolute-injection path can slot in unchanged, and tests
- * use fakes — never the real devices).
+ * Device adapters over the raw libnut addon, behind the MouseLike/KeyboardLike
+ * interfaces (so a future koffi/SendInput absolute-injection path can slot in
+ * unchanged, and tests use fakes — never the real devices).
  *
- * nut-js defaults `autoDelayMs` to 100 (mouse) / 300 (keyboard), which sleeps
- * inside press/release — up to ~200ms added to every fire click. Both are
- * zeroed here. `setPosition` is unaffected (measured 0.2ms/call).
+ * We talk to libnut directly rather than through the nut-js wrapper: the six
+ * calls below are all this project needs, the wrapper pulled a large image
+ * library along for screen capture we never use, and its `bindings`-based
+ * module lookup cannot survive being bundled into a single executable.
+ *
+ * libnut sleeps `setMouseDelay`/`setKeyboardDelay` milliseconds *inside* every
+ * press and release — the defaults would add ~200ms to a fire click. Both are
+ * zeroed here. `moveMouse` is unaffected (measured 0.2ms/call).
  *
  * @module
  */
 
-/** Creates the real nut-js mouse behind the MouseLike interface. */
-export async function createNutMouse(): Promise<MouseLike> {
-  const nut = await import("@nut-tree-fork/nut-js");
-  const { mouse, screen, Point, Button } = nut;
-  mouse.config.autoDelayMs = 0;
-  const BUTTONS: Record<MouseButton, (typeof Button)[keyof typeof Button]> = {
-    left: Button.LEFT,
-    right: Button.RIGHT,
-    middle: Button.MIDDLE,
-  };
+const BUTTONS: Record<MouseButton, string> = {
+  left: "left",
+  right: "right",
+  middle: "middle",
+};
+
+/**
+ * Creates the real mouse behind the MouseLike interface.
+ * @param lib Injected addon; loaded from disk (or the SEA blob) when omitted.
+ */
+export async function createMouse(lib?: LibNut): Promise<MouseLike> {
+  const n = lib ?? (await loadLibNut());
+  n.setMouseDelay(0);
   return {
     async setPosition(x, y) {
-      await mouse.setPosition(new Point(x, y));
+      n.moveMouse(x, y);
     },
     async click() {
-      await mouse.click(Button.LEFT);
+      n.mouseClick("left");
     },
     async press(button) {
-      await mouse.pressButton(BUTTONS[button]);
+      n.mouseToggle("down", BUTTONS[button]);
     },
     async release(button) {
-      await mouse.releaseButton(BUTTONS[button]);
+      n.mouseToggle("up", BUTTONS[button]);
     },
     async screenSize() {
-      return { w: await screen.width(), h: await screen.height() };
+      const s = n.getScreenSize();
+      return { w: s.width, h: s.height };
     },
   };
 }
 
 /**
- * Creates the real nut-js keyboard behind the KeyboardLike interface.
- * Key names must exist in nut's `Key` enum; unknown names throw at press time
- * (config validation in lib/buttons keeps them out earlier).
+ * Creates the real keyboard behind the KeyboardLike interface. Each key of a
+ * combo is toggled individually (modifiers included) so press-and-hold works;
+ * names are libnut's, validated at config load in `lib/buttons`.
+ * @param lib Injected addon; loaded from disk (or the SEA blob) when omitted.
  */
-export async function createNutKeyboard(): Promise<KeyboardLike> {
-  const nut = await import("@nut-tree-fork/nut-js");
-  const { keyboard, Key } = nut;
-  keyboard.config.autoDelayMs = 0;
-  const toKeys = (names: string[]) =>
-    names.map((n) => {
-      const k = (Key as Record<string, unknown>)[n];
-      if (k === undefined) throw new Error(`unknown key "${n}"`);
-      return k as (typeof Key)[keyof typeof Key];
-    });
+export async function createKeyboard(lib?: LibNut): Promise<KeyboardLike> {
+  const n = lib ?? (await loadLibNut());
+  n.setKeyboardDelay(0);
   return {
     async pressKeys(names) {
-      await keyboard.pressKey(...toKeys(names));
+      for (const k of names) n.keyToggle(k, "down");
     },
     async releaseKeys(names) {
-      await keyboard.releaseKey(...toKeys(names));
+      for (const k of names) n.keyToggle(k, "up");
     },
   };
 }

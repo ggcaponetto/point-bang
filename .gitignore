@@ -1,6 +1,7 @@
 node_modules/
 certs/
 coverage/
+dist/
 docs/api/
 docs/.vitepress/dist/
 docs/.vitepress/cache/

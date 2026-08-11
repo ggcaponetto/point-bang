@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import path from "node:path";
-import { safeResolve, contentTypeFor } from "../lib/static.ts";
+import { safeResolve, contentTypeFor, normalizeUrlPath } from "../lib/static.ts";
 
 const root = path.resolve("/srv/public");
 
@@ -24,10 +24,36 @@ describe("safeResolve", () => {
   });
 });
 
+describe("normalizeUrlPath", () => {
+  it("maps the empty and root paths to index.html", () => {
+    expect(normalizeUrlPath("/")).toBe("/index.html");
+    expect(normalizeUrlPath("")).toBe("/index.html");
+  });
+  it("drops the query string and fragment", () => {
+    expect(normalizeUrlPath("/buttons.json?v=2")).toBe("/buttons.json");
+    expect(normalizeUrlPath("/math.js#top")).toBe("/math.js");
+  });
+  it("decodes percent-escapes", () => {
+    expect(normalizeUrlPath("/my%20file.js")).toBe("/my file.js");
+  });
+  it("folds backslashes so Windows and Linux resolve the same file", () => {
+    // On Windows "\" is a path separator and on Linux it is a filename byte;
+    // without this the same request would reach two different files.
+    expect(normalizeUrlPath("/a\\..\\..\\secret")).toBe("/secret");
+  });
+  it("rejects malformed escapes and embedded null bytes", () => {
+    expect(normalizeUrlPath("/%zz")).toBeNull();
+    expect(normalizeUrlPath("/a%00b")).toBeNull();
+    expect(safeResolve(root, "/%zz")).toBeNull();
+  });
+});
+
 describe("contentTypeFor", () => {
-  it("knows html, js and falls back to text/plain", () => {
+  it("knows the phone page's file kinds and falls back to text/plain", () => {
     expect(contentTypeFor("a/index.html")).toBe("text/html");
     expect(contentTypeFor("a/math.js")).toBe("text/javascript");
+    expect(contentTypeFor("a/buttons.json")).toBe("application/json");
+    expect(contentTypeFor("a/style.CSS")).toBe("text/css");
     expect(contentTypeFor("a/readme.md")).toBe("text/plain");
   });
 });

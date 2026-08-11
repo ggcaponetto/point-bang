@@ -1,74 +1,61 @@
 import { describe, it, expect, vi } from "vitest";
+import { createMouse, createKeyboard } from "../lib/input.ts";
+import type { LibNut } from "../lib/native.ts";
 
-const { setPosition, click, pressButton, releaseButton, pressKey, releaseKey } = vi.hoisted(() => ({
-  setPosition: vi.fn(),
-  click: vi.fn(),
-  pressButton: vi.fn(),
-  releaseButton: vi.fn(),
-  pressKey: vi.fn(),
-  releaseKey: vi.fn(),
-}));
-vi.mock("@nut-tree-fork/nut-js", () => ({
-  mouse: { config: { autoDelayMs: 100 }, setPosition, click, pressButton, releaseButton },
-  keyboard: { config: { autoDelayMs: 300 }, pressKey, releaseKey },
-  screen: { width: async () => 2560, height: async () => 1440 },
-  Point: class {
-    x: number;
-    y: number;
-    constructor(x: number, y: number) {
-      this.x = x;
-      this.y = y;
-    }
-  },
-  Button: { LEFT: "LEFT", RIGHT: "RIGHT", MIDDLE: "MIDDLE" },
-  Key: { A: "key-A", Num1: "key-Num1", LeftControl: "key-LeftControl", Enter: "key-Enter" },
-}));
+function fakeLibNut() {
+  const calls: string[] = [];
+  const lib: LibNut = {
+    setMouseDelay: vi.fn((ms) => void calls.push(`mouseDelay:${ms}`)),
+    setKeyboardDelay: vi.fn((ms) => void calls.push(`keyDelay:${ms}`)),
+    moveMouse: vi.fn((x, y) => void calls.push(`move:${x},${y}`)),
+    mouseClick: vi.fn((b) => void calls.push(`click:${b}`)),
+    mouseToggle: vi.fn((down, b) => void calls.push(`${down}:${b}`)),
+    keyToggle: vi.fn((k, down) => void calls.push(`key-${down}:${k}`)),
+    getScreenSize: () => ({ width: 2560, height: 1440 }),
+  };
+  return { lib, calls };
+}
 
-import { createNutMouse, createNutKeyboard } from "../lib/input.ts";
-import { mouse as nutMouse, keyboard as nutKeyboard } from "@nut-tree-fork/nut-js";
-
-describe("createNutMouse", () => {
-  it("zeroes autoDelayMs (the hidden ~200ms fire-click penalty)", async () => {
-    await createNutMouse();
-    expect(nutMouse.config.autoDelayMs).toBe(0);
+describe("createMouse", () => {
+  it("zeroes the mouse delay (libnut sleeps it inside every press/release)", async () => {
+    const { lib, calls } = fakeLibNut();
+    await createMouse(lib);
+    expect(calls).toContain("mouseDelay:0");
   });
-  it("wires setPosition through Point", async () => {
-    const m = await createNutMouse();
+  it("moves, clicks, and holds buttons", async () => {
+    const { lib, calls } = fakeLibNut();
+    const m = await createMouse(lib);
     await m.setPosition(10, 20);
-    expect(setPosition).toHaveBeenCalledWith(expect.objectContaining({ x: 10, y: 20 }));
-  });
-  it("clicks LEFT", async () => {
-    const m = await createNutMouse();
     await m.click();
-    expect(click).toHaveBeenCalledWith("LEFT");
-  });
-  it("presses and releases mapped buttons", async () => {
-    const m = await createNutMouse();
     await m.press("right");
     await m.release("middle");
-    expect(pressButton).toHaveBeenCalledWith("RIGHT");
-    expect(releaseButton).toHaveBeenCalledWith("MIDDLE");
+    expect(calls.slice(1)).toEqual(["move:10,20", "click:left", "down:right", "up:middle"]);
   });
-  it("reads the screen size", async () => {
-    const m = await createNutMouse();
+  it("reads the screen size, renaming width/height to w/h", async () => {
+    const { lib } = fakeLibNut();
+    const m = await createMouse(lib);
     expect(await m.screenSize()).toEqual({ w: 2560, h: 1440 });
   });
 });
 
-describe("createNutKeyboard", () => {
-  it("zeroes keyboard autoDelayMs (default 300ms per keypress)", async () => {
-    await createNutKeyboard();
-    expect(nutKeyboard.config.autoDelayMs).toBe(0);
+describe("createKeyboard", () => {
+  it("zeroes the keyboard delay", async () => {
+    const { lib, calls } = fakeLibNut();
+    await createKeyboard(lib);
+    expect(calls).toContain("keyDelay:0");
   });
-  it("maps normalized names to nut Key values, spread as variadic args", async () => {
-    const k = await createNutKeyboard();
-    await k.pressKeys(["LeftControl", "A"]);
-    await k.releaseKeys(["A", "LeftControl"]);
-    expect(pressKey).toHaveBeenCalledWith("key-LeftControl", "key-A");
-    expect(releaseKey).toHaveBeenCalledWith("key-A", "key-LeftControl");
-  });
-  it("throws on names missing from the Key enum", async () => {
-    const k = await createNutKeyboard();
-    await expect(k.pressKeys(["NotAKey"])).rejects.toThrow('unknown key "NotAKey"');
+  it("toggles every key of a combo individually so holds work", async () => {
+    const { lib, calls } = fakeLibNut();
+    const k = await createKeyboard(lib);
+    await k.pressKeys(["control", "shift", "f"]);
+    await k.releaseKeys(["f", "shift", "control"]);
+    expect(calls.slice(1)).toEqual([
+      "key-down:control",
+      "key-down:shift",
+      "key-down:f",
+      "key-up:f",
+      "key-up:shift",
+      "key-up:control",
+    ]);
   });
 });

@@ -7,7 +7,13 @@ on:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    # Windows is the primary play target and Linux is the primary dev box —
+    # both must stay green (CRLF, path separators, native addon loading).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
@@ -15,4 +21,34 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run validate
+      # Formatting/dead-code gates are OS-independent; running them once keeps
+      # the Windows job focused on what actually differs there.
+      - run: npm run format:check
+        if: runner.os == 'Linux'
+      - run: npm run knip
+        if: runner.os == 'Linux'
+      - run: npm run typecheck
+      - run: npm test
+
+  sea:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:sea
+      - name: Smoke-test the executable
+        run: node build/smoke.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: point-bang-${{ matrix.os }}
+          path: dist/point-bang*
+          if-no-files-found: error

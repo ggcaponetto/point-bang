@@ -6,7 +6,8 @@ impactful:
 ## 1. Transport
 
 USB (`start:adb`) has near-zero network jitter. On WiFi, **5 GHz matters**:
-2.4 GHz is congested and spiky. `npm run wifi` shows your band (Windows).
+2.4 GHz is congested and spiky. `point-bang wifi` shows your band (Windows via
+`netsh`, Linux via `nmcli` or `iw`).
 The server prints jitter percentiles every 2 seconds:
 
 ```
@@ -35,12 +36,16 @@ The server extrapolates aim with a least-squares velocity fit over the last
 moves the cursor every 2ms along the predicted path. This hides network
 jitter and about a frame of delay.
 
-Tune with the `PREDICT_MS` environment variable:
+Tune with `--predict-ms`, which works the same in bash, cmd.exe and
+PowerShell:
 
 ```sh
-PREDICT_MS=30 npm start   # more aggressive lookahead
-PREDICT_MS=0 npm start    # minimal prediction
+point-bang serve --predict-ms 30   # more aggressive lookahead
+point-bang serve --predict-ms 0    # minimal prediction
 ```
+
+From a checkout, `npm start -- --predict-ms 30` does the same thing. The
+`PREDICT_MS` environment variable is still read as a fallback.
 
 Prediction resets automatically when tracking is lost, so stale velocity
 never drags the cursor.

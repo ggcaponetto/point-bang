@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   parseAction,
   loadButtonConfig,
+  parseButtonConfig,
   createButtonExecutor,
   type KeyboardLike,
 } from "../lib/buttons.ts";
@@ -17,19 +18,27 @@ describe("parseAction", () => {
     expect(parseAction("mouse:middle")).toEqual({ kind: "mouse", button: "middle" });
     expect(parseAction("mouse:side")).toBeNull();
   });
-  it("parses single keys with normalization", () => {
-    expect(parseAction("key:r")).toEqual({ kind: "key", keys: ["R"] });
-    expect(parseAction("key:5")).toEqual({ kind: "key", keys: ["Num5"] });
-    expect(parseAction("key:f12")).toEqual({ kind: "key", keys: ["F12"] });
-    expect(parseAction("key:enter")).toEqual({ kind: "key", keys: ["Enter"] });
-    expect(parseAction("key:Escape")).toEqual({ kind: "key", keys: ["Escape"] });
+  it("parses single keys into libnut's names", () => {
+    expect(parseAction("key:r")).toEqual({ kind: "key", keys: ["r"] });
+    expect(parseAction("key:5")).toEqual({ kind: "key", keys: ["5"] });
+    expect(parseAction("key:f12")).toEqual({ kind: "key", keys: ["f12"] });
+    expect(parseAction("key:enter")).toEqual({ kind: "key", keys: ["enter"] });
+    expect(parseAction("key:Escape")).toEqual({ kind: "key", keys: ["escape"] });
+    expect(parseAction("key:numpad7")).toEqual({ kind: "key", keys: ["numpad_7"] });
+    expect(parseAction("key:pgdn")).toEqual({ kind: "key", keys: ["pagedown"] });
+    expect(parseAction("key:-")).toEqual({ kind: "key", keys: ["-"] });
+  });
+  it("keeps win, cmd and meta apart instead of collapsing them", () => {
+    expect(parseAction("key:win")).toEqual({ kind: "key", keys: ["win"] });
+    expect(parseAction("key:cmd")).toEqual({ kind: "key", keys: ["cmd"] });
+    expect(parseAction("key:super")).toEqual({ kind: "key", keys: ["meta"] });
   });
   it("parses combos, modifiers first", () => {
     expect(parseAction("key:ctrl+shift+f")).toEqual({
       kind: "key",
-      keys: ["LeftControl", "LeftShift", "F"],
+      keys: ["control", "shift", "f"],
     });
-    expect(parseAction("key:alt+f4")).toEqual({ kind: "key", keys: ["LeftAlt", "F4"] });
+    expect(parseAction("key:alt+f4")).toEqual({ kind: "key", keys: ["alt", "f4"] });
   });
   it("rejects unknown keys and malformed specs", () => {
     expect(parseAction("key:notakey")).toBeNull();
@@ -79,6 +88,20 @@ describe("loadButtonConfig", () => {
   });
 });
 
+describe("parseButtonConfig", () => {
+  it("reads config text directly — the form the executable uses", () => {
+    const cfg = parseButtonConfig(
+      JSON.stringify({ buttons: [{ id: "fire", action: "mouse:left" }] }),
+    );
+    expect(cfg.actions.get("fire")).toEqual({ kind: "mouse", button: "left" });
+  });
+  it("disables buttons on malformed JSON rather than throwing", () => {
+    const cfg = parseButtonConfig("{{{ not json");
+    expect(cfg.actions.size).toBe(0);
+    expect(cfg.problems[0]).toContain("buttons disabled");
+  });
+});
+
 describe("createButtonExecutor", () => {
   function fakes() {
     const calls: string[] = [];
@@ -115,13 +138,13 @@ describe("createButtonExecutor", () => {
   it("presses combos in order and releases in reverse", async () => {
     const { calls, mouse, keyboard } = fakes();
     const exec = createButtonExecutor(
-      new Map([["b2", { kind: "key", keys: ["LeftControl", "LeftShift", "F"] } as const]]),
+      new Map([["b2", { kind: "key", keys: ["control", "shift", "f"] } as const]]),
       mouse,
       keyboard,
     );
     await exec("b2", true);
     await exec("b2", false);
-    expect(calls).toEqual(["k-press:LeftControl,LeftShift,F", "k-release:F,LeftShift,LeftControl"]);
+    expect(calls).toEqual(["k-press:control,shift,f", "k-release:f,shift,control"]);
   });
 
   it("returns false for unmapped ids", async () => {

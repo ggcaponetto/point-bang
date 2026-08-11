@@ -55,9 +55,26 @@ npm run start:adb    # USB flow: sets up the adb tunnel for you
 Open **http://localhost:8443** in Chrome on the phone, tap **START AR**,
 capture the three corners — the PC cursor follows your aim.
 
-No cable? `npm run start:wifi` prints the URLs for same-network play.
+No cable? `npm run start:wifi` prints the URLs for same-network play, and
+`npm run start:tunnel` exposes a public HTTPS URL through ngrok — a secure
+context, so WebXR works from any network with no certificates and no Chrome
+flags (setup convenience, not a low-latency play transport).
 Full setup, calibration and WiFi/HTTPS details:
 **[Getting Started →](https://ggcaponetto.github.io/point-bang/guide/getting-started)**
+
+### Or skip Node entirely
+
+`npm run build:sea` produces a single self-contained executable —
+`dist/point-bang` on Linux, `dist/point-bang.exe` on Windows — with the phone
+page and the input driver baked in. Copy it anywhere:
+
+```sh
+point-bang serve --mode adb --port 8443
+point-bang tunnel           # public HTTPS URL, alongside a running serve
+point-bang check            # is this install working?
+point-bang wifi             # 2.4 or 5 GHz?
+point-bang --help
+```
 
 ## Highlights
 
@@ -70,10 +87,20 @@ Full setup, calibration and WiFi/HTTPS details:
   key combo or mouse button, press-and-hold included. FIRE itself is just a
   remappable button.
 - 🎚️ **Tunable feel** — smoothing↔snappy slider (100% = raw aim), aim-offset
-  nudge pad, `PREDICT_MS` lookahead control.
-- 🧰 **Zero build steps** — TypeScript runs natively on Node ≥ 23.6; the
-  phone page is buildless ES modules. Clone, install, play.
-- 🧪 **Seriously tested** — 105 tests, 90%+ coverage enforced on every
+  nudge pad, `--predict-ms` lookahead control.
+- 🌍 **Play-anywhere setup path** — `--tunnel ngrok` publishes an HTTPS URL the
+  phone can open from any network, WebXR secure context and `wss://` aim
+  stream included, with no certificates to install.
+- 👀 **Runs headless** — no display (container, CI, SSH)? `serve` prints the
+  aim instead of moving a cursor rather than dying on X11; `--input none`
+  forces it anywhere.
+- 🖥️ **Windows and Linux, equally** — one yargs CLI, no environment-variable
+  syntax that only bash understands, band detection via `netsh`/`nmcli`/`iw`,
+  and CI that runs the whole suite on both.
+- 🧰 **Zero build steps to develop** — TypeScript runs natively on Node ≥ 23.6
+  and the phone page is buildless ES modules; the only build is the optional
+  single-executable one.
+- 🧪 **Seriously tested** — 218 tests, 90%+ coverage enforced on every
   metric, integration tests with fake input devices, prettier/knip/husky
   gates.
 

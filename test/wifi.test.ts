@@ -1,6 +1,37 @@
 import { describe, it, expect } from "vitest";
-import { parseNetsh, renderWifiReport, bandFromChannel } from "../lib/wifi.ts";
-import { wifiMain } from "../wifi.ts";
+import {
+  parseNetsh,
+  parseNmcli,
+  parseIwDev,
+  renderWifiReport,
+  bandFromChannel,
+  bandFromMHz,
+  wifiMain,
+} from "../lib/wifi.ts";
+
+const NMCLI = [
+  "no:Neighbour\\:Net:1:2412 MHz:41",
+  "yes:CasaMia:100:5500 MHz:78",
+  "no:Other:6:2437 MHz:33",
+].join("\n");
+
+const NMCLI_24 = "yes:CCHOME:11:2462 MHz:86";
+
+const IW_DEV = `phy#0
+	Interface wlp2s0
+		ifindex 3
+		addr aa:bb:cc:dd:ee:ff
+		ssid HomeNet
+		type managed
+		channel 44 (5220 MHz), width: 80 MHz, center1: 5210 MHz
+		txpower 22.00 dBm
+`;
+
+const IW_IDLE = `phy#0
+	Interface wlp2s0
+		ifindex 3
+		type managed
+`;
 
 const EN_5GHZ = `
 There is 1 interface on the system:
@@ -94,8 +125,54 @@ describe("renderWifiReport", () => {
   });
 });
 
+describe("bandFromMHz", () => {
+  it("maps the WiFi bands and rejects anything outside them", () => {
+    expect(bandFromMHz(2412)).toBe("2.4 GHz");
+    expect(bandFromMHz(5500)).toBe("5 GHz");
+    expect(bandFromMHz(6115)).toBe("6 GHz");
+    expect(bandFromMHz(900)).toBeNull();
+  });
+});
+
+describe("parseNmcli", () => {
+  it("takes the active row and pins the band from the frequency", () => {
+    expect(parseNmcli(NMCLI)).toEqual({
+      connected: true,
+      ssid: "CasaMia",
+      band: "5 GHz",
+      channel: "100",
+      signal: "78%",
+    });
+  });
+  it("un-escapes colons inside terse field values", () => {
+    const r = parseNmcli(`yes:Neighbour\\:Net:1:2412 MHz:41`);
+    expect(r.ssid).toBe("Neighbour:Net");
+  });
+  it("advises against 2.4 GHz", () => {
+    expect(renderWifiReport(parseNmcli(NMCLI_24)).join("\n")).toContain("more interference");
+  });
+  it("reports disconnected when no row is active", () => {
+    expect(parseNmcli("no:Foo:1:2412 MHz:41")).toEqual({ connected: false });
+  });
+});
+
+describe("parseIwDev", () => {
+  it("reads ssid and channel from an associated interface", () => {
+    expect(parseIwDev(IW_DEV)).toEqual({
+      connected: true,
+      ssid: "HomeNet",
+      band: "5 GHz",
+      channel: "44",
+      signal: null,
+    });
+  });
+  it("reports disconnected for an idle adapter", () => {
+    expect(parseIwDev(IW_IDLE)).toEqual({ connected: false });
+  });
+});
+
 describe("wifiMain", () => {
-  it("is a no-op on non-Windows platforms", () => {
+  it("says so on a platform with no implementation", () => {
     const out: string[] = [];
     expect(
       wifiMain(
@@ -104,7 +181,60 @@ describe("wifiMain", () => {
         "darwin",
       ),
     ).toBe(0);
-    expect(out[0]).toContain("Windows only");
+    expect(out[0]).toContain("Windows and Linux");
+  });
+  it("uses nmcli on Linux", () => {
+    const out: string[] = [];
+    const cmds: string[] = [];
+    const code = wifiMain(
+      (c) => {
+        cmds.push(c);
+        return NMCLI;
+      },
+      (l) => out.push(l),
+      "linux",
+    );
+    expect(code).toBe(0);
+    expect(cmds[0]).toContain("nmcli");
+    expect(out[0]).toBe("SSID:    CasaMia");
+  });
+  it("falls back to iw when nmcli is absent", () => {
+    const out: string[] = [];
+    const cmds: string[] = [];
+    const code = wifiMain(
+      (c) => {
+        cmds.push(c);
+        if (c.startsWith("nmcli")) throw new Error("not found");
+        return IW_DEV;
+      },
+      (l) => out.push(l),
+      "linux",
+    );
+    expect(code).toBe(0);
+    expect(cmds).toHaveLength(2);
+    expect(out[0]).toBe("SSID:    HomeNet");
+  });
+  it("falls back to iw when nmcli reports nothing active", () => {
+    const out: string[] = [];
+    const code = wifiMain(
+      (c) => (c.startsWith("nmcli") ? "no:Foo:1:2412 MHz:41" : IW_DEV),
+      (l) => out.push(l),
+      "linux",
+    );
+    expect(code).toBe(0);
+    expect(out[0]).toBe("SSID:    HomeNet");
+  });
+  it("reports when neither Linux tool exists", () => {
+    const out: string[] = [];
+    const code = wifiMain(
+      () => {
+        throw new Error("not found");
+      },
+      (l) => out.push(l),
+      "linux",
+    );
+    expect(code).toBe(1);
+    expect(out[0]).toContain("nmcli");
   });
   it("reports netsh failure", () => {
     const out: string[] = [];

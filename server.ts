@@ -2,10 +2,11 @@
  * Lightgun POC server: serves the phone page, receives aim over WebSocket,
  * moves the PC cursor with absolute positioning.
  *
+ * The CLI in `lib/cli` is what drives this in practice:
+ *
  * ```
- * npm install
- * npm run start:adb    # USB tunnel flow — phone opens http://localhost:8443
- * npm run start:wifi   # same-WiFi flow — prints the URLs to open
+ * point-bang serve --mode adb    # USB tunnel flow — phone opens http://localhost:8443
+ * point-bang serve --mode wifi   # same-WiFi flow — prints the URLs to open
  * ```
  *
  * Emergency stop: Ctrl+C in the terminal.
@@ -15,20 +16,30 @@
 
 import http from "node:http";
 import https from "node:https";
-import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import { safeResolve, contentTypeFor } from "./lib/static.ts";
+import { normalizeUrlPath, contentTypeFor } from "./lib/static.ts";
+import { diskAssets, type AssetSource } from "./lib/assets.ts";
 import { loadTls } from "./lib/certs.ts";
 import { lanIPv4 } from "./lib/net.ts";
 import { parseMessage } from "./lib/protocol.ts";
 import { createCursorLoop, type MouseLike } from "./lib/cursor.ts";
 import { AimPredictor } from "./lib/predict.ts";
 import { JitterWindow, formatJitter } from "./lib/jitter.ts";
-import { createNutMouse, createNutKeyboard } from "./lib/input.ts";
-import { loadButtonConfig, createButtonExecutor, type KeyboardLike } from "./lib/buttons.ts";
-import { adbReverse } from "./lib/adb.ts";
+import { createMouse, createKeyboard } from "./lib/input.ts";
+import {
+  hasDisplay,
+  createVirtualMouse,
+  createVirtualKeyboard,
+  DEFAULT_SCREEN,
+} from "./lib/virtual.ts";
+import {
+  loadButtonConfig,
+  parseButtonConfig,
+  createButtonExecutor,
+  type KeyboardLike,
+} from "./lib/buttons.ts";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,11 +52,15 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
  */
 export type ServerMode = "adb" | "wifi" | "all";
 
-/** Parses `--mode=adb|wifi` from argv; anything else means `all`. */
-export function parseMode(argv: string[]): ServerMode {
-  const arg = argv.find((a) => a.startsWith("--mode="))?.slice("--mode=".length);
-  return arg === "adb" || arg === "wifi" ? arg : "all";
-}
+/**
+ * Where aim ends up:
+ * - `native` — the real cursor, via libnut.
+ * - `none` — virtual devices that print the cursor position instead (headless
+ *   boxes, containers, SSH; also handy for watching what the phone sends).
+ * - `auto` — `native` when a display exists, `none` otherwise. Never reaching
+ *   the addon without a display is the point: it aborts the process there.
+ */
+export type InputMode = "auto" | "native" | "none";
 
 /** Options for {@link startServer}; every device/port is injectable for tests. */
 export interface ServerOptions {
@@ -54,12 +69,19 @@ export interface ServerOptions {
   httpsPort?: number;
   certsDir?: string;
   publicDir?: string;
+  /** Overrides `publicDir` — how the single executable serves embedded files. */
+  assets?: AssetSource;
   mouse?: MouseLike;
   keyboard?: KeyboardLike;
   buttonsFile?: string;
   log?: (line: string) => void;
   statsIntervalMs?: number;
   predictMs?: number; // extrapolation lookahead; 0 keeps prediction minimal
+  input?: InputMode;
+  /** Screen assumed in virtual-input mode, where none can be measured. */
+  screen?: { w: number; h: number };
+  platform?: string;
+  env?: Record<string, string | undefined>;
 }
 
 /** A started server: bound ports plus a full-teardown `close()`. */
@@ -77,23 +99,48 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const log = opts.log ?? console.log;
   const mode = opts.mode ?? "all";
   const publicDir = opts.publicDir ?? path.join(ROOT, "public");
-  const mouse = opts.mouse ?? (await createNutMouse());
+  const assets = opts.assets ?? diskAssets(publicDir);
+
+  // ---------- input devices (real or virtual) ----------
+  // Decided before anything is opened: on a display-less Linux box, touching
+  // the native addon kills the process outright, so `auto` must route around
+  // it rather than try and recover.
+  const input = opts.input ?? "auto";
+  const display = hasDisplay(opts.platform ?? process.platform, opts.env ?? process.env);
+  const virtual = input === "none" || (input === "auto" && !display);
+  if (virtual) {
+    const size = opts.screen ?? DEFAULT_SCREEN;
+    log(
+      input === "none"
+        ? "input: VIRTUAL (--input none) — aim is printed, the cursor is not moved"
+        : "input: VIRTUAL — no DISPLAY (headless); aim is printed, the cursor is not moved",
+    );
+    log(`input: assuming a ${size.w}x${size.h} screen (--screen WxH to change)`);
+  } else if (!display) {
+    // Explicit --input native without a display: their call, but say what is
+    // about to happen, because the crash message itself explains nothing.
+    log("input: WARNING — no DISPLAY set; the native addon will abort the process");
+  }
+  const virtualDeps = { log, size: opts.screen ?? DEFAULT_SCREEN };
+  const mouse = opts.mouse ?? (virtual ? createVirtualMouse(virtualDeps) : await createMouse());
 
   // ---------- static file server (index.html only, no framework needed) ----------
   const handler = (req: http.IncomingMessage, res: http.ServerResponse): void => {
-    const filePath = safeResolve(publicDir, req.url ?? "/");
-    if (!filePath) {
+    const normalized = normalizeUrlPath(req.url ?? "/");
+    if (normalized === null) {
       res.writeHead(403);
       res.end();
       return;
     }
-    fs.readFile(filePath, (err, data) => {
-      if (err) {
+    // Assets are addressed by bare name ("index.html"), not by URL path.
+    const name = normalized.replace(/^\/+/, "");
+    assets.read(name).then((data) => {
+      if (!data) {
         res.writeHead(404);
         res.end("not found");
         return;
       }
-      res.writeHead(200, { "Content-Type": contentTypeFor(filePath) });
+      res.writeHead(200, { "Content-Type": contentTypeFor(name) });
       res.end(data);
     });
   };
@@ -114,8 +161,13 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   );
 
   // ---------- buttons (protocol v2) ----------
-  const keyboard = opts.keyboard ?? (await createNutKeyboard());
-  const btnCfg = loadButtonConfig(opts.buttonsFile ?? path.join(publicDir, "buttons.json"));
+  const keyboard =
+    opts.keyboard ?? (virtual ? createVirtualKeyboard(virtualDeps) : await createKeyboard());
+  // Same buttons.json both sides read: an explicit file wins, otherwise it
+  // comes from wherever the phone page itself comes from (disk or SEA blob).
+  const btnCfg = opts.buttonsFile
+    ? loadButtonConfig(opts.buttonsFile)
+    : parseButtonConfig((await assets.read("buttons.json"))?.toString("utf8") ?? "");
   for (const p of btnCfg.problems) log(`buttons: ${p}`);
   log(`buttons: ${btnCfg.actions.size} action(s) mapped`);
   const pressButton = createButtonExecutor(btnCfg.actions, mouse, keyboard);
@@ -218,16 +270,4 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   };
 
   return { httpPort, httpsPort, close };
-}
-
-// Auto-start only when run directly (`node server.ts`), not when imported by tests.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const mode = parseMode(process.argv.slice(2));
-  const port = process.env.PORT ? +process.env.PORT : undefined;
-  const predictMs = process.env.PREDICT_MS ? +process.env.PREDICT_MS : undefined;
-  if (mode === "adb") console.log(adbReverse(port ?? 8443).detail);
-  startServer({ mode, port, predictMs }).catch((e) => {
-    console.error(e);
-    process.exit(1);
-  });
 }

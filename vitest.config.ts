@@ -5,7 +5,7 @@ export default defineConfig({
     include: ["test/**/*.test.ts"],
     coverage: {
       provider: "v8",
-      include: ["lib/**/*.ts", "server.ts", "ip.ts", "wifi.ts", "public/math.js"],
+      include: ["lib/**/*.ts", "server.ts", "cli.ts", "public/math.js"],
       thresholds: {
         lines: 90,
         functions: 90,

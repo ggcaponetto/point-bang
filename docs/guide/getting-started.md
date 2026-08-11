@@ -5,8 +5,10 @@ The USB flow is the lowest-latency way to play: the "network" is the cable
 
 ## Requirements
 
-- **PC** — Windows, macOS or Linux with **Node.js ≥ 23.6** (the server is
-  TypeScript run natively via type stripping — there is no build step).
+- **PC** — Windows or Linux. Either grab the
+  [single executable](#no-node-the-single-executable) (nothing else to
+  install) or use **Node.js ≥ 23.6** with a checkout — the server is
+  TypeScript run natively via type stripping, so there is no build step.
 - **Phone** — Android with ARCore support, Chrome, and
   [Google Play Services for AR](https://play.google.com/store/apps/details?id=com.google.ar.core)
   installed.
@@ -25,9 +27,39 @@ npm run start:adb   # starts the server AND sets up the adb tunnel
 Then open **http://localhost:8443** in Chrome on the phone. `localhost` is a
 secure context, so WebXR works without any HTTPS certificate.
 
-::: tip macOS
-Grant your terminal Accessibility permission (System Settings → Privacy &
-Security → Accessibility) or cursor moves are silently blocked.
+Every option is a flag — no environment variables, so the same command works
+in bash, cmd.exe and PowerShell:
+
+```sh
+npm start -- --port 9000 --predict-ms 30
+node cli.ts --help
+```
+
+## No Node? The single executable
+
+`npm run build:sea` produces `dist/point-bang` (or `point-bang.exe` on
+Windows) — one self-contained file with the phone page and the input driver
+baked in. Copy it anywhere and run it:
+
+```sh
+point-bang serve --mode adb
+point-bang check              # is this install working?
+```
+
+The build targets the OS it runs on; there is no cross-compiling. If you want
+HTTPS for the [WiFi flow](/guide/wifi), put `certs/cert.pem` and
+`certs/key.pem` in a `certs` folder **next to the executable**.
+
+::: tip Windows
+The first run pops a Windows Defender Firewall prompt — allow it on private
+networks, or the phone cannot reach the server over WiFi. USB (`--mode adb`)
+needs no firewall rule.
+:::
+
+::: tip Linux
+Cursor injection uses X11's XTEST extension: install `libx11` and `libxtst`
+(`libxtst6` on Debian/Ubuntu). A Wayland session needs Xwayland.
+`point-bang check` tells you whether input is available.
 :::
 
 ## Calibrate

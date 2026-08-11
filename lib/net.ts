@@ -23,7 +23,9 @@ export function lanIPv4(ifaces: Interfaces = os.networkInterfaces() as Interface
   for (const [name, addrs] of Object.entries(ifaces))
     for (const i of addrs ?? [])
       if (i.family === "IPv4" && !i.internal)
-        out.push({ name, address: i.address, wifi: /wi-?fi|wlan/i.test(name) });
+        // Windows names the adapter "Wi-Fi"/"WLAN"; Linux uses wlan0 and the
+        // predictable-names scheme (wlp2s0, wlx00...), all of which start "wl".
+        out.push({ name, address: i.address, wifi: /wi-?fi|^wl/i.test(name) });
   return out;
 }
 

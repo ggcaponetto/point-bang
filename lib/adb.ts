@@ -21,7 +21,9 @@ export function adbReverse(
       detail: `adb reverse tcp:${port} active — open http://localhost:${port} on the phone`,
     };
   } catch (e) {
-    const first = (e as Error).message.split("\n")[0];
+    // adb.exe ends lines with \r\n — a plain "\n" split would leave the \r
+    // behind and the carriage return would eat the start of the printed line.
+    const first = (e as Error).message.split(/\r?\n/)[0];
     return {
       ok: false,
       detail:

@@ -4,7 +4,7 @@ import net from "node:net";
 import https from "node:https";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
-import { startServer, parseMode, type RunningServer } from "../server.ts";
+import { startServer, type RunningServer } from "../server.ts";
 import type { MouseLike } from "../lib/cursor.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -103,7 +103,34 @@ describe("startServer (http only)", () => {
     expect(js.status).toBe(200);
     expect(js.headers.get("content-type")).toBe("text/javascript");
 
+    const cfg = await fetch(base + "/buttons.json?v=2");
+    expect(cfg.status).toBe(200);
+    expect(cfg.headers.get("content-type")).toBe("application/json");
+
     expect((await fetch(base + "/nope.js")).status).toBe(404);
+    // A malformed percent-escape is refused outright rather than 404'd.
+    expect((await fetch(base + "/%zz")).status).toBe(403);
+  });
+
+  it("serves the phone page from embedded assets when given an AssetSource", async () => {
+    const f = fakeMouse();
+    running = await startServer({
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      assets: {
+        async read(name) {
+          if (name === "index.html") return Buffer.from("<h1>embedded</h1>");
+          if (name === "buttons.json")
+            return Buffer.from(JSON.stringify({ buttons: [{ id: "x", action: "key:z" }] }));
+          return null;
+        },
+      },
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: () => {},
+    });
+    const page = await fetch(`http://127.0.0.1:${running.httpPort}/`);
+    expect(await page.text()).toBe("<h1>embedded</h1>");
   });
 
   it("rejects path traversal attempts end-to-end", async () => {
@@ -163,12 +190,28 @@ describe("startServer (http only)", () => {
     ws.send(JSON.stringify({ type: "button", id: "b3", down: true }));
     ws.send(JSON.stringify({ type: "button", id: "b3", down: false }));
     await until(() => keys.length > 1);
-    expect(keys).toEqual(["press:A", "release:A"]);
+    expect(keys).toEqual(["press:a", "release:a"]);
 
     // unmapped id is logged, not crashed
     ws.send(JSON.stringify({ type: "button", id: "b99", down: true }));
     await until(() => logs.some((l) => l.includes("button b99: no action mapped")));
     ws.close();
+  });
+
+  it("loads an explicit buttons file in place of the built-in one", async () => {
+    const f = fakeMouse();
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      publicDir: PUBLIC,
+      buttonsFile: path.join(HERE, "no-such-buttons.json"),
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: (l) => logs.push(l),
+    });
+    expect(logs.some((l) => l.includes("buttons disabled"))).toBe(true);
+    expect(logs).toContain("buttons: 0 action(s) mapped");
   });
 
   it("logs calib and state messages, survives garbage", async () => {
@@ -215,15 +258,6 @@ describe("startServer (http only)", () => {
     expect(errSpy).toHaveBeenCalledWith("no permission");
     ws.close();
     errSpy.mockRestore();
-  });
-});
-
-describe("parseMode", () => {
-  it("recognizes the two explicit modes and defaults to all", () => {
-    expect(parseMode(["--mode=adb"])).toBe("adb");
-    expect(parseMode(["--mode=wifi"])).toBe("wifi");
-    expect(parseMode([])).toBe("all");
-    expect(parseMode(["--mode=warp"])).toBe("all");
   });
 });
 
@@ -296,6 +330,71 @@ describe("startServer (with TLS certs)", () => {
     ws.send(JSON.stringify({ type: "aim", u: 0, v: 0 }));
     await until(() => f.moves.length > 0);
     expect(f.moves[0]).toEqual([0, 0]);
+    ws.close();
+  });
+});
+
+describe("startServer input modes", () => {
+  /** Boots with no injected devices — the only path that would load libnut. */
+  async function bootVirtual(opts: Parameters<typeof startServer>[0]) {
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      publicDir: PUBLIC,
+      log: (l) => logs.push(l),
+      ...opts,
+    });
+    return { logs, srv: running };
+  }
+
+  it("prints the aim instead of moving a cursor with --input none", async () => {
+    const { logs, srv } = await bootVirtual({ input: "none", screen: { w: 1001, h: 1001 } });
+    expect(logs.join("\n")).toContain("input: VIRTUAL (--input none)");
+    expect(logs).toContain("input: assuming a 1001x1001 screen (--screen WxH to change)");
+    expect(logs).toContain("Screen: 1001x1001");
+
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.25, t: Date.now() }));
+    await until(() => logs.some((l) => l.startsWith("aim ")));
+    expect(logs.find((l) => l.startsWith("aim "))).toContain("500,250 px");
+
+    ws.send(JSON.stringify({ type: "button", id: "b1", down: true }));
+    await until(() => logs.includes("press  right"));
+    ws.close();
+  });
+
+  it("picks virtual input on a display-less Linux box, never reaching the addon", async () => {
+    const { logs } = await bootVirtual({ input: "auto", platform: "linux", env: {} });
+    expect(logs.join("\n")).toContain("input: VIRTUAL — no DISPLAY");
+    expect(logs).toContain("Screen: 1920x1080");
+  });
+
+  it("warns but obeys when native input is demanded without a display", async () => {
+    const f = fakeMouse();
+    const { logs } = await bootVirtual({
+      input: "native",
+      platform: "linux",
+      env: {},
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+    });
+    expect(logs.join("\n")).toContain("WARNING — no DISPLAY");
+    expect(logs.join("\n")).not.toContain("VIRTUAL");
+  });
+
+  it("lets an injected device win over the virtual one", async () => {
+    const f = fakeMouse();
+    const { logs, srv } = await bootVirtual({
+      input: "none",
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+    });
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 1, v: 1 }));
+    await until(() => f.moves.length > 0);
+    expect(f.moves[0]).toEqual([1919, 1079]);
+    expect(logs.some((l) => l.startsWith("aim "))).toBe(false);
     ws.close();
   });
 });

@@ -1,11 +1,17 @@
 /**
- * WiFi band detection via `netsh wlan show interfaces` (Windows only).
- * Parsing avoids locale-specific labels where possible: the "GHz" unit and
- * "SSID" label survive translation; the channel label is matched across
- * common locales.
+ * WiFi band detection — 5 GHz is what you want for low aim jitter.
+ *
+ * Windows reads `netsh wlan show interfaces`; parsing avoids locale-specific
+ * labels where possible (the "GHz" unit and the "SSID" label survive
+ * translation, the channel label is matched across common locales). Linux
+ * prefers `nmcli` (terse mode is locale-independent) and falls back to
+ * `iw dev`. Both Linux tools report the frequency in MHz, which pins the band
+ * exactly instead of inferring it from the channel number.
  *
  * @module
  */
+
+import { execSync } from "node:child_process";
 
 /** Parsed connection info; `connected: false` when no SSID is present. */
 export interface WifiReport {
@@ -14,14 +20,24 @@ export interface WifiReport {
   band?: string | null;
   channel?: string | null;
   signal?: string | null;
+  /** Set when the probe itself failed (no adapter, no tooling). */
+  error?: string;
 }
 
-/** Infers the band when netsh has no explicit Band line (ch 1–14 = 2.4 GHz). */
+/** Infers the band when only a channel number is available (ch 1–14 = 2.4 GHz). */
 export function bandFromChannel(channel: number): string {
   return channel <= 14 ? "2.4 GHz" : "5 GHz"; // ch 1-14 = 2.4
 }
 
-/** Extracts SSID, band, channel and signal from raw netsh output. */
+/** Exact band from a centre frequency in MHz, or `null` outside the WiFi bands. */
+export function bandFromMHz(mhz: number): string | null {
+  if (mhz >= 2400 && mhz < 2500) return "2.4 GHz";
+  if (mhz >= 4900 && mhz < 5925) return "5 GHz";
+  if (mhz >= 5925 && mhz <= 7125) return "6 GHz";
+  return null;
+}
+
+/** Extracts SSID, band, channel and signal from raw netsh output (Windows). */
 export function parseNetsh(output: string): WifiReport {
   const lines = output.split(/\r?\n/);
   const val = (re: RegExp): string | null => {
@@ -39,8 +55,100 @@ export function parseNetsh(output: string): WifiReport {
   };
 }
 
-/** Renders the `npm run wifi` report, including the 2.4 GHz warning. */
+// nmcli terse mode separates fields with ":" and backslash-escapes any colon
+// inside a value (SSIDs and MAC-shaped fields routinely contain them).
+function splitTerse(line: string): string[] {
+  return line.split(/(?<!\\):/).map((f) => f.replace(/\\:/g, ":"));
+}
+
+/**
+ * Parses `nmcli -t -f ACTIVE,SSID,CHAN,FREQ,SIGNAL device wifi` (Linux).
+ * Terse output is field-positional and locale-independent, so nothing here
+ * depends on the system language.
+ */
+export function parseNmcli(output: string): WifiReport {
+  for (const line of output.split(/\r?\n/)) {
+    const [active, ssid, chan, freq, signal] = splitTerse(line);
+    if (active !== "yes" || !ssid) continue;
+    const mhz = Number.parseInt(freq ?? "", 10);
+    return {
+      connected: true,
+      ssid,
+      band: Number.isNaN(mhz) ? null : bandFromMHz(mhz),
+      channel: chan || null,
+      signal: signal ? `${signal}%` : null,
+    };
+  }
+  return { connected: false };
+}
+
+/**
+ * Parses `iw dev` (Linux fallback when NetworkManager isn't in use). Only
+ * associated interfaces carry an `ssid` line, so an idle adapter reads as
+ * disconnected. `iw` reports no signal strength here.
+ */
+export function parseIwDev(output: string): WifiReport {
+  const ssid = /^\s*ssid\s+(.+)$/m.exec(output)?.[1].trim();
+  if (!ssid) return { connected: false };
+  const ch = /^\s*channel\s+(\d+)\s*\((\d+)\s*MHz\)/m.exec(output);
+  return {
+    connected: true,
+    ssid,
+    band: ch ? bandFromMHz(+ch[2]) : null,
+    channel: ch ? ch[1] : null,
+    signal: null,
+  };
+}
+
+/**
+ * Runs the right probe for `platform`.
+ * @returns The report, or `null` on a platform with no implementation.
+ */
+function probeWifi(exec: (cmd: string) => string, platform: string): WifiReport | null {
+  if (platform === "win32") {
+    try {
+      return parseNetsh(exec("netsh wlan show interfaces"));
+    } catch {
+      return { connected: false, error: "netsh failed — is there a WiFi adapter?" };
+    }
+  }
+  if (platform === "linux") {
+    try {
+      const r = parseNmcli(exec("nmcli -t -f ACTIVE,SSID,CHAN,FREQ,SIGNAL device wifi"));
+      if (r.connected) return r;
+    } catch {
+      // NetworkManager absent — iw is the fallback, not an error yet.
+    }
+    try {
+      return parseIwDev(exec("iw dev"));
+    } catch {
+      return { connected: false, error: "no WiFi info — install NetworkManager (nmcli) or iw" };
+    }
+  }
+  return null;
+}
+
+/**
+ * The `point-bang wifi` command: probe, print, and turn the result into an
+ * exit code (0 connected / no implementation, 1 disconnected or probe failed).
+ */
+export function wifiMain(
+  exec: (cmd: string) => string = (cmd) => execSync(cmd, { encoding: "utf8" }),
+  log: (line: string) => void = console.log,
+  platform: string = process.platform,
+): number {
+  const report = probeWifi(exec, platform);
+  if (!report) {
+    log("Band check is implemented for Windows and Linux — check your OS WiFi settings.");
+    return 0;
+  }
+  for (const line of renderWifiReport(report)) log(line);
+  return report.connected ? 0 : 1;
+}
+
+/** Renders the `point-bang wifi` report, including the 2.4 GHz warning. */
 export function renderWifiReport(r: WifiReport): string[] {
+  if (r.error) return [r.error];
   if (!r.connected) return ["Not connected to WiFi."];
   let verdict = r.band;
   if (!verdict && r.channel) verdict = bandFromChannel(+r.channel);

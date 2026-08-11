@@ -4,12 +4,18 @@
   "private": true,
   "description": "Phone WebXR -> PC cursor proof of concept",
   "type": "module",
+  "bin": {
+    "point-bang": "cli.ts"
+  },
   "scripts": {
-    "start": "node server.ts",
-    "start:adb": "node server.ts --mode=adb",
-    "start:wifi": "node server.ts --mode=wifi",
-    "ip": "node ip.ts",
-    "wifi": "node wifi.ts",
+    "start": "node cli.ts serve",
+    "start:adb": "node cli.ts serve --mode adb",
+    "start:wifi": "node cli.ts serve --mode wifi",
+    "ip": "node cli.ts ip",
+    "wifi": "node cli.ts wifi",
+    "check": "node cli.ts check",
+    "build:sea": "node build/sea.mjs",
+    "smoke": "node build/smoke.mjs",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
@@ -21,21 +27,28 @@
     "docs:dev": "npm run docs:api && vitepress dev docs",
     "docs:build": "npm run docs:api && vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "prepare": "husky"
+    "prepare": "husky",
+    "start:tunnel": "node cli.ts serve --tunnel ngrok",
+    "tunnel": "node cli.ts tunnel"
   },
   "engines": {
     "node": ">=23.6"
   },
   "dependencies": {
-    "@nut-tree-fork/nut-js": "^4.2.0",
-    "ws": "^8.17.0"
+    "@nut-tree-fork/libnut-linux": "^2.7.5",
+    "@nut-tree-fork/libnut-win32": "^2.7.5",
+    "ws": "^8.17.0",
+    "yargs": "^18.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/ws": "^8.5.0",
+    "@types/yargs": "^17.0.35",
     "@vitest/coverage-v8": "^3.2.0",
+    "esbuild": "^0.28.2",
     "husky": "^9.1.7",
     "knip": "^6.32.1",
+    "postject": "^1.0.0-alpha.6",
     "prettier": "^3.9.6",
     "typedoc": "^0.28.20",
     "typedoc-plugin-markdown": "^4.12.0",

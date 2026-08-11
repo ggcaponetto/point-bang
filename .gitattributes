@@ -1,0 +1,14 @@
+# Windows clones must not get CRLF: Git for Windows defaults to
+# core.autocrlf=true, which would rewrite the husky hooks (MSYS `sh` then
+# chokes on the trailing \r) and make `prettier --check .` fail on a fresh
+# clone with zero edits (prettier's endOfLine default is "lf").
+* text=auto eol=lf
+
+# Hooks are executed by `sh` — LF is not optional there.
+.husky/** text eol=lf
+
+# Certificates and native addons are byte-exact: never touch line endings.
+*.pem -text
+*.node binary
+*.dll binary
+*.exe binary

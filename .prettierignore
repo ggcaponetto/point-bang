@@ -1,5 +1,6 @@
 coverage/
 certs/
+dist/
 test/fixtures/
 package-lock.json
 docs/api/

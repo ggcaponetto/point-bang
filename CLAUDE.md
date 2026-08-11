@@ -8,20 +8,35 @@ Requires Node ≥ 23.6 (native type stripping runs .ts directly — no build).
 
 ```
 npm install
-npm start                        # node server.ts — http+ws on :8443 (PORT env overrides)
+npm start                        # node cli.ts serve — http+ws on :8443
 npm run start:adb                # USB flow only: runs `adb reverse` itself, no WiFi logs
 npm run start:wifi               # WiFi flow only: https URLs (certs) or Chrome-flag URLs
+npm run check                    # self-diagnosis: assets present? input addon loadable?
 npm test                         # vitest + coverage, FAILS below 90% on any metric
 npm run test:watch
 npm run typecheck                # tsc --noEmit (strict; also checks public/math.js JSDoc)
 npm run ip                       # LAN IPs, WiFi interface marked
-npm run wifi                     # 2.4 vs 5 GHz check (Windows)
+npm run wifi                     # 2.4 vs 5 GHz check (netsh / nmcli / iw)
 npm run format / format:check    # prettier (printWidth 100)
 npm run knip                     # unused files/exports/deps — keep it clean
 npm run validate                 # format:check + typecheck + knip + test
+npm run build:sea                # single executable -> dist/point-bang[.exe]
+npm run smoke                    # exercise the built executable
 
+node cli.ts --help               # every option is a flag; npm start -- --port 9000
+npm start -- --input none        # headless: print the aim, never touch the cursor
+npm start -- --screen 2560x1440  # screen assumed when there is none to measure
+npm run start:tunnel             # serve + ngrok in ONE process (needs a free authtoken)
+npm run tunnel                   # ngrok ONLY, to run beside a plain `npm start`
+npm start -- --tunnel ngrok --tunnel-url https://you.ngrok-free.app   # reserved domain
+npm run tunnel -- --port 9000 --url https://you.ngrok-free.app
 adb reverse tcp:8443 tcp:8443    # phone via USB; re-run after cable replug/adb restart
 ```
+
+Every command is one CLI (`cli.ts`, yargs): `serve` (default), `tunnel`, `ip`,
+`wifi`, `check`. Flags replaced the `PORT`/`PREDICT_MS` env vars — `FOO=bar cmd` is
+bash-only syntax and this project's primary platform is Windows. Both env
+vars are still honoured as defaults.
 
 Phone: Chrome → http://localhost:8443 → START AR → capture corners TL, TR, BL.
 End-to-end aim feel is still verified manually (see Working agreement) plus
@@ -49,25 +64,36 @@ use this approach; the only prior art is a hobbyist native app
 
 ```
 ./
-├── server.ts          # entry: wires http/https + ws + cursor loop; isMain-guarded
-├── ip.ts, wifi.ts     # thin CLI entries over lib/ functions
+├── cli.ts             # THE entry (yargs): logic-free, works as script and as SEA
+├── server.ts          # wires http/https + ws + cursor loop; no isMain block
 ├── lib/               # typed, unit-tested logic
+│   ├── cli.ts         #   flag surface (buildParser) + command dispatch (runCli)
 │   ├── protocol.ts    #   message types + parseMessage (never crash on garbage)
 │   ├── buttons.ts     #   action parsing (key combos/mouse) + executor + config load
 │   ├── cursor.ts      #   MouseLike interface, scaleToScreen, apply-latest loop
 │   ├── jitter.ts      #   JitterWindow p50/p95/max
 │   ├── predict.ts     #   AimPredictor: velocity fit + capped lookahead (Phase 3)
-│   ├── static.ts      #   safeResolve (traversal guard) + content types
+│   ├── static.ts      #   normalizeUrlPath + safeResolve (traversal) + content types
+│   ├── assets.ts      #   AssetSource: public/ on disk OR embedded SEA assets
 │   ├── certs.ts       #   optional mkcert TLS loading
-│   ├── input.ts       #   nut-js adapter behind MouseLike (koffi slots in later)
+│   ├── native.ts      #   loads libnut.node: require in dev, extract+dlopen in a SEA
+│   ├── input.ts       #   MouseLike/KeyboardLike over raw libnut (koffi slots in later)
+│   ├── virtual.ts     #   same interfaces, but PRINT the aim — headless/no-DISPLAY mode
+│   ├── tunnel.ts      #   optional public HTTPS URL via the ngrok agent (opt-in)
+│   ├── check.ts       #   `point-bang check` self-diagnosis
+│   ├── version.ts     #   VERSION literal (no package.json inside an executable)
 │   ├── net.ts         #   lanIPv4 + report formatting
-│   └── wifi.ts        #   netsh parsing (locale-tolerant)
+│   └── wifi.ts        #   band detection: netsh / nmcli / iw, all locale-tolerant
+├── build/
+│   ├── sea.mjs        # esbuild -> sea-config -> postject. The ONLY build step.
+│   └── smoke.mjs      # runs the built binary: --version/--help/ip/check
 ├── public/
 │   ├── index.html     # phone page: XR/DOM/WS glue only (script type=module)
 │   ├── buttons.json   # 20 assignable buttons: label/action/visible (phone + PC read it)
 │   └── math.js        # phone math: V, OneEuro, intersectUV… (plain JS + JSDoc,
 │                      #   imported by BOTH Chrome and vitest — keep it dependency-free)
 ├── test/              # vitest suites + fixtures/ (self-signed cert for https tests)
+├── .gitattributes     # eol=lf everywhere — a CRLF clone breaks husky + prettier
 ├── .husky/            # pre-commit: prettier+typecheck; pre-push: npm run validate
 └── .mcp.json          # context7 MCP server (up-to-date library docs in Claude Code)
 ```
@@ -76,10 +102,13 @@ Verified working end-to-end: phone calibrates, PC cursor follows aim.
 Served on :8443. Dev transport is `adb reverse tcp:8443 tcp:8443` + phone
 opening http://localhost:8443 (localhost = secure context, so no HTTPS needed;
 USB = near-zero network jitter). Static files must live in `public/` — a past
-bug was files placed flat next to server.js causing 404s.
+bug was files placed flat next to the server causing 404s. They are also the
+SEA asset list in `lib/assets.ts`; adding a file to `public/` means adding it
+there too, or the executable 404s what the checkout serves fine.
 
-WiFi testing (no adb): if mkcert certs exist at `poc/certs/{cert.pem,key.pem}`,
-server.js additionally serves https+wss on :8444 and prints LAN URLs; phone
+WiFi testing (no adb): if mkcert certs exist in `certs/{cert.pem,key.pem}`
+(next to the program — the repo root, or beside the executable; `--certs`
+overrides), the server additionally serves https+wss on :8444 and prints LAN URLs; phone
 opens https://<PC-IP>:8444 (mkcert root CA must be installed on the phone).
 Zero-setup alternative: Chrome flag `#unsafe-treat-insecure-origin-as-secure`
 with http://<PC-IP>:8443. Both documented in README. This is testing transport
@@ -112,15 +141,15 @@ What index.html already contains (reuse, don't reinvent):
   panel (nudge pad shifting sent u,v by 0.5%/tap — applied AFTER the filter,
   zeroed on recalibrate — plus the smoothing slider).
 
-What server.js already contains:
+What server.ts already contains:
 
 - Apply-latest cursor pattern: only newest aim sample applied per ~2ms tick,
   never a queue of stale positions. `pyautogui`-style pause pitfalls avoided.
-  `mouse.config.autoDelayMs = 0` — the nut-js default of 100 sleeps inside
-  button press/release (~200ms per fire click); setPosition itself is 0.2ms.
+  `setMouseDelay(0)`/`setKeyboardDelay(0)` — libnut's defaults sleep inside
+  button press/release (~200ms per fire click); moveMouse itself is 0.2ms.
 - Jitter stats: prints p50/p95/max of (arrival − t) minus window-min every 2s.
   (Clock offset unknown → only jitter is meaningful, not absolute latency.)
-- `fire` → left click via nut-js.
+- `fire` → left click via libnut.
 
 ## Protocol v1 (FROZEN — extend, never change existing fields)
 
@@ -158,10 +187,41 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   `lib/` or `public/math.js` where it's unit-testable; entry files stay thin
   with `isMain` guards. Server behavior is integration-tested with an
   injected fake MouseLike — tests must never move the real cursor or click.
-- **Cursor injection: @nut-tree-fork/nut-js** (robotjs is dead; original
-  nut.js went commercial). If a game rejects synthetic input or needs true
-  absolute injection, add a Windows-only path using `koffi` FFI →
-  `SendInput` with `MOUSEEVENTF_ABSOLUTE`, behind the same interface.
+- **Cursor injection: the raw libnut addon** (`@nut-tree-fork/libnut-linux` /
+  `-win32`), not the nut-js wrapper (user decision 2026-08-11, supersedes the
+  original nut-js choice). Three reasons: nut-js's `bindings`-based module
+  lookup cannot survive bundling into a single executable; it dragged `jimp`
+  (~120 transitive packages) along for screen capture we never use; and we
+  only need six calls — `moveMouse`, `mouseClick`, `mouseToggle`, `keyToggle`,
+  `getScreenSize`, `set*Delay`. Key names in buttons.json are libnut's
+  vocabulary (`control`, `f4`, `numpad_7`), validated at config load.
+  If a game rejects synthetic input or needs true absolute injection, add a
+  Windows-only path using `koffi` FFI → `SendInput` with
+  `MOUSEEVENTF_ABSOLUTE`, behind the same interface.
+- **Single executable via Node SEA** (user decision 2026-08-11). `cli.ts` is
+  the only entry; `build/sea.mjs` bundles it to CJS with esbuild, lists
+  `public/*` and `libnut.node` as SEA assets, and injects with postject. A
+  SEA blob cannot hold a native addon, so `lib/native.ts` writes the addon
+  (plus the Windows CRT DLLs) to a version-keyed temp dir and `process.dlopen`s
+  it. **This is the only build step and nothing in the dev loop may depend on
+  it** — `node cli.ts` must always run straight from source. Constraints it
+  imposes: no top-level await in `cli.ts` (CJS), `import.meta.url` is rewritten
+  by a define, and no cross-compiling (build on the OS you ship for).
+- **Public tunnel: drive the `ngrok` CLI, never its SDK** (user request
+  2026-08-11). `--tunnel ngrok` gives the phone an HTTPS origin from any
+  network — a secure context, so WebXR needs neither mkcert nor a Chrome flag,
+  and `wss://` rides the same tunnel because the page derives its WS scheme
+  from `location.protocol`. The `@ngrok/ngrok` SDK is a native addon and a SEA
+  blob cannot hold one, so we spawn the binary, exactly as `lib/adb` and
+  `lib/wifi` shell out. The URL is read from the agent's documented local API
+  (`127.0.0.1:4040/api/tunnels`, matched on OUR port and `proto: https`), not
+  scraped from log lines; an agent already running is adopted rather than
+  fought with, since the free plan allows one session. `--log=stdout` is
+  mandatory or the agent's full-screen TUI eats the terminal. Verified against
+  agent 3.39: `--region` is deprecated (it auto-picks lowest latency) — hence
+  `--tunnel-url` for a reserved domain instead. This is a setup convenience,
+  NOT a play transport: it adds a public-internet round trip, and Phase 4's
+  WebRTC plan is unaffected.
 - **Transport:** WebSocket over the adb/USB tunnel is the dev default and a
   legitimate final mode (steady ~3ms, zero WiFi jitter, phone charges; wired
   guns are period-accurate). Wireless play mode = mkcert HTTPS + WebRTC
@@ -192,7 +252,7 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 3. **Extrapolation + prediction PC-side.** IMPLEMENTED (lib/predict.ts):
    least-squares velocity over last ~120ms, projected age+20ms ahead (capped
    45ms), cursor loop pulls the prediction every 2ms; predictor resets on
-   tracking lost. PREDICT_MS env tunes lookahead. Exit criterion still open:
+   tracking lost. `--predict-ms` tunes lookahead. Exit criterion still open:
    measured motion-to-cursor improvement needs the Phase-2 harness.
 4. **Wireless mode.** mkcert cert flow documented; WebRTC DataChannel with
    perfect-negotiation pattern; auto-fallback to WS. Exit: cable-free play
@@ -205,8 +265,10 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
    aimed from two different standing positions.
 6. **Polish.** Multi-gun (2 phones, distinct WS ids → two cursors/inputs
    where the game supports it), config persistence (last calibration method,
-   smoothing, aspect), phone haptics on fire (`navigator.vibrate`), optional
-   TS migration.
+   smoothing, aspect), phone haptics on fire (`navigator.vibrate`).
+   Distribution is done: `npm run build:sea` ships a single executable for
+   Windows and Linux, built and smoke-tested per-OS in CI. What's left here
+   is publishing them as release artifacts.
 
 ## Key algorithms (reference — implementations live in public/math.js, tested in test/math.test.ts)
 
@@ -239,9 +301,36 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 - Corner capture order is TL, TR, BL exactly; wrong order ⇒ mirrored/rotated
   cursor. Aspect check catches sloppy taps; predicted 4th corner is a
   further check worth adding.
-- nut-js needs macOS Accessibility permission; Windows games in exclusive
+- libnut on Linux needs X11 + the XTEST extension (`libx11`, `libxtst`);
+  Wayland needs Xwayland and a headless box cannot inject at all. Worse, with
+  the libs present but no `DISPLAY`, libnut prints "Could not open main
+  display" and **kills the process** — it does not throw, so no try/catch can
+  save you. `lib/check.ts` and `startServer` both guard on `hasDisplay()`
+  _before_ calling in (`serve` falls back to the printing devices in
+  `lib/virtual.ts`); keep any new native call behind the same guard. Windows games in exclusive
   fullscreen sometimes ignore synthetic cursor moves ⇒ koffi/SendInput path.
+- Windows raises a Defender Firewall prompt on the first `serve`; dismissing
+  it silently breaks the WiFi flow while USB keeps working.
+- `--tunnel ngrok` publishes an **unauthenticated** socket that moves the mouse
+  and presses keys to the public internet. The startup banner says so; do not
+  quiet it. Other tunnel facts, all confirmed against agent 3.39: the free plan
+  shows a one-time ERR_NGROK_6024 interstitial to browsers (tap "Visit Site" —
+  the `ngrok-skip-browser-warning` header cannot help a phone that is simply
+  navigating), allows one agent session at a time, and gives a random URL
+  unless a reserved one is passed. The agent attaches `err` to routine `info`
+  records too, so only `eror`/`crit` levels may be reported as a failure — and
+  its real errors are multi-line with CRLF, so flatten before logging.
 - Static files must be in `public/`; path traversal guard exists in server.
+- **No `FOO=bar cmd` in scripts or docs** — cmd.exe and PowerShell both reject
+  it. Add a CLI flag instead. Likewise no `cp`/`rm`/`mkdir` in npm scripts:
+  `build/*.mjs` are Node programs precisely so they run on both shells.
+- Missing `.gitattributes` was a latent Windows-only breakage: `core.autocrlf`
+  rewrites the husky hooks (MSYS `sh` chokes on `\r`), the PEM fixtures, and
+  makes `prettier --check` fail on a fresh clone. It is pinned to `eol=lf`.
+- Anything parsing external command output must split on `/\r?\n/` — Windows
+  tools emit CRLF and a bare `"\n"` split leaves a `\r` that eats the line.
+- Linux WiFi interfaces are `wlp2s0`/`wlx…`, matching neither "wifi" nor
+  "wlan" — `lib/net.ts` matches `^wl` for that reason.
 - Overlay controls (FIRE, slider) start hidden via **inline** style, and JS
   reveals them with `style.display=""`. Never move the hiding into a CSS rule:
   clearing the inline style falls back to the stylesheet, so a CSS
@@ -261,6 +350,10 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 
 - Never break the working POC flow: `npm start` + adb tunnel + 3-corner
   calibration must always work on `main`. Test after refactors.
+- Everything must work on **Windows and Linux**. Platform-specific behavior
+  goes in `lib/` behind an injectable function (`exec`, `platform`) so both
+  paths are unit-testable from either machine — never a bare `process.platform`
+  check inline. CI runs the gates on both OSes.
 - `npm run validate` must pass before any change is done (husky enforces it
   on push); new logic ships with tests (coverage gate is 90%, don't game it
   with exclusions), prettier owns formatting, knip stays clean.
@@ -268,6 +361,9 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 - Protocol changes are additive only; bump a `"v"` field if semantics change.
 - Prefer measured numbers over assumptions: when touching latency-relevant
   code, run/extend the Phase-2 harness and report before/after p50/p95.
-- Ask before adding dependencies beyond: ws, @nut-tree-fork/nut-js, koffi
-  (Windows input path), mkcert (dev tooling, not a dep).
+- Ask before adding dependencies beyond: ws, yargs, @nut-tree-fork/libnut-*,
+  esbuild + postject (SEA build only), koffi (Windows input path), mkcert
+  (dev tooling, not a dep).
+- knip ignores the `@nut-tree-fork/libnut-*` packages: they are resolved by a
+  computed specifier at runtime, so static analysis can't see them.
 - Commit style: small commits per phase step, message prefix `P<phase>:`.
