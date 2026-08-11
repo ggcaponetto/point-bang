@@ -76,7 +76,7 @@ export interface ServerOptions {
   buttonsFile?: string;
   log?: (line: string) => void;
   statsIntervalMs?: number;
-  predictMs?: number; // extrapolation lookahead; 0 keeps prediction minimal
+  predictMs?: number; // extrapolation lookahead; 0 (default) = off, newest sample only
   input?: InputMode;
   /** Screen assumed in virtual-input mode, where none can be measured. */
   screen?: { w: number; h: number };
@@ -152,7 +152,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // ---------- cursor control ----------
   const size = await mouse.screenSize();
   log(`Screen: ${size.w}x${size.h}`);
-  const predictor = new AimPredictor(opts.predictMs ?? 20);
+  const predictor = new AimPredictor(opts.predictMs ?? 0);
   const cursor = createCursorLoop(
     mouse,
     () => size,

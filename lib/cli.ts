@@ -131,8 +131,8 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
           })
           .option("predict-ms", {
             type: "number",
-            default: numFromEnv(env.PREDICT_MS) ?? 20,
-            describe: "aim extrapolation lookahead; 0 keeps prediction minimal",
+            default: numFromEnv(env.PREDICT_MS) ?? 0,
+            describe: "aim extrapolation lookahead in ms; 0 (default) = off",
           })
           .option("certs", {
             type: "string",

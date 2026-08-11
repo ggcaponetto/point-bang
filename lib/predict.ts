@@ -5,6 +5,12 @@
  * loop move smoothly BETWEEN 60Hz phone frames. It is prediction, not
  * smoothing — One Euro stays phone-side (don't double-smooth).
  *
+ * OFF by default (user decision 2026-08-11): the projected lead is visible as
+ * the cursor running ahead of aim — clearest in raw-aim mode, where no filter
+ * lag masks it — and felt wrong. With lookahead 0 the predictor is a pure
+ * newest-sample passthrough; `--predict-ms <n>` re-enables extrapolation for
+ * Phase-2 harness experiments.
+ *
  * @module
  */
 
@@ -25,10 +31,11 @@ export class AimPredictor {
   private maxTotalMs: number;
   private windowMs: number;
 
-  // lookaheadMs compensates phone-side capture->send latency we can't measure;
-  // the total projection (sample age + lookahead) is capped so a dropped
-  // connection or flick can't overshoot far.
-  constructor(lookaheadMs = 20, maxTotalMs = 45, windowMs = 120) {
+  // lookaheadMs <= 0 disables extrapolation entirely (newest sample verbatim).
+  // When positive it compensates phone-side capture->send latency we can't
+  // measure; the total projection (sample age + lookahead) is capped so a
+  // dropped connection or flick can't overshoot far.
+  constructor(lookaheadMs = 0, maxTotalMs = 45, windowMs = 120) {
     this.lookaheadMs = lookaheadMs;
     this.maxTotalMs = maxTotalMs;
     this.windowMs = windowMs;
@@ -47,6 +54,7 @@ export class AimPredictor {
     const n = this.samples.length;
     if (n === 0) return null;
     const last = this.samples[n - 1];
+    if (this.lookaheadMs <= 0) return { u: last.u, v: last.v }; // extrapolation off
     if (n < 3) return { u: last.u, v: last.v }; // no velocity estimate yet
 
     let tm = 0;

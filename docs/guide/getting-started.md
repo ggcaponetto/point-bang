@@ -31,7 +31,7 @@ Every option is a flag — no environment variables, so the same command works
 in bash, cmd.exe and PowerShell:
 
 ```sh
-npm start -- --port 9000 --predict-ms 30
+npm start -- --port 9000 --mode adb
 node cli.ts --help
 ```
 

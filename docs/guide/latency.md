@@ -29,26 +29,28 @@ Push it right until the jitter bothers you, then back off a notch. The One
 Euro filter is adaptive (smooth when slow, responsive when flicking), so
 mid positions are better than they sound.
 
-## 3. PC-side prediction
+## 3. PC-side prediction (off by default)
 
-The server extrapolates aim with a least-squares velocity fit over the last
-~120ms of samples, projecting sample-age + 20ms ahead (capped at 45ms), and
-moves the cursor every 2ms along the predicted path. This hides network
-jitter and about a frame of delay.
+The server can extrapolate aim with a least-squares velocity fit over the
+last ~120ms of samples, projecting sample-age + lookahead ahead (capped at
+45ms) to hide network jitter and about a frame of delay. The flip side is
+that the cursor **leads** your aim — clearest with the slider fully right,
+where no filter lag masks it — so prediction is **off by default**: the
+cursor goes exactly where the newest sample says.
 
-Tune with `--predict-ms`, which works the same in bash, cmd.exe and
+Opt in with `--predict-ms`, which works the same in bash, cmd.exe and
 PowerShell:
 
 ```sh
-point-bang serve --predict-ms 30   # more aggressive lookahead
-point-bang serve --predict-ms 0    # minimal prediction
+point-bang serve --predict-ms 20   # extrapolate 20ms past each sample's age
+point-bang serve --predict-ms 0    # off (the default): newest sample only
 ```
 
-From a checkout, `npm start -- --predict-ms 30` does the same thing. The
+From a checkout, `npm start -- --predict-ms 20` does the same thing. The
 `PREDICT_MS` environment variable is still read as a fallback.
 
-Prediction resets automatically when tracking is lost, so stale velocity
-never drags the cursor.
+When enabled, prediction resets automatically on tracking loss, so stale
+velocity never drags the cursor.
 
 ## 4. Aim offset (nudge pad)
 

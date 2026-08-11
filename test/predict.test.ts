@@ -7,11 +7,18 @@ describe("AimPredictor", () => {
   });
 
   it("returns the latest sample while velocity is unknown (<3 samples)", () => {
-    const p = new AimPredictor();
+    const p = new AimPredictor(20);
     p.add(0.2, 0.3, 1000);
     expect(p.predict(1050)).toEqual({ u: 0.2, v: 0.3 });
     p.add(0.4, 0.5, 1016);
     expect(p.predict(1050)).toEqual({ u: 0.4, v: 0.5 });
+  });
+
+  it("lookahead 0 (the default) disables extrapolation — newest sample verbatim", () => {
+    const p = new AimPredictor();
+    // fast steady motion, stale by 10ms: extrapolation would land ahead of 0.048
+    for (const t of [1000, 1016, 1032, 1048]) p.add((t - 1000) * 0.001, 0.5, t);
+    expect(p.predict(1058)).toEqual({ u: 0.048, v: 0.5 });
   });
 
   it("projects constant velocity ahead by age + lookahead", () => {
@@ -44,7 +51,7 @@ describe("AimPredictor", () => {
   });
 
   it("handles identical timestamps without dividing by zero", () => {
-    const p = new AimPredictor();
+    const p = new AimPredictor(20);
     p.add(0.1, 0.1, 1000);
     p.add(0.2, 0.2, 1000);
     p.add(0.3, 0.3, 1000);
@@ -52,7 +59,7 @@ describe("AimPredictor", () => {
   });
 
   it("keeps a bounded window of samples", () => {
-    const p = new AimPredictor(0, 45, 1000);
+    const p = new AimPredictor(20, 45, 1000);
     for (let i = 0; i < 50; i++) p.add(i, 0, 1000 + i * 16);
     // window holds at most 8 samples: regression stays local, prediction finite
     const out = p.predict(1000 + 49 * 16)!;

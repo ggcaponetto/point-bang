@@ -32,7 +32,7 @@ Everything is one CLI underneath — `npm start` is `node cli.ts serve`. Pass
 flags through npm with `--`:
 
 ```sh
-npm start -- --port 9000 --predict-ms 30
+npm start -- --port 9000 --mode adb
 node cli.ts --help
 ```
 

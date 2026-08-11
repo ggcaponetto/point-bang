@@ -35,7 +35,7 @@ describe("serve defaults", () => {
     expect(o.mode).toBe("all");
     expect(o.port).toBe(8443);
     expect(o.httpsPort).toBe(8444);
-    expect(o.predictMs).toBe(20);
+    expect(o.predictMs).toBe(0);
     expect(o.certsDir).toBe(path.join("/app", "certs"));
   });
 

@@ -9,7 +9,7 @@
 └─────────────────────────────────────────────────────────────────┼───────────┘
                                             USB tunnel or WiFi    │
 ┌─────────────────────────────── PC (Node) ───────────────────────┼───────────┐
-│ parseMessage ─→ AimPredictor (velocity fit, +20ms) ─→ 2ms cursor loop       │
+│ parseMessage ─→ newest aim sample (optional prediction) ─→ 2ms cursor loop  │
 │              └→ button executor (key combos / mouse via libnut)            │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -19,7 +19,7 @@ tracking provides absolute, drift-corrected 6DoF pose at gyro-class latency.
 The aim ray is intersected with a screen plane calibrated once per session
 from three corner captures (each pinned to a WebXR anchor that keeps
 self-correcting as ARCore refines its map). Normalized coordinates stream
-over a WebSocket to the PC, which predicts, scales, and injects absolute
+over a WebSocket to the PC, which scales them to pixels and injects absolute
 mouse input.
 
 ## Why this approach
@@ -41,7 +41,7 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
 │   ├── protocol.ts    #   message parsing — never crashes on garbage
 │   ├── buttons.ts     #   action parsing + executor + config loading
 │   ├── cursor.ts      #   MouseLike interface + the 2ms pull loop
-│   ├── predict.ts     #   AimPredictor: velocity fit, capped lookahead
+│   ├── predict.ts     #   AimPredictor: velocity fit, capped lookahead (opt-in)
 │   ├── jitter.ts      #   p50/p95/max transport jitter stats
 │   ├── native.ts      #   loads libnut.node (from disk, or out of the SEA blob)
 │   ├── input.ts       #   MouseLike/KeyboardLike over libnut (delays zeroed!)
@@ -72,11 +72,13 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
 - **One CLI, two homes.** `cli.ts` is the entry for both `node cli.ts` and the
   single executable; the only difference is where assets come from
   (`lib/assets.ts`) and where `certs/` is looked for.
-- **Apply-latest, never queue.** The cursor loop pulls the newest predicted
+- **Apply-latest, never queue.** The cursor loop pulls the newest target
   position each tick; no queue of stale positions can form anywhere.
 - **Filtering split.** One Euro smoothing lives phone-side (kills ARCore
   micro-jumps adaptively); extrapolation lives PC-side (hides network
-  jitter). They compose; they never double-smooth.
+  jitter) but is **off by default** — the projected lead was visible as the
+  cursor running ahead of aim, so `--predict-ms` is opt-in. They compose;
+  they never double-smooth.
 - **Everything injectable.** The server takes mouse/keyboard/ports/config as
   options — integration tests drive a real server with fake devices, and a
   future Windows SendInput path can replace libnut behind the same

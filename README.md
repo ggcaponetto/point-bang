@@ -31,7 +31,7 @@ flowchart LR
     end
     C -- "WebSocket (USB tunnel or WiFi)" --> D
     subgraph pc [🖥️ PC — Node]
-        D[aim prediction<br/>velocity fit +20ms] --> E[2ms cursor loop]
+        D[newest aim sample<br/>optional prediction] --> E[2ms cursor loop]
         E --> F[absolute mouse input]
         D -.-> G[20 configurable buttons<br/>key combos & clicks]
     end
@@ -80,9 +80,9 @@ point-bang --help
 
 - 🎯 **Absolute aim, no drift** — WebXR `immersive-ar` with anchor-pinned,
   self-correcting calibration; two-ray fallback for hard-to-track screens.
-- ⚡ **Latency-obsessed** — One Euro filtering phone-side, least-squares aim
-  prediction PC-side, a 2ms cursor loop, zeroed input-driver delays, and
-  live p50/p95 jitter stats to prove it.
+- ⚡ **Latency-obsessed** — One Euro filtering phone-side, a 2ms newest-wins
+  cursor loop, zeroed input-driver delays, optional aim extrapolation
+  (`--predict-ms`, off by default), and live p50/p95 jitter stats to prove it.
 - 🕹️ **20 assignable buttons** — one JSON file maps on-screen buttons to any
   key combo or mouse button, press-and-hold included, and places each one
   anywhere on the screen (default: big LEFT/RIGHT click halves plus A/B).
