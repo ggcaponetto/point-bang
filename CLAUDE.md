@@ -89,7 +89,7 @@ use this approach; the only prior art is a hobbyist native app
 │   └── smoke.mjs      # runs the built binary: --version/--help/ip/check
 ├── public/
 │   ├── index.html     # phone page: XR/DOM/WS glue only (script type=module)
-│   ├── buttons.json   # 20 assignable buttons: label/action/visible (phone + PC read it)
+│   ├── buttons.json   # 20 assignable buttons: label/action/visible/rect (phone + PC read it)
 │   └── math.js        # phone math: V, OneEuro, intersectUV… (plain JS + JSDoc,
 │                      #   imported by BOTH Chrome and vitest — keep it dependency-free)
 ├── test/              # vitest suites + fixtures/ (self-signed cert for https tests)
@@ -136,10 +136,13 @@ What index.html already contains (reuse, don't reinvent):
   future reload gesture).
 - Tracking state (good/limited/lost from pose null / emulatedPosition) shown
   in HUD and sent to PC on change. wakeLock requested.
-- Post-calibration UI: FIRE, a scrollable strip of the `visible` buttons from
-  buttons.json (pointerdown/up → button down/up messages), and the aim-adjust
-  panel (nudge pad shifting sent u,v by 0.5%/tap — applied AFTER the filter,
-  zeroed on recalibrate — plus the smoothing slider).
+- Post-calibration UI: the `visible` buttons from buttons.json (pointerdown/up
+  → button down/up messages) — an entry with a `rect` ({x,y,w,h} in % of the
+  screen) is absolutely placed in #btnLayer (defaults: big LEFT/RIGHT click
+  buttons + A/B); without one it falls into the scrollable strip, "fire" into
+  the big red slot — and the aim-adjust panel (nudge pad shifting sent u,v by
+  0.5%/tap — applied AFTER the filter, zeroed on recalibrate — plus the
+  smoothing slider).
 
 What server.ts already contains:
 
@@ -164,10 +167,11 @@ What server.ts already contains:
 - t = phone Date.now() (ms). q = tracking confidence 1 | 0.5.
 
 v2 (IMPLEMENTED, additive): `{"type":"button","id":"b1".."b20","down":bool}`
-— ids/labels/actions configured in `public/buttons.json` (single source of
-truth: phone renders `visible` buttons from it, PC maps ids to key combos or
-mouse press/release via lib/buttons.ts). down/up as separate events so holds
-work; keys release in reverse order.
+— ids/labels/actions/placement configured in `public/buttons.json` (single
+source of truth: phone renders `visible` buttons from it where their `rect`
+says, PC maps ids to key combos or mouse press/release via lib/buttons.ts and
+reports malformed rects). down/up as separate events so holds work; keys
+release in reverse order.
 
 Still planned (additive): `{"type":"ping","t":...}` / `{"type":"pong",...}`
 for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.

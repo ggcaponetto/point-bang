@@ -99,6 +99,34 @@ export function intersectUV(plane, pos, dir) {
 }
 
 /**
+ * Button placement from buttons.json: `rect` is `{x,y,w,h}` in percent of the
+ * screen, origin top-left. Returns a copy clamped to stay on screen, or null
+ * when the value is not a usable rect (the button falls back to the strip).
+ * @param {unknown} rect
+ * @returns {{ x: number, y: number, w: number, h: number } | null}
+ */
+export function normalizeButtonRect(rect) {
+  if (typeof rect !== "object" || rect === null) return null;
+  const { x, y, w, h } = /** @type {{ x?: unknown, y?: unknown, w?: unknown, h?: unknown }} */ (
+    rect
+  );
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    typeof w !== "number" ||
+    typeof h !== "number" ||
+    ![x, y, w, h].every(Number.isFinite)
+  )
+    return null;
+  const cx = Math.min(Math.max(x, 0), 100);
+  const cy = Math.min(Math.max(y, 0), 100);
+  const cw = Math.min(w, 100 - cx);
+  const ch = Math.min(h, 100 - cy);
+  if (cw <= 0 || ch <= 0) return null;
+  return { x: cx, y: cy, w: cw, h: ch };
+}
+
+/**
  * One Euro filter: adaptive low-pass — smooth when slow, responsive when
  * flicking. At-rest lag ≈ 1/(2π·minCutoff) seconds.
  */

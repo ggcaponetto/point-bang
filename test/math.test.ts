@@ -6,6 +6,7 @@ import {
   planeFromCorners,
   aspectFromCorners,
   intersectUV,
+  normalizeButtonRect,
   OneEuro,
 } from "../public/math.js";
 
@@ -97,6 +98,39 @@ describe("plane helpers", () => {
     it("returns null when aiming parallel to the plane", () => {
       expect(intersectUV(p, [0.2, 0.9, 0], [1, 0, 0])).toBeNull();
     });
+  });
+});
+
+describe("normalizeButtonRect", () => {
+  it("passes a good rect through", () => {
+    expect(normalizeButtonRect({ x: 2, y: 30, w: 44, h: 30 })).toEqual({
+      x: 2,
+      y: 30,
+      w: 44,
+      h: 30,
+    });
+  });
+  it("clamps a rect back onto the screen", () => {
+    expect(normalizeButtonRect({ x: -10, y: 90, w: 50, h: 50 })).toEqual({
+      x: 0,
+      y: 90,
+      w: 50,
+      h: 10,
+    });
+  });
+  it("rejects non-objects and missing/non-numeric fields", () => {
+    expect(normalizeButtonRect(undefined)).toBeNull();
+    expect(normalizeButtonRect(null)).toBeNull();
+    expect(normalizeButtonRect("2,30,44,30")).toBeNull();
+    expect(normalizeButtonRect({ x: 2, y: 30, w: 44 })).toBeNull();
+    expect(normalizeButtonRect({ x: "2", y: 30, w: 44, h: 30 })).toBeNull();
+    expect(normalizeButtonRect({ x: NaN, y: 30, w: 44, h: 30 })).toBeNull();
+  });
+  it("rejects empty and fully off-screen rects", () => {
+    expect(normalizeButtonRect({ x: 2, y: 30, w: 0, h: 30 })).toBeNull();
+    expect(normalizeButtonRect({ x: 2, y: 30, w: 44, h: -5 })).toBeNull();
+    expect(normalizeButtonRect({ x: 100, y: 30, w: 44, h: 30 })).toBeNull();
+    expect(normalizeButtonRect({ x: 2, y: 120, w: 44, h: 30 })).toBeNull();
   });
 });
 

@@ -26,7 +26,7 @@ describe("runCheck", () => {
     });
     expect(code).toBe(0);
     expect(logs.some((l) => l.startsWith("asset index.html"))).toBe(true);
-    expect(logs).toContain("buttons: 5 action(s) mapped");
+    expect(logs).toContain("buttons: 4 action(s) mapped");
     expect(logs).toContain("input: ready — screen 1920x1080");
   });
 

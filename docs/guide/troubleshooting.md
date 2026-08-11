@@ -102,9 +102,9 @@ delay.
 
 ## Buttons don't appear
 
-The strip and FIRE only appear **after calibration completes**. If they
-still don't, check the server's startup log for `buttons:` lines reporting
-config problems.
+All buttons — placed ones and the strip — only appear **after calibration
+completes**. If they still don't, check the server's startup log for
+`buttons:` lines reporting config problems (a bad `rect` also lands there).
 
 ## adb tunnel died
 

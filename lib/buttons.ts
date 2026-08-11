@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { normalizeButtonRect } from "../public/math.js";
 import type { MouseButton, MouseLike } from "./cursor.ts";
 
 /**
@@ -12,6 +13,10 @@ import type { MouseButton, MouseLike } from "./cursor.ts";
  * - `""` — unassigned (button does nothing PC-side)
  *
  * down=true presses, down=false releases — so holds work (autofire, ducking).
+ *
+ * An optional `rect` per button ({x,y,w,h} in % of the screen) places it on
+ * the phone overlay. Only the phone uses it, but a malformed one is reported
+ * here at load so a mispositioned button is a log line, not a mystery.
  *
  * @module
  */
@@ -113,6 +118,7 @@ interface ButtonDef {
   label: string;
   action: string;
   visible: boolean;
+  rect?: unknown;
 }
 
 /** Result of loading buttons.json: the id→action map plus any config problems. */
@@ -158,6 +164,8 @@ export function parseButtonConfig(text: string): ButtonConfig {
       problems.push(`button without id skipped`);
       continue;
     }
+    if (d.rect !== undefined && !normalizeButtonRect(d.rect))
+      problems.push(`button ${d.id}: bad rect ignored (need {x,y,w,h} in % of the screen)`);
     if (!d.action) continue; // unassigned on purpose
     const action = parseAction(d.action);
     if (!action) {

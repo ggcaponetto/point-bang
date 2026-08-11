@@ -84,8 +84,9 @@ point-bang --help
   prediction PC-side, a 2ms cursor loop, zeroed input-driver delays, and
   live p50/p95 jitter stats to prove it.
 - 🕹️ **20 assignable buttons** — one JSON file maps on-screen buttons to any
-  key combo or mouse button, press-and-hold included. FIRE itself is just a
-  remappable button.
+  key combo or mouse button, press-and-hold included, and places each one
+  anywhere on the screen (default: big LEFT/RIGHT click halves plus A/B).
+  FIRE itself is just a remappable button.
 - 🎚️ **Tunable feel** — smoothing↔snappy slider (100% = raw aim), aim-offset
   nudge pad, `--predict-ms` lookahead control.
 - 🌍 **Play-anywhere setup path** — `--tunnel ngrok` publishes an HTTPS URL the

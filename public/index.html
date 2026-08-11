@@ -229,6 +229,32 @@
         background: var(--acc);
         color: #04121f;
       }
+      /* freely placed buttons (buttons.json "rect": {x,y,w,h} in % of the screen) */
+      #btnLayer {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .posbtn {
+        position: absolute;
+        pointer-events: auto;
+        background: rgba(42, 42, 42, 0.55);
+        color: #eee;
+        border: 1px solid #444;
+        font-size: 18px;
+      }
+      .posbtn.held {
+        background: var(--acc);
+        color: #04121f;
+      }
+      /* the fire button keeps its trigger red even when placed by rect */
+      #btnLayer #btnFire {
+        background: rgba(229, 72, 77, 0.55);
+        color: #fff;
+      }
+      #btnLayer #btnFire.held {
+        background: #ff7076;
+      }
     </style>
   </head>
   <body>
@@ -265,6 +291,7 @@
         <span>fps <b id="hFps">—</b></span>
       </div>
       <div id="cross"></div>
+      <div id="btnLayer" style="display: none" oncontextmenu="return false;"></div>
       <div id="instr">Starting…</div>
       <div id="aimAdj" style="display: none" oncontextmenu="return false;">
         <div id="nudge" title="shift aim if calibration is slightly off">
@@ -306,6 +333,7 @@
         planeFromCorners,
         aspectFromCorners,
         intersectUV,
+        normalizeButtonRect,
         OneEuro,
       } from "./math.js";
 
@@ -345,19 +373,28 @@
       // ============================== configurable buttons ==============================
       // Rendered from buttons.json (same file maps ids to PC actions).
       // pointerdown/up => {"type":"button",id,down} so press-and-hold works.
-      // The button with id "fire" is config-driven like the rest, but renders
-      // into the big red slot in #controls instead of the strip. All buttons
+      // A button with a "rect" ({x,y,w,h} in % of the screen) is placed there,
+      // inside #btnLayer. Without one it falls into the scrollable strip —
+      // except "fire", which takes the big red slot in #controls. All buttons
       // fire on pointerDOWN — a "click" listener would add the whole tap
       // duration (~100ms) before the shot registers.
       async function loadButtons() {
         try {
           const cfg = await (await fetch("./buttons.json")).json();
           const strip = document.getElementById("btnStrip");
+          const layer = document.getElementById("btnLayer");
           for (const b of (cfg.buttons ?? []).filter((b) => b.visible)) {
             const isFire = b.id === "fire";
+            const rect = normalizeButtonRect(b.rect);
             const el = document.createElement("button");
-            if (isFire) {
-              el.id = "btnFire";
+            if (isFire) el.id = "btnFire";
+            if (rect) {
+              el.className = "posbtn";
+              el.style.left = rect.x + "%";
+              el.style.top = rect.y + "%";
+              el.style.width = rect.w + "%";
+              el.style.height = rect.h + "%";
+            } else if (isFire) {
               el.style.display = "none"; // revealed after calibration
             } else {
               el.className = "pbtn";
@@ -376,7 +413,9 @@
             el.addEventListener("pointerup", release);
             el.addEventListener("pointercancel", release);
             el.addEventListener("pointerleave", release);
-            if (isFire) {
+            if (rect) {
+              layer.appendChild(el);
+            } else if (isFire) {
               const controls = document.getElementById("controls");
               controls.insertBefore(el, document.getElementById("btnRestart"));
             } else {
@@ -446,6 +485,7 @@
         show("btnFire", false);
         show("aimAdj", false);
         show("btnStrip", false);
+        show("btnLayer", false);
         setOffset(0, 0);
         promptStage();
       }
@@ -484,13 +524,14 @@
         setHud("hAsp", asp.toFixed(2), off < 0.08 ? "ok" : "warn");
         instr(
           off < 0.08
-            ? `Calibrated (aspect ${asp.toFixed(2)}). Aim at the screen — cursor should follow. FIRE = left click.`
+            ? `Calibrated (aspect ${asp.toFixed(2)}). Aim at the screen — cursor should follow; buttons are live.`
             : `Aspect ${asp.toFixed(2)} vs expected ${expectedAspect.toFixed(2)} — sloppy taps? Recalibrate if aim is off.`,
         );
         $("btnCapture").style.display = "none";
         show("btnFire", true);
         show("aimAdj", true);
         show("btnStrip", true);
+        show("btnLayer", true);
       }
 
       // ============================== XR ==============================

@@ -2,15 +2,41 @@
 
 `public/buttons.json` defines **20 assignable buttons**. Each entry has:
 
-| Field     | Meaning                                                   |
-| --------- | --------------------------------------------------------- |
-| `id`      | Stable identifier sent over the wire (`fire`, `b1`…`b20`) |
-| `label`   | Text shown on the phone                                   |
-| `action`  | What the PC does — see below                              |
-| `visible` | Whether the phone shows the button                        |
+| Field     | Meaning                                                    |
+| --------- | ---------------------------------------------------------- |
+| `id`      | Stable identifier sent over the wire (`fire`, `b1`…`b20`)  |
+| `label`   | Text shown on the phone                                    |
+| `action`  | What the PC does — see below                               |
+| `visible` | Whether the phone shows the button                         |
+| `rect`    | _(optional)_ Where the phone places it — see **Placement** |
 
-The phone renders the visible buttons in a scrollable strip during play; the
-server maps the same file's ids to actions. One file, both sides.
+The phone renders the visible buttons during play; the server maps the same
+file's ids to actions. One file, both sides.
+
+## Placement
+
+A button with a `rect` is placed at that position, sized to match:
+
+```json
+{
+  "id": "fire",
+  "label": "LEFT",
+  "action": "mouse:left",
+  "visible": true,
+  "rect": { "x": 2, "y": 30, "w": 44, "h": 30 }
+}
+```
+
+`x,y,w,h` are **percent of the screen**, origin top-left (`x:2, w:44` spans
+the left half, minus margins). Rects that hang off the edge are clamped back
+on; a malformed rect is reported at server start and the button falls into
+the strip instead.
+
+The default layout is two big half-width buttons for **LEFT** and **RIGHT**
+mouse click, with smaller **A** and **B** buttons above them (`key:a` /
+`key:b`) — hide those by flipping `visible` to `false`. Buttons **without** a
+`rect` line up in a scrollable strip near the bottom, so the pre-placement
+config keeps working unchanged.
 
 ## Actions
 
@@ -29,9 +55,11 @@ Combos release in reverse order (`ctrl+shift+f` releases `f`, `shift`,
 
 ## FIRE is a button too
 
-The entry with id `"fire"` renders into the big red slot at the bottom of
-the screen instead of the strip — but it's config like everything else.
-Default action is `mouse:left`; remap it, relabel it, or hide it entirely.
+The entry with id `"fire"` is the trigger: it keeps its red styling wherever
+its `rect` puts it (by default it IS the big LEFT button), and without a
+`rect` it renders into the big red slot at the bottom of the screen instead
+of the strip — but it's config like everything else. Default action is
+`mouse:left`; remap it, relabel it, or hide it entirely.
 
 ::: info Why buttons trigger on touch-down
 A `click` event fires when your finger comes **up**, silently adding your

@@ -170,7 +170,7 @@ describe("startServer (http only)", () => {
 
   it("executes configured buttons: mouse hold, key, fire slot, unknown id", async () => {
     const { srv, buttons, keys, logs } = await boot();
-    expect(logs.some((l) => l.includes("buttons: 5 action(s) mapped"))).toBe(true);
+    expect(logs.some((l) => l.includes("buttons: 4 action(s) mapped"))).toBe(true);
 
     const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
     // b1 = mouse:right in public/buttons.json
@@ -186,9 +186,9 @@ describe("startServer (http only)", () => {
     await until(() => buttons.length > 3);
     expect(buttons.slice(2)).toEqual(["press:left", "release:left"]);
 
-    // b3 = key:a
-    ws.send(JSON.stringify({ type: "button", id: "b3", down: true }));
-    ws.send(JSON.stringify({ type: "button", id: "b3", down: false }));
+    // b2 = key:a
+    ws.send(JSON.stringify({ type: "button", id: "b2", down: true }));
+    ws.send(JSON.stringify({ type: "button", id: "b2", down: false }));
     await until(() => keys.length > 1);
     expect(keys).toEqual(["press:a", "release:a"]);
 

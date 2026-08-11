@@ -95,6 +95,23 @@ describe("parseButtonConfig", () => {
     );
     expect(cfg.actions.get("fire")).toEqual({ kind: "mouse", button: "left" });
   });
+  it("accepts placement rects and reports malformed ones", () => {
+    const cfg = parseButtonConfig(
+      JSON.stringify({
+        buttons: [
+          { id: "b1", action: "mouse:left", rect: { x: 2, y: 30, w: 44, h: 30 } },
+          { id: "b2", action: "key:a", rect: { x: "left", y: 0, w: 10, h: 10 } },
+          { id: "b3", action: "", rect: [1, 2, 3, 4] },
+        ],
+      }),
+    );
+    // a bad rect is phone-cosmetic: the action still maps, only a problem is logged
+    expect([...cfg.actions.keys()]).toEqual(["b1", "b2"]);
+    expect(cfg.problems).toEqual([
+      "button b2: bad rect ignored (need {x,y,w,h} in % of the screen)",
+      "button b3: bad rect ignored (need {x,y,w,h} in % of the screen)",
+    ]);
+  });
   it("disables buttons on malformed JSON rather than throwing", () => {
     const cfg = parseButtonConfig("{{{ not json");
     expect(cfg.actions.size).toBe(0);
