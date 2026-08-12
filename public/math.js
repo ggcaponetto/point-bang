@@ -78,13 +78,15 @@ export function aspectFromCorners(tl, tr, bl) {
 }
 
 /**
- * Aim ray -> plane -> normalized screen coords. u,v are NOT clamped: values
- * outside 0..1 are sent on purpose (future off-screen reload gesture).
+ * Aim ray -> plane -> normalized screen coords plus the ray distance `t`
+ * (in ray-direction lengths — comparable across planes for the SAME ray,
+ * which is all nearest-plane picking needs). u,v are NOT clamped: values
+ * outside 0..1 are sent on purpose (off-screen reload gesture).
  * Returns null when aiming away from or parallel to the screen plane.
  * @param {Plane} plane @param {Vec3} pos @param {Vec3} dir
- * @returns {{ u: number, v: number } | null}
+ * @returns {{ u: number, v: number, t: number } | null}
  */
-export function intersectUV(plane, pos, dir) {
+export function intersectUVT(plane, pos, dir) {
   const n = V.cross(plane.right, plane.down);
   const denom = V.dot(dir, n);
   if (Math.abs(denom) <= 1e-6) return null;
@@ -95,7 +97,48 @@ export function intersectUV(plane, pos, dir) {
   return {
     u: V.dot(rel, plane.right) / V.dot(plane.right, plane.right),
     v: V.dot(rel, plane.down) / V.dot(plane.down, plane.down),
+    t,
   };
+}
+
+/**
+ * Single-plane form of {@link intersectUVT} — the original public shape.
+ * @param {Plane} plane @param {Vec3} pos @param {Vec3} dir
+ * @returns {{ u: number, v: number } | null}
+ */
+export function intersectUV(plane, pos, dir) {
+  const r = intersectUVT(plane, pos, dir);
+  return r ? { u: r.u, v: r.v } : null;
+}
+
+/**
+ * Picks which calibrated monitor plane the aim ray hits: among planes whose
+ * intersection lands inside [0..1]² the NEAREST (smallest t) wins — with
+ * per-monitor calibration the planes are physically separate surfaces
+ * (bezels, angled monitors), so proximity along the ray is the tiebreak.
+ * Returns null when no plane is hit inside its bounds; the caller keeps the
+ * last-active monitor for off-screen (reload-gesture) values.
+ *
+ * Sparse/uncalibrated entries in `planes` are skipped, so the array can be
+ * indexed by monitor while calibration is still in progress.
+ * @param {Array<Plane | null>} planes @param {Vec3} pos @param {Vec3} dir
+ * @returns {{ m: number, u: number, v: number } | null} `m` is 1-based.
+ */
+export function pickPlaneUV(planes, pos, dir) {
+  /** @type {{ m: number, u: number, v: number } | null} */
+  let best = null;
+  let bestT = Infinity;
+  for (let i = 0; i < planes.length; i++) {
+    const plane = planes[i];
+    if (!plane) continue;
+    const hit = intersectUVT(plane, pos, dir);
+    if (!hit || hit.u < 0 || hit.u > 1 || hit.v < 0 || hit.v > 1) continue;
+    if (hit.t < bestT) {
+      bestT = hit.t;
+      best = { m: i + 1, u: hit.u, v: hit.v };
+    }
+  }
+  return best;
 }
 
 /**

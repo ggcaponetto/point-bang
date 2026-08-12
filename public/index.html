@@ -290,6 +290,7 @@
         <span>u <b id="hU">—</b></span>
         <span>v <b id="hV">—</b></span>
         <span>aspect <b id="hAsp">—</b></span>
+        <span id="hMonWrap" style="display: none">mon <b id="hMon">—</b></span>
         <span>fps <b id="hFps">—</b></span>
       </div>
       <div id="cross"></div>
@@ -336,27 +337,43 @@
         planeFromCorners,
         aspectFromCorners,
         intersectUV,
+        intersectUVT,
+        pickPlaneUV,
         normalizeButtonRect,
         OneEuro,
       } from "./math.js";
-      import { parseFragment, createTransport, fetchButtons } from "./transport.js";
+      import { parseFragment, createTransport, fetchButtons, fetchMonitors } from "./transport.js";
 
       // #pc=<ip:port,...> in the QR the PC prints ⇒ remote mode (page from
       // the hosted origin, WebRTC over the LAN). No fragment ⇒ this page came
       // from the PC itself and talks to its own origin.
       const { hosts, key } = parseFragment(location.hash);
 
-      let fu = new OneEuro(),
-        fv = new OneEuro();
+      // The PC's aim targets: >1 (serve --monitor all on a real multi-monitor
+      // box) means each monitor is calibrated as its OWN plane — one spanning
+      // plane cannot be right, because bezels add physical distance that
+      // contains no pixels (and monitors may be angled). Kicked off at boot,
+      // snapshotted at START; null (old server, PC unreachable) = classic
+      // single-plane flow.
+      let monTargets = null;
+      fetchMonitors(hosts, (u, i) => fetch(u, i)).then((t) => (monTargets = t));
+      let targets = null; // frozen at start()
+      let numMon = 1;
+      let multi = false;
+
+      // Per-monitor One Euro pairs; rebuilt on recalibrate.
       // Slider = smoothing <-> snappy. Left: heavy smoothing (steady but laggy).
       // Right: near-raw (minCutoff 6Hz kills rest lag, beta 0.5 kills motion lag).
+      let filters = [{ fu: new OneEuro(), fv: new OneEuro() }];
       const smoothEl = document.getElementById("smooth");
       let rawAim = false; // slider at max = bypass the filter entirely
       function applySmoothing() {
         const s = +smoothEl.value / 100;
         rawAim = s >= 0.995;
-        fu.mc = fv.mc = 1 + s * 5;
-        fu.beta = fv.beta = s * 0.5;
+        for (const f of filters) {
+          f.fu.mc = f.fv.mc = 1 + s * 5;
+          f.fu.beta = f.fv.beta = s * 0.5;
+        }
       }
       smoothEl.oninput = applySmoothing;
       applySmoothing();
@@ -364,19 +381,29 @@
       // ============================== aim offset (nudge pad) ==============================
       // Corrects small calibration error by translating the sent u,v. Applied
       // AFTER the filter so nudges take effect instantly. Zeroed on recalibrate.
-      let offU = 0,
-        offV = 0;
+      // One offset pair PER MONITOR — the pad edits whichever monitor is
+      // currently aimed at, so each panel is corrected independently.
+      let offs = [{ u: 0, v: 0 }];
+      let activeMon = null; // 1-based monitor currently aimed (multi only)
       const OFF_STEP = 0.005; // 0.5% of the screen per tap
-      function setOffset(du, dv) {
-        offU = du;
-        offV = dv;
+      const aimedIdx = () => (activeMon ?? 1) - 1;
+      function refreshNudgeLabel() {
+        const o = offs[aimedIdx()];
         document.getElementById("nReset").textContent =
-          du === 0 && dv === 0 ? "0,0" : `${(du * 100).toFixed(1)},${(dv * 100).toFixed(1)}`;
+          o.u === 0 && o.v === 0 ? "0,0" : `${(o.u * 100).toFixed(1)},${(o.v * 100).toFixed(1)}`;
       }
-      document.getElementById("nUp").onclick = () => setOffset(offU, offV - OFF_STEP);
-      document.getElementById("nDown").onclick = () => setOffset(offU, offV + OFF_STEP);
-      document.getElementById("nLeft").onclick = () => setOffset(offU - OFF_STEP, offV);
-      document.getElementById("nRight").onclick = () => setOffset(offU + OFF_STEP, offV);
+      function setOffset(du, dv) {
+        offs[aimedIdx()] = { u: du, v: dv };
+        refreshNudgeLabel();
+      }
+      const nudge = (du, dv) => {
+        const o = offs[aimedIdx()];
+        setOffset(o.u + du, o.v + dv);
+      };
+      document.getElementById("nUp").onclick = () => nudge(0, -OFF_STEP);
+      document.getElementById("nDown").onclick = () => nudge(0, OFF_STEP);
+      document.getElementById("nLeft").onclick = () => nudge(-OFF_STEP, 0);
+      document.getElementById("nRight").onclick = () => nudge(OFF_STEP, 0);
       document.getElementById("nReset").onclick = () => setOffset(0, 0);
 
       // ============================== configurable buttons ==============================
@@ -482,40 +509,58 @@
       // ============================== calibration state ==============================
       const CORNERS = ["TOP-LEFT", "TOP-RIGHT", "BOTTOM-LEFT"];
       let method = "hittest";
-      let expectedAspect = 16 / 9;
-      let calib = null; // { corners:[p0,p1,p2] as vec3, anchors:[XRAnchor|null] }
-      let calStage = 0; // which corner
+      let expectedAspect = 16 / 9; // manual #aspect input — single-plane fallback
+      let calibs = []; // per monitor { corners:[3], anchors:[3], done }
+      let planes = []; // per monitor { origin, right, down } | null, rebuilt each frame
+      let curMon = 0; // monitor being calibrated (0-based)
+      let calStage = 0; // which corner of the current monitor
       let rayCaptures = []; // two-ray mode: pending first captures for current corner
-      let plane = null; // { origin, right, down } rebuilt each frame
+
+      // Expected aspect: the PC reports each monitor's WxH, which beats the
+      // typed-in value; the input remains the fallback for old servers.
+      const expectedFor = (i) => (targets?.[i] ? targets[i].w / targets[i].h : expectedAspect);
+      const monName = (i) => targets?.[i]?.label ?? `monitor ${i + 1}`;
 
       function resetCalibration() {
-        if (calib?.anchors) for (const a of calib.anchors) a?.delete?.();
-        calib = { corners: [null, null, null], anchors: [null, null, null] };
+        for (const c of calibs) for (const a of c.anchors) a?.delete?.();
+        calibs = Array.from({ length: numMon }, () => ({
+          corners: [null, null, null],
+          anchors: [null, null, null],
+          done: false,
+        }));
+        planes = Array.from({ length: numMon }, () => null);
+        filters = Array.from({ length: numMon }, () => ({ fu: new OneEuro(), fv: new OneEuro() }));
+        applySmoothing();
+        offs = Array.from({ length: numMon }, () => ({ u: 0, v: 0 }));
+        curMon = 0;
         calStage = 0;
         rayCaptures = [];
-        plane = null;
-        fu.reset();
-        fv.reset();
+        activeMon = null;
+        setHud("hMon", "—");
+        show("hMonWrap", multi);
         $("btnCapture").style.display = "";
         show("btnFire", false);
         show("aimAdj", false);
         show("btnStrip", false);
         show("btnLayer", false);
-        setOffset(0, 0);
+        refreshNudgeLabel();
         promptStage();
       }
       function promptStage() {
         const c = CORNERS[calStage];
-        if (method === "hittest")
-          instr(`Aim crosshair at ${c} corner of the monitor, press CAPTURE`);
+        const where = multi
+          ? `${c} corner of ${monName(curMon)} (${curMon + 1}/${numMon})`
+          : `${c} corner of the monitor`;
+        if (method === "hittest") instr(`Aim crosshair at ${where}, press CAPTURE`);
         else
           instr(
             rayCaptures.length === 0
-              ? `Aim at ${c} corner, press CAPTURE (1/2)`
+              ? `Aim at ${where}, press CAPTURE (1/2)`
               : `Step ~50cm sideways, aim at the SAME ${c} corner, press CAPTURE (2/2)`,
           );
       }
       function finishCorner(point, anchor) {
+        const calib = calibs[curMon];
         calib.corners[calStage] = point;
         calib.anchors[calStage] = anchor || null;
         send({
@@ -525,6 +570,7 @@
           x: point[0],
           y: point[1],
           z: point[2],
+          ...(multi ? { m: curMon + 1 } : {}),
         });
         calStage++;
         rayCaptures = [];
@@ -532,15 +578,29 @@
           promptStage();
           return;
         }
-        // done: sanity check
+        // this monitor is done: sanity-check its aspect
+        calib.done = true;
         const [tl, tr, bl] = calib.corners;
         const asp = aspectFromCorners(tl, tr, bl);
-        const off = Math.abs(asp - expectedAspect) / expectedAspect;
+        const expect = expectedFor(curMon);
+        const off = Math.abs(asp - expect) / expect;
         setHud("hAsp", asp.toFixed(2), off < 0.08 ? "ok" : "warn");
+        const verdict =
+          off < 0.08
+            ? `aspect ${asp.toFixed(2)} OK`
+            : `aspect ${asp.toFixed(2)} vs expected ${expect.toFixed(2)} — sloppy taps?`;
+        if (curMon + 1 < numMon) {
+          // next monitor, same 3-corner dance
+          curMon++;
+          calStage = 0;
+          instr(`${monName(curMon - 1)} calibrated (${verdict}).`);
+          setTimeout(promptStage, 1200);
+          return;
+        }
         instr(
           off < 0.08
-            ? `Calibrated (aspect ${asp.toFixed(2)}). Aim at the screen — cursor should follow; buttons are live.`
-            : `Aspect ${asp.toFixed(2)} vs expected ${expectedAspect.toFixed(2)} — sloppy taps? Recalibrate if aim is off.`,
+            ? `Calibrated. Aim at the screen — cursor should follow; buttons are live.`
+            : `Calibrated, but ${verdict} Recalibrate if aim is off.`,
         );
         $("btnCapture").style.display = "none";
         show("btnFire", true);
@@ -565,6 +625,13 @@
         method = $("method").value;
         const m = $("aspect").value.split(":").map(Number);
         if (m.length === 2 && m[0] > 0 && m[1] > 0) expectedAspect = m[0] / m[1];
+        // Freeze the aim targets for this session. The fetch was kicked off at
+        // boot; if it has not resolved yet (PC unreachable) the session runs
+        // the classic single-plane flow — never block the user gesture here,
+        // requestSession needs the transient activation.
+        targets = monTargets;
+        numMon = targets?.length || 1;
+        multi = numMon > 1;
 
         try {
           const opts = {
@@ -643,31 +710,72 @@
       }
 
       // keep calibration glued to anchors (they self-correct as ARCore refines)
-      function refreshPlane(frame) {
-        if (!calib || calStage < 3) return;
-        for (let i = 0; i < 3; i++) {
-          const a = calib.anchors[i];
-          if (!a || !frame.trackedAnchors?.has(a)) continue;
-          const ap = frame.getPose(a.anchorSpace, refSpace);
-          if (ap)
-            calib.corners[i] = [
-              ap.transform.position.x,
-              ap.transform.position.y,
-              ap.transform.position.z,
-            ];
+      function refreshPlanes(frame) {
+        for (let mIdx = 0; mIdx < calibs.length; mIdx++) {
+          const calib = calibs[mIdx];
+          if (!calib.done) continue;
+          for (let i = 0; i < 3; i++) {
+            const a = calib.anchors[i];
+            if (!a || !frame.trackedAnchors?.has(a)) continue;
+            const ap = frame.getPose(a.anchorSpace, refSpace);
+            if (ap)
+              calib.corners[i] = [
+                ap.transform.position.x,
+                ap.transform.position.y,
+                ap.transform.position.z,
+              ];
+          }
+          const [tl, tr, bl] = calib.corners;
+          planes[mIdx] = planeFromCorners(tl, tr, bl);
         }
-        const [tl, tr, bl] = calib.corners;
-        plane = planeFromCorners(tl, tr, bl);
       }
 
-      // aim -> u,v -> send
+      /**
+       * Which plane the ray hits and its u,v. Multi-monitor: inside-hit
+       * nearest plane wins; off every screen, the LAST-aimed monitor keeps
+       * reporting unclamped values so the off-screen reload gesture still
+       * belongs to the panel the player was just on. Single: today's flow.
+       */
+      function computeAim() {
+        if (!multi) {
+          const plane = planes[0];
+          if (!plane) return null;
+          const uv = intersectUV(plane, lastPose.pos, lastPose.dir);
+          return uv ? { m: null, idx: 0, u: uv.u, v: uv.v } : null;
+        }
+        const hit = pickPlaneUV(planes, lastPose.pos, lastPose.dir);
+        if (hit) return { m: hit.m, idx: hit.m - 1, u: hit.u, v: hit.v };
+        if (activeMon === null || !planes[activeMon - 1]) return null;
+        const uv = intersectUVT(planes[activeMon - 1], lastPose.pos, lastPose.dir);
+        return uv ? { m: activeMon, idx: activeMon - 1, u: uv.u, v: uv.v } : null;
+      }
+
+      // aim -> plane pick -> u,v -> send
       function sendAim(time, trackState) {
-        if (!plane || !lastPose) return;
-        const uv = intersectUV(plane, lastPose.pos, lastPose.dir);
-        if (!uv) return;
-        const u = (rawAim ? uv.u : fu.filter(uv.u, time)) + offU,
-          v = (rawAim ? uv.v : fv.filter(uv.v, time)) + offV;
-        send({ type: "aim", u, v, t: Date.now(), q: trackState === "good" ? 1 : 0.5 });
+        if (!lastPose) return;
+        const aim = computeAim();
+        if (!aim) return;
+        if (multi && aim.m !== activeMon) {
+          // fresh filter on the monitor being entered — smoothing must not
+          // glide the cursor across the bezel seam
+          activeMon = aim.m;
+          filters[aim.idx].fu.reset();
+          filters[aim.idx].fv.reset();
+          setHud("hMon", `${aim.m}/${numMon}`);
+          refreshNudgeLabel();
+        }
+        const f = filters[aim.idx];
+        const o = offs[aim.idx];
+        const u = (rawAim ? aim.u : f.fu.filter(aim.u, time)) + o.u,
+          v = (rawAim ? aim.v : f.fv.filter(aim.v, time)) + o.v;
+        send({
+          type: "aim",
+          u,
+          v,
+          t: Date.now(),
+          q: trackState === "good" ? 1 : 0.5,
+          ...(multi ? { m: aim.m } : {}),
+        });
         if ((frameCount & 7) === 0) {
           setHud("hU", u.toFixed(3));
           setHud("hV", v.toFixed(3));
@@ -705,7 +813,7 @@
         lastPose = { pos: [p.x, p.y, p.z], dir: forwardFromQuat(q) };
 
         updateHit(frame);
-        refreshPlane(frame);
+        refreshPlanes(frame);
         sendAim(time, trackState);
         tickFps();
       }

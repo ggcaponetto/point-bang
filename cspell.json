@@ -10,6 +10,7 @@
     "calib",
     "codecov",
     "datachannel",
+    "DEVMODE",
     "dlopen",
     "dlopens",
     "dotenv",
@@ -67,6 +68,7 @@
     "typedoc",
     "ufrag",
     "unclamped",
+    "ungated",
     "vcruntime",
     "vitepress",
     "vitest",
@@ -77,6 +79,7 @@
     "werift",
     "wlan",
     "wlp",
+    "xrandr",
     "Wosk",
     "XTEST",
     "xwayland"

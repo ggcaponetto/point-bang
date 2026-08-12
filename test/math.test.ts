@@ -6,6 +6,8 @@ import {
   planeFromCorners,
   aspectFromCorners,
   intersectUV,
+  intersectUVT,
+  pickPlaneUV,
   normalizeButtonRect,
   OneEuro,
 } from "../public/math.js";
@@ -97,6 +99,50 @@ describe("plane helpers", () => {
     });
     it("returns null when aiming parallel to the plane", () => {
       expect(intersectUV(p, [0.2, 0.9, 0], [1, 0, 0])).toBeNull();
+    });
+  });
+
+  describe("intersectUVT", () => {
+    it("also reports the ray distance t", () => {
+      const p = planeFromCorners(tl, tr, bl);
+      const hit = intersectUVT(p, [0.2, 0.8875, 0], [0, 0, -1])!;
+      expect(hit.u).toBeCloseTo(0.5, 9);
+      expect(hit.v).toBeCloseTo(0.5, 9);
+      expect(hit.t).toBeCloseTo(2, 9); // plane at z=-2, unit ray from z=0
+    });
+  });
+
+  describe("pickPlaneUV", () => {
+    // Two side-by-side "monitors" at z=-2 with a physical bezel gap between
+    // them (0.4..0.5 has no plane), like the real dual-monitor setup.
+    const left = planeFromCorners(tl, tr, bl);
+    const right = planeFromCorners([0.5, 1, -2], [0.9, 1, -2], [0.5, 0.775, -2]);
+
+    it("routes aim to the plane it lands inside, 1-based", () => {
+      const l = pickPlaneUV([left, right], [0.2, 0.8875, 0], [0, 0, -1])!;
+      expect(l).toMatchObject({ m: 1 });
+      const r = pickPlaneUV([left, right], [0.7, 0.8875, 0], [0, 0, -1])!;
+      expect(r.m).toBe(2);
+      expect(r.u).toBeCloseTo(0.5, 9);
+      expect(r.v).toBeCloseTo(0.5, 9);
+    });
+
+    it("returns null in the bezel gap and off both planes", () => {
+      expect(pickPlaneUV([left, right], [0.45, 0.8875, 0], [0, 0, -1])).toBeNull();
+      expect(pickPlaneUV([left, right], [5, 5, 0], [0, 0, -1])).toBeNull();
+    });
+
+    it("prefers the nearest plane when both are hit (angled monitor in front)", () => {
+      // a second surface closer to the viewer, overlapping the left one
+      const near = planeFromCorners([0, 1, -1], [0.4, 1, -1], [0, 0.775, -1]);
+      const hit = pickPlaneUV([left, near], [0.2, 0.8875, 0], [0, 0, -1])!;
+      expect(hit.m).toBe(2);
+    });
+
+    it("skips uncalibrated (null) slots while calibration is in progress", () => {
+      const hit = pickPlaneUV([null, right], [0.7, 0.8875, 0], [0, 0, -1])!;
+      expect(hit.m).toBe(2);
+      expect(pickPlaneUV([null, null], [0.2, 0.8875, 0], [0, 0, -1])).toBeNull();
     });
   });
 });

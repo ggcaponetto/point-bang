@@ -204,6 +204,16 @@ says, PC maps ids to key combos or mouse press/release via lib/buttons.ts and
 reports malformed rects). down/up as separate events so holds work; keys
 release in reverse order.
 
+v2 (IMPLEMENTED 2026-08-12, additive): `aim`/`calib` gain optional `m` = 1-based
+monitor index (per-monitor calibration). The phone learns the aim targets via
+`GET /monitors` → `{"monitors":[{"i","label","w","h","primary"}]}` (labels +
+resolutions only, no layout coordinates; CORS'd and ungated like buttons.json —
+the aim intakes stay key-guarded). >1 targets ⇒ the phone calibrates one plane
+per monitor and tags aim with `m`; the PC maps it into that monitor's rect and
+resets the predictor on a switch. Aim without `m` (old phone page) maps into
+the spanning rect; an old server 404s `/monitors` and the phone stays
+single-plane — compatible in both directions.
+
 Transports (2026-08-12): the SAME JSON rides either the WS or a WebRTC
 DataChannel — `server.ts` feeds both into one `handleMessage`. Signaling is
 `POST /rtc/offer {"sdp","key"}` → `{"sdp"}` (400 bad/413 big/403
@@ -328,7 +338,11 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   the old whole-screen behavior when detection fails (never regress, headless
   CI included); explicit `--monitor all|N` that can't be honored refuses to
   start. `--monitor` maps aim only — cursor injection already spans the
-  virtual desktop.
+  virtual desktop. With `--monitor all` the phone calibrates EACH monitor as
+  its own plane (user decision 2026-08-12): one spanning plane is physically
+  wrong — bezels add distance that contains no pixels and monitors may be
+  angled — so aim carries a per-monitor index instead (see Protocol v2), and
+  smoothing/nudge state is per monitor with resets at the seam.
 - **Filtering split:** One Euro filter phone-side (kills ARCore micro-jumps;
   adaptive: smooth when slow, responsive when flicking). Extrapolation
   PC-side (fit velocity over last samples, project to now; hides network
@@ -494,6 +508,13 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   xrandr output `disconnected` CONTAINS `connected`, so match the token,
   never the substring; a connected-but-off output has no geometry and is not
   part of the desktop.
+- One calibration plane must never span two monitors: bezels are physical
+  distance with no pixels, so a spanned plane lands offset on the far panel
+  (and angled monitors break it outright) — that is WHY per-monitor planes
+  exist. Anything smoothing or extrapolating aim (One Euro phone-side, the
+  predictor PC-side) must reset when the aimed monitor changes, or it drags
+  the cursor across the bezel seam. The phone treats a `/monitors` failure
+  (old server, PC unreachable) as "one plane" silently — never an error.
 - Linux WiFi interfaces are `wlp2s0`/`wlx…`, matching neither "wifi" nor
   "wlan" — `lib/net.ts` matches `^wl` for that reason.
 - Overlay controls (FIRE, slider) start hidden via **inline** style, and JS

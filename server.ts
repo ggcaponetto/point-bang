@@ -25,6 +25,7 @@ import {
   detectMonitors,
   selectMonitor,
   type MonitorChoice,
+  type MonitorRect,
   type MonitorsReport,
 } from "./lib/monitors.ts";
 import { loadTls } from "./lib/certs.ts";
@@ -207,21 +208,25 @@ async function setupInput(
  * {@link selectMonitor}). Virtual input is one synthetic monitor, so
  * `primary`, `all` and index 1 work and higher indices fail loudly.
  */
+interface AimTarget {
+  rect: { x: number; y: number; w: number; h: number; label: string };
+  /**
+   * The individual monitors when the choice was `all` — per-monitor aim
+   * (`aim.m`, per-monitor calibration on the phone) maps into `rects[m-1]`
+   * instead of the spanning rect. Null in every single-rect mode.
+   */
+  rects: MonitorRect[] | null;
+}
+
 async function resolveTargetRect(
   opts: ServerOptions,
   mouse: MouseLike,
   virtual: boolean,
   log: Log,
-): Promise<{ x: number; y: number; w: number; h: number; label: string }> {
-  const screenRect = async (): Promise<{
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    label: string;
-  }> => {
+): Promise<AimTarget> {
+  const screenRect = async (): Promise<AimTarget> => {
     const s = await mouse.screenSize();
-    return { x: 0, y: 0, w: s.w, h: s.h, label: "screen" };
+    return { rect: { x: 0, y: 0, w: s.w, h: s.h, label: "screen" }, rects: null };
   };
   const choice = opts.monitor;
   if (!choice) return screenRect();
@@ -234,9 +239,14 @@ async function resolveTargetRect(
       }
     : await (opts.monitorProbe ?? detectMonitors)();
   const picked = selectMonitor(report, choice);
-  if (picked) return picked;
-  log(`monitor: detection unavailable (${report.reason}) — using the primary screen`);
-  return screenRect();
+  if (!picked) {
+    log(`monitor: detection unavailable (${report.reason}) — using the primary screen`);
+    return screenRect();
+  }
+  return {
+    rect: picked,
+    rects: choice.kind === "all" && report.monitors.length > 1 ? report.monitors : null,
+  };
 }
 
 // ---------- buttons (protocol v2) ----------
@@ -299,12 +309,17 @@ interface IntakeDeps {
   jitter: JitterWindow;
   mouse: MouseLike;
   pressButton(id: string, down: boolean): Promise<boolean>;
+  /** Routes a per-monitor aim sample (`aim.m`); no-op in single-rect modes. */
+  setMonitor(m: number | undefined): void;
   log: Log;
 }
 
 function createMessageHandler(d: IntakeDeps): (m: ClientMsg) => Promise<void> {
   const onAim = (m: Extract<ClientMsg, { type: "aim" }>): void => {
     if (d.isPaused()) return;
+    // BEFORE the predictor sees the sample: a monitor switch resets it, and
+    // this sample belongs to the new monitor's u,v space.
+    d.setMonitor(m.m);
     const arrived = Date.now();
     d.predictor.add(m.u, m.v, arrived);
     if (typeof m.t === "number") d.jitter.add(arrived - m.t);
@@ -320,7 +335,8 @@ function createMessageHandler(d: IntakeDeps): (m: ClientMsg) => Promise<void> {
   const onCalib = (m: Extract<ClientMsg, { type: "calib" }>): void => {
     const coords =
       m.x !== undefined ? `(${m.x.toFixed(3)}, ${m.y!.toFixed(3)}, ${m.z!.toFixed(3)})` : "";
-    d.log(`calib ${m.stage} #${m.i ?? ""}: ${coords}`);
+    const mon = m.m !== undefined ? ` (monitor ${m.m})` : "";
+    d.log(`calib ${m.stage} #${m.i ?? ""}${mon}: ${coords}`);
   };
   const onState = (m: Extract<ClientMsg, { type: "state" }>): void => {
     d.log(`tracking: ${m.tracking}`);
@@ -365,6 +381,8 @@ interface HttpDeps {
   gate: KeyGate;
   log: Log;
   handleOffer(sdp: string): Promise<string>;
+  /** Precomputed `GET /monitors` body — the aim targets the phone calibrates. */
+  monitorsJson: string;
 }
 
 async function handleRtcOffer(
@@ -436,6 +454,13 @@ function createHttpHandler(d: HttpDeps): http.RequestListener {
         return;
       }
       void handleRtcOffer(d, req, res, cors);
+      return;
+    }
+    if (req.method === "GET" && normalized === "/monitors") {
+      // Read-only geometry (labels + resolutions, no layout coordinates);
+      // ungated like buttons.json — the aim intakes are what the key guards.
+      res.writeHead(200, { "Content-Type": "application/json", ...cors });
+      res.end(d.monitorsJson);
       return;
     }
     // Assets are addressed by bare name ("index.html"), not by URL path.
@@ -564,16 +589,26 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   });
 
   // ---------- cursor control ----------
-  const rect = await resolveTargetRect(opts, mouse, virtual, log);
+  const { rect, rects } = await resolveTargetRect(opts, mouse, virtual, log);
   log(
     opts.monitor
       ? `Screen: ${rect.w}x${rect.h} at (${rect.x},${rect.y}) — ${rect.label}`
       : `Screen: ${rect.w}x${rect.h}`,
   );
   const predictor = new AimPredictor(opts.predictMs ?? 0);
+  // Per-monitor aim (aim.m, phone calibrated each monitor as its own plane):
+  // the active monitor's rect replaces the spanning rect; a switch resets the
+  // predictor so its velocity fit never interpolates across the bezel seam.
+  let activeMonitor: number | null = null;
+  const setMonitor = (m: number | undefined): void => {
+    if (!rects) return;
+    const next = m !== undefined && m >= 1 && m <= rects.length ? m : null;
+    if (next !== activeMonitor) predictor.reset();
+    activeMonitor = next;
+  };
   const cursor = createCursorLoop(
     mouse,
-    () => rect,
+    () => (rects && activeMonitor !== null ? rects[activeMonitor - 1] : rect),
     () => predictor.predict(Date.now()),
     (e) => console.error("mouse:", e.message),
   );
@@ -608,6 +643,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     jitter,
     mouse,
     pressButton,
+    setMonitor,
     log,
   });
   const intake = (raw: Buffer | string): void => {
@@ -618,6 +654,20 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // ---------- webrtc intake (same bytes, same handler as the WS) ----------
   const rtcHub = createRtcHub(intake, { createPeer: opts.rtc?.createPeer, log });
 
+  // The aim targets the phone calibrates: one plane per entry. >1 entries
+  // (--monitor all on a real multi-monitor box) puts the phone into
+  // per-monitor calibration; a single entry is the classic one-plane flow.
+  const targets = rects ?? [{ ...rect, primary: true }];
+  const monitorsJson = JSON.stringify({
+    monitors: targets.map((t, i) => ({
+      i: i + 1,
+      label: t.label,
+      w: t.w,
+      h: t.h,
+      primary: t.primary,
+    })),
+  });
+
   const pageOrigins = opts.pageOrigins ?? [new URL(opts.pageUrl ?? DEFAULT_PAGE_URL).origin];
   const handler = createHttpHandler({
     assets,
@@ -625,6 +675,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     gate,
     log,
     handleOffer: (sdp) => rtcHub.handleOffer(sdp),
+    monitorsJson,
   });
   const httpServer = http.createServer(handler);
   const tls = mode === "adb" ? null : loadTls(opts.certsDir ?? path.join(ROOT, "certs"));

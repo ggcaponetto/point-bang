@@ -119,7 +119,9 @@ node cli.ts --help   # every option is a flag
   anywhere on the screen. FIRE itself is just a remappable button.
 - **Multi-monitor aware** — `point-bang monitors` lists your displays;
   `--monitor 2` aims at one of them, `--monitor all` spans the whole
-  desktop, and the default stays the primary screen. (X11 multi-monitor
+  desktop with each monitor calibrated as its own plane (bezels and
+  angled panels stay accurate, with independent aim correction per
+  monitor), and the default stays the primary screen. (X11 multi-monitor
   setups that relied on the old implicit span: that is `--monitor all`
   now.)
 - **Pause hotkey** — `shift+space` pauses tracking so the real mouse

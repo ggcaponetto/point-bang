@@ -14,6 +14,8 @@ interface AimMsg {
   v: number;
   t?: number;
   q?: number;
+  /** v2 additive: 1-based monitor index (per-monitor calibration). */
+  m?: number;
 }
 interface FireMsg {
   type: "fire";
@@ -25,6 +27,8 @@ interface CalibMsg {
   x?: number;
   y?: number;
   z?: number;
+  /** v2 additive: 1-based monitor index — `i` stays the corner index. */
+  m?: number;
 }
 interface StateMsg {
   type: "state";
@@ -58,6 +62,8 @@ export function parseMessage(raw: string | Buffer): ClientMsg | null {
   switch (m.type) {
     case "aim":
       if (typeof m.u !== "number" || typeof m.v !== "number") return null;
+      // a malformed monitor index is dropped, not the whole sample
+      if (m.m !== undefined && (!Number.isInteger(m.m) || (m.m as number) < 1)) delete m.m;
       return m as unknown as AimMsg;
     case "fire":
       return { type: "fire" };
