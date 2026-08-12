@@ -93,7 +93,7 @@ function bundle() {
 function collectAssets() {
   const dir = nativeDir();
   const assets = {};
-  for (const name of ["index.html", "math.js", "buttons.json"])
+  for (const name of ["index.html", "math.js", "buttons.json", "transport.js"])
     assets[name] = path.join(ROOT, "public", name);
 
   assets["libnut.node"] = path.join(dir, "libnut.node");

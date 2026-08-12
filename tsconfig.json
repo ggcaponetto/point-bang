@@ -14,5 +14,5 @@
     "checkJs": true,
     "types": ["node"]
   },
-  "include": ["*.ts", "lib/**/*.ts", "test/**/*.ts", "public/math.js"]
+  "include": ["*.ts", "lib/**/*.ts", "test/**/*.ts", "public/math.js", "public/transport.js"]
 }

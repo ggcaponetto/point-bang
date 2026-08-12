@@ -274,17 +274,18 @@
       <button id="btnStart" disabled>Checking WebXR…</button>
       <div id="err"></div>
       <p style="color: var(--dim); font-size: 13px">
-        Serve via <code>adb reverse tcp:8443 tcp:8443</code> and open
-        <code>http://localhost:8443</code>, or over WiFi open
-        <code>https://&lt;PC-IP&gt;:8444</code> (needs mkcert certs — see README). WebSocket
-        connects to this same host.
+        Easiest: run <code>point-bang</code> on the PC and scan the QR it prints — this page then
+        connects straight across your WiFi (Chrome asks once to allow local network access; tap
+        Allow). Dev flows still work: <code>adb reverse tcp:8443 tcp:8443</code> +
+        <code>http://localhost:8443</code>, or mkcert HTTPS on
+        <code>https://&lt;PC-IP&gt;:8444</code> (see README).
       </p>
     </div>
 
     <div id="overlay">
       <div id="hud">
         <span>track <b id="hTrack" class="bad">—</b></span>
-        <span>ws <b id="hWs" class="bad">—</b></span>
+        <span>link <b id="hWs" class="bad">—</b></span>
         <span>u <b id="hU">—</b></span>
         <span>v <b id="hV">—</b></span>
         <span>aspect <b id="hAsp">—</b></span>
@@ -324,8 +325,9 @@
     </div>
 
     <script type="module">
-      // Pure math lives in math.js (shared with the vitest suite). This inline
-      // script keeps only DOM/XR/WS glue — the page stays buildless.
+      // Pure math lives in math.js, the PC link in transport.js (both shared
+      // with the vitest suite). This inline script keeps only DOM/XR glue —
+      // the page stays buildless.
       import {
         V,
         forwardFromQuat,
@@ -336,6 +338,12 @@
         normalizeButtonRect,
         OneEuro,
       } from "./math.js";
+      import { parseFragment, createTransport, fetchButtons } from "./transport.js";
+
+      // #pc=<ip:port,...> in the QR the PC prints ⇒ remote mode (page from
+      // the hosted origin, WebRTC over the LAN). No fragment ⇒ this page came
+      // from the PC itself and talks to its own origin.
+      const { hosts } = parseFragment(location.hash);
 
       let fu = new OneEuro(),
         fv = new OneEuro();
@@ -380,7 +388,10 @@
       // duration (~100ms) before the shot registers.
       async function loadButtons() {
         try {
-          const cfg = await (await fetch("./buttons.json")).json();
+          // Remote mode reads the PC's buttons.json (the customer's local
+          // config wins over the copy deployed beside this page) — usually
+          // the fetch that triggers Chrome's one-time local-network prompt.
+          const cfg = await fetchButtons(hosts, (u, i) => fetch(u, i));
           const strip = document.getElementById("btnStrip");
           const layer = document.getElementById("btnLayer");
           for (const b of (cfg.buttons ?? []).filter((b) => b.visible)) {
@@ -428,26 +439,6 @@
       }
       loadButtons();
 
-      // ============================== WebSocket ==============================
-      let ws = null,
-        wsOpen = false;
-      function connectWS() {
-        ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
-        ws.onopen = () => {
-          wsOpen = true;
-          setHud("hWs", "open", "ok");
-        };
-        ws.onclose = () => {
-          wsOpen = false;
-          setHud("hWs", "closed", "bad");
-          setTimeout(connectWS, 1000);
-        };
-        ws.onerror = () => {};
-      }
-      function send(o) {
-        if (wsOpen) ws.send(JSON.stringify(o));
-      }
-
       // ============================== UI helpers ==============================
       const $ = (id) => document.getElementById(id);
       // btnFire is created from buttons.json, so it may not exist yet (or at all)
@@ -462,6 +453,26 @@
       }
       function instr(t) {
         $("instr").textContent = t;
+      }
+
+      // ============================== PC link ==============================
+      // RTC-first with WS fallback; remote mode is RTC-only (transport.js
+      // owns the ladder, retries and backoff — this is display glue).
+      const transport = createTransport({
+        hosts,
+        wsUrl: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`,
+        fetchFn: (u, i) => fetch(u, i),
+        Peer: RTCPeerConnection,
+        Socket: WebSocket,
+        onStatus: (state, detail) => {
+          const ok = state === "rtc" || state === "ws";
+          setHud("hWs", state === "rtc-connecting" ? "…" : state, ok ? "ok" : "bad");
+          if (state === "failed" && detail) $("err").textContent = detail;
+          if (ok) $("err").textContent = "";
+        },
+      });
+      function send(o) {
+        transport.send(o);
       }
 
       // ============================== calibration state ==============================
@@ -565,7 +576,6 @@
 
         $("setup").style.display = "none";
         $("overlay").classList.add("active");
-        connectWS();
         try {
           await navigator.wakeLock?.request("screen");
         } catch (_) {}

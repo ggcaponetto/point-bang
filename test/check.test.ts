@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCheck } from "../lib/check.ts";
-import { diskAssets } from "../lib/assets.ts";
+import { diskAssets, PUBLIC_ASSETS } from "../lib/assets.ts";
 import type { LibNut, Ffi } from "../lib/native.ts";
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
@@ -50,7 +50,7 @@ describe("runCheck", () => {
       env: withDisplay,
     });
     expect(code).toBe(1);
-    expect(logs.filter((l) => l.includes("MISSING"))).toHaveLength(3);
+    expect(logs.filter((l) => l.includes("MISSING"))).toHaveLength(PUBLIC_ASSETS.length);
   });
 
   it("reports an unusable input addon without failing — CI has no display", async () => {

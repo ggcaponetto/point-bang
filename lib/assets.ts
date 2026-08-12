@@ -12,7 +12,7 @@ import { safeResolve } from "./static.ts";
  */
 
 /** The files the phone page needs; also the SEA asset key list. */
-export const PUBLIC_ASSETS = ["index.html", "math.js", "buttons.json"];
+export const PUBLIC_ASSETS = ["index.html", "math.js", "buttons.json", "transport.js"];
 
 /** A read-only bundle of named files. */
 export interface AssetSource {

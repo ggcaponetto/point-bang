@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": ["public/math.js", "build/*.mjs"],
+  "entry": ["public/math.js", "public/transport.js", "build/*.mjs"],
   "project": ["**/*.ts", "build/*.mjs"],
   "ignoreDependencies": ["@nut-tree-fork/libnut-linux", "@nut-tree-fork/libnut-win32"]
 }
