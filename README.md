@@ -118,6 +118,11 @@ node cli.ts --help   # every option is a flag
   key combo or mouse button, press-and-hold included, places each one
   anywhere on the screen, and gives each a tunable haptic tick on press.
   FIRE itself is just a remappable button.
+- **Live button editor** — the server hosts a drag-and-drop editor
+  (`/editor.html`, URL in the startup banner): move and resize buttons on a
+  phone-shaped canvas, remap keys, tune haptics — Save applies instantly,
+  the PC remaps without a restart and a connected phone re-renders
+  mid-session without recalibrating.
 - **Multi-monitor aware** — `point-bang monitors` lists your displays;
   `--monitor 2` aims at one of them, `--monitor all` spans the whole
   desktop with each monitor calibrated as its own plane (bezels and

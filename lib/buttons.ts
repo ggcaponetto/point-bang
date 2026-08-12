@@ -1,6 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
-import { normalizeButtonRect } from "../public/math.js";
+import { normalizeButtonRect, parseAction } from "../public/math.js";
 import type { MouseButton, MouseLike } from "./cursor.ts";
 
 /**
@@ -31,93 +29,11 @@ export interface KeyboardLike {
 /** A parsed button action: a key combo or a mouse button. */
 export type ButtonAction = { kind: "key"; keys: string[] } | { kind: "mouse"; button: MouseButton };
 
-// Names below are libnut's own vocabulary — what `lib/input` hands to
-// keyToggle verbatim. Aliases cover the spellings people actually type;
-// anything not resolvable here is rejected at config load rather than
-// throwing mid-game on the first press.
-const KEY_ALIASES: Record<string, string> = {
-  ctrl: "control",
-  control: "control",
-  shift: "shift",
-  alt: "alt",
-  option: "alt",
-  // These are three genuinely different keys to libnut, so keep them apart
-  // instead of collapsing everything onto one "super".
-  win: "win",
-  cmd: "cmd",
-  command: "cmd",
-  meta: "meta",
-  super: "meta",
-  enter: "enter",
-  return: "return",
-  esc: "escape",
-  escape: "escape",
-  space: "space",
-  tab: "tab",
-  backspace: "backspace",
-  delete: "delete",
-  del: "delete",
-  insert: "insert",
-  ins: "insert",
-  up: "up",
-  down: "down",
-  left: "left",
-  right: "right",
-  home: "home",
-  end: "end",
-  pageup: "pageup",
-  pgup: "pageup",
-  pagedown: "pagedown",
-  pgdn: "pagedown",
-  capslock: "caps_lock",
-  numlock: "num_lock",
-  scrolllock: "scroll_lock",
-  printscreen: "printscreen",
-  menu: "menu",
-};
-
-// Punctuation libnut addresses by the character itself. "+" is missing on
-// purpose: it is the combo separator.
-const PUNCTUATION = new Set(["`", "-", "=", "[", "]", "\\", ";", "'", ",", ".", "/"]);
-
-/**
- * Resolves one user-typed key name to its canonical (libnut) spelling, or
- * null for anything unknown. Shared with the pause hotkey (`lib/hotkey`) so
- * combos everywhere use the same vocabulary.
- */
-export function normalizeKey(raw: string): string | null {
-  const k = raw.trim().toLowerCase();
-  if (KEY_ALIASES[k]) return KEY_ALIASES[k];
-  if (/^[a-z0-9]$/.test(k)) return k;
-  if (/^f([1-9]|1\d|2[0-4])$/.test(k)) return k;
-  if (/^numpad\d$/.test(k)) return `numpad_${k.slice(6)}`;
-  if (PUNCTUATION.has(k)) return k;
-  return null;
-}
-
-/**
- * Parses an action spec like `key:ctrl+shift+f` or `mouse:right`.
- * @returns The parsed action, or `null` for unknown keys/malformed specs.
- */
-export function parseAction(spec: string): ButtonAction | null {
-  if (spec.startsWith("mouse:")) {
-    const button = spec.slice("mouse:".length);
-    if (button === "left" || button === "right" || button === "middle")
-      return { kind: "mouse", button };
-    return null;
-  }
-  if (spec.startsWith("key:")) {
-    const parts = spec.slice("key:".length).split("+");
-    const keys: string[] = [];
-    for (const part of parts) {
-      const k = normalizeKey(part);
-      if (!k) return null;
-      keys.push(k);
-    }
-    return keys.length ? { kind: "key", keys } : null;
-  }
-  return null;
-}
+// The action vocabulary (normalizeKey, parseAction, the alias tables) lives
+// in public/math.js since 2026-08-12 so the button editor page validates
+// specs with the exact same code. Re-exported here: lib/hotkey and the tests
+// keep their import site, and this module stays the buttons API.
+export { normalizeKey, parseAction } from "../public/math.js";
 
 interface ButtonDef {
   id: string;
@@ -137,35 +53,6 @@ const usableVibrate = (v: unknown): boolean =>
 export interface ButtonConfig {
   actions: Map<string, ButtonAction>;
   problems: string[];
-}
-
-/**
- * Loads and validates `buttons.json` from disk. Unreadable files or bad
- * actions are reported in `problems`, never thrown — buttons degrade, the gun
- * keeps working.
- *
- * `filePath` comes from the CLI (`--buttons`), so before the read the
- * canonical path must be a `.json` file that still lives in its stated
- * directory — a symlink pointing elsewhere is refused (path-injection guard).
- */
-export function loadButtonConfig(filePath: string): ButtonConfig {
-  try {
-    const dir = fs.realpathSync(path.dirname(filePath));
-    const prefix = dir.endsWith(path.sep) ? dir : dir + path.sep;
-    const resolved = fs.realpathSync(filePath);
-    if (!resolved.startsWith(prefix) || path.extname(resolved).toLowerCase() !== ".json") {
-      return {
-        actions: new Map(),
-        problems: [`buttons config must be a plain .json file, got ${filePath} — buttons disabled`],
-      };
-    }
-    return parseButtonConfig(fs.readFileSync(resolved, "utf8"));
-  } catch (e) {
-    return {
-      actions: new Map(),
-      problems: [`buttons.json unreadable (${(e as Error).message}) — buttons disabled`],
-    };
-  }
 }
 
 /**

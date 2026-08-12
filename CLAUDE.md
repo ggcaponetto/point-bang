@@ -79,7 +79,8 @@ use this approach; the only prior art is a hobbyist native app
 ├── lib/               # typed, unit-tested logic
 │   ├── cli.ts         #   flag surface (buildParser) + command dispatch (runCli)
 │   ├── protocol.ts    #   message types + parseMessage (never crash on garbage)
-│   ├── buttons.ts     #   action parsing (key combos/mouse) + executor + config load
+│   ├── buttons.ts     #   button config validation + executor (action parsing lives in math.js)
+│   ├── buttonstore.ts #   THE buttons.json at runtime: live file > asset copy; editor save target
 │   ├── cursor.ts      #   MouseLike interface, scaleToScreen, apply-latest loop
 │   ├── jitter.ts      #   JitterWindow p50/p95/max
 │   ├── predict.ts     #   AimPredictor: velocity fit + lookahead (opt-in, default OFF)
@@ -115,8 +116,11 @@ use this approach; the only prior art is a hobbyist native app
 │   ├── transport.js   # PC link: RTC-first ladder, WS fallback, LNA fetches (JSDoc,
 │   │                  #   injectable Peer/Socket/fetch — tested like math.js)
 │   ├── buttons.json   # 20 assignable buttons: label/action/visible/rect (phone + PC read it)
-│   └── math.js        # phone math: V, OneEuro, intersectUV… (plain JS + JSDoc,
-│                      #   imported by BOTH Chrome and vitest — keep it dependency-free)
+│   ├── editor.html    # PC-browser button editor: DOM glue only (like index.html)
+│   ├── editor.js      # editor logic: drag/resize/hit-test/problem mirror (covered, like math.js)
+│   └── math.js        # phone math + the shared button vocabulary: V, OneEuro, intersectUV,
+│                      #   normalizeKey/parseAction… (plain JS + JSDoc, imported by BOTH
+│                      #   Chrome and vitest — keep it dependency-free)
 ├── test/              # vitest suites + fixtures/ (self-signed cert for https tests)
 ├── .gitattributes     # eol=lf everywhere — a CRLF clone breaks husky + prettier
 ├── .husky/            # pre-commit: prettier+typecheck; pre-push: npm run validate
@@ -244,6 +248,24 @@ absence of the tag. Plane→monitor assignment is PHONE state only — `m` is ju
 the slot index + 1 — so the post-calibration SWAP button in the aim panel
 permutes the per-monitor arrays (`swapMonitorSlots` in math.js) and the server
 needs no swap awareness; its predictor resets on the `m` change it sees anyway.
+
+v2 (IMPLEMENTED 2026-08-13, additive): live button config. The FIRST
+server→client message: `{"type":"buttons","rev":N}` = "config changed,
+re-fetch buttons.json and re-render" — sent once per WS client, and 3× over
+each DataChannel (0/150/400ms; that transport is lossy) with the per-run
+monotonic `rev` as the dedupe. Old phones have no message listener and ignore
+it. Producer: `POST /buttons {"key?","config"}` (the editor page at
+/editor.html, printed in the banner) — /rtc/offer's guard ladder (403 CORS /
+413 / 403 key / 400 shape), then STRICT validation (any parse problem ⇒ 400 +
+problems, nothing written), atomic write, live executor swap (no restart),
+push. Reads and writes go through `lib/buttonstore.ts`: ONE resolved file
+(explicit `--buttons` > `public/buttons.json` in a checkout > `buttons.json`
+next to the SEA exe, absent = baked asset copy) that `GET /buttons.json` also
+serves — the phone and the PC map can no longer disagree (pre-editor,
+`--buttons` changed only the PC map). Phone-side: `transport.js` gained
+`parseServerMessage` + an `onMessage` hook, and index.html's `renderButtons`
+is idempotent (held buttons get a forced `pointercancel` → button-up before
+the rebuild, so nothing sticks down mid-session; calibration state untouched).
 
 Still planned (additive): `{"type":"ping","t":...}` / `{"type":"pong",...}`
 for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.

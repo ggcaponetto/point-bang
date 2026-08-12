@@ -1,10 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import {
   parseAction,
-  loadButtonConfig,
   parseButtonConfig,
   createButtonExecutor,
   type KeyboardLike,
@@ -49,52 +45,8 @@ describe("parseAction", () => {
   });
 });
 
-describe("loadButtonConfig", () => {
-  const write = (obj: unknown): string => {
-    const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "btn-")), "buttons.json");
-    fs.writeFileSync(p, JSON.stringify(obj));
-    return p;
-  };
-
-  it("maps assigned actions, skips unassigned, reports bad ones", () => {
-    const p = write({
-      buttons: [
-        { id: "b1", label: "RELOAD", action: "mouse:right", visible: true },
-        { id: "b2", label: "START", action: "key:1", visible: true },
-        { id: "b3", label: "unused", action: "", visible: false },
-        { id: "b4", label: "broken", action: "key:nope", visible: true },
-        { label: "no id", action: "key:a", visible: true },
-      ],
-    });
-    const cfg = loadButtonConfig(p);
-    expect([...cfg.actions.keys()]).toEqual(["b1", "b2"]);
-    expect(cfg.actions.get("b1")).toEqual({ kind: "mouse", button: "right" });
-    expect(cfg.problems).toEqual([
-      'button b4: unknown action "key:nope"',
-      "button without id skipped",
-    ]);
-  });
-
-  it("disables buttons on unreadable config", () => {
-    const cfg = loadButtonConfig(path.join(os.tmpdir(), "nope", "buttons.json"));
-    expect(cfg.actions.size).toBe(0);
-    expect(cfg.problems[0]).toContain("buttons disabled");
-  });
-
-  it("refuses a config that is not a .json file — --buttons is CLI-controlled", () => {
-    const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "btn-")), "buttons.txt");
-    fs.writeFileSync(p, JSON.stringify({ buttons: [] }));
-    const cfg = loadButtonConfig(p);
-    expect(cfg.actions.size).toBe(0);
-    expect(cfg.problems[0]).toContain("must be a plain .json file");
-  });
-
-  it("tolerates a config without a buttons array", () => {
-    const cfg = loadButtonConfig(write({}));
-    expect(cfg.actions.size).toBe(0);
-    expect(cfg.problems).toEqual([]);
-  });
-});
+// File loading (the old loadButtonConfig) lives in lib/buttonstore now —
+// its path guard and fallback semantics are covered in buttonstore.test.ts.
 
 describe("parseButtonConfig", () => {
   it("reads config text directly — the form the executable uses", () => {
@@ -143,6 +95,30 @@ describe("parseButtonConfig", () => {
     const cfg = parseButtonConfig("{{{ not json");
     expect(cfg.actions.size).toBe(0);
     expect(cfg.problems[0]).toContain("buttons disabled");
+  });
+  it("maps assigned actions, skips unassigned, reports bad ones", () => {
+    const cfg = parseButtonConfig(
+      JSON.stringify({
+        buttons: [
+          { id: "b1", label: "RELOAD", action: "mouse:right", visible: true },
+          { id: "b2", label: "START", action: "key:1", visible: true },
+          { id: "b3", label: "unused", action: "", visible: false },
+          { id: "b4", label: "broken", action: "key:nope", visible: true },
+          { label: "no id", action: "key:a", visible: true },
+        ],
+      }),
+    );
+    expect([...cfg.actions.keys()]).toEqual(["b1", "b2"]);
+    expect(cfg.actions.get("b1")).toEqual({ kind: "mouse", button: "right" });
+    expect(cfg.problems).toEqual([
+      'button b4: unknown action "key:nope"',
+      "button without id skipped",
+    ]);
+  });
+  it("tolerates a config without a buttons array", () => {
+    const cfg = parseButtonConfig("{}");
+    expect(cfg.actions.size).toBe(0);
+    expect(cfg.problems).toEqual([]);
   });
 });
 

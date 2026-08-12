@@ -14,6 +14,16 @@ function fakeEvent<T>() {
 
 const OFFER = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n";
 
+/** A drivable ChannelLike: open by default, `send` recorded. */
+function fakeChannel(overrides: Partial<Pick<ChannelLike, "readyState" | "send">> = {}) {
+  return {
+    onMessage: fakeEvent<string | Buffer>(),
+    readyState: "open",
+    send: vi.fn((_d: string) => {}),
+    ...overrides,
+  };
+}
+
 type Overridable = Partial<
   Omit<PeerLike, "onDataChannel" | "connectionStateChange" | "iceGatheringStateChange">
 >;
@@ -102,10 +112,44 @@ describe("createRtcHub", () => {
     const raw: (string | Buffer)[] = [];
     const hub = createRtcHub((r) => raw.push(r), { createPeer: () => peer, log: () => {} });
     await hub.handleOffer(OFFER);
-    const dc = { onMessage: fakeEvent<string | Buffer>() };
+    const dc = fakeChannel();
     peer.onDataChannel.fire(dc);
     dc.onMessage.fire('{"type":"fire"}');
     expect(raw).toEqual(['{"type":"fire"}']);
+  });
+
+  it("broadcasts to open channels only, surviving a throwing send", async () => {
+    const peerA = fakePeer();
+    const peerB = fakePeer();
+    const peers = [peerA, peerB];
+    const hub = createRtcHub(() => {}, { createPeer: () => peers.shift()!, log: () => {} });
+    await hub.handleOffer(OFFER);
+    await hub.handleOffer(OFFER);
+    const open = fakeChannel();
+    const closed = fakeChannel({ readyState: "closed" });
+    const hostile = fakeChannel({
+      send: vi.fn(() => {
+        throw new Error("channel died mid-send");
+      }),
+    });
+    peerA.onDataChannel.fire(open);
+    peerA.onDataChannel.fire(closed);
+    peerB.onDataChannel.fire(hostile);
+    hub.broadcast("ping"); // the throw from `hostile` must not escape
+    expect(open.send).toHaveBeenCalledWith("ping");
+    expect(closed.send).not.toHaveBeenCalled();
+    expect(hostile.send).toHaveBeenCalled();
+  });
+
+  it("stops broadcasting to an evicted peer's channels", async () => {
+    const peer = fakePeer();
+    const hub = createRtcHub(() => {}, { createPeer: () => peer, log: () => {} });
+    await hub.handleOffer(OFFER);
+    const dc = fakeChannel();
+    peer.onDataChannel.fire(dc);
+    peer.connectionStateChange.fire("failed"); // evicts
+    hub.broadcast("ping");
+    expect(dc.send).not.toHaveBeenCalled();
   });
 
   it("logs and evicts on connection failure, once", async () => {

@@ -30,7 +30,8 @@ import {
 } from "./lib/monitors.ts";
 import { loadTls } from "./lib/certs.ts";
 import { lanIPv4 } from "./lib/net.ts";
-import { parseMessage, type ClientMsg } from "./lib/protocol.ts";
+import { parseMessage, type ClientMsg, type ServerMsg } from "./lib/protocol.ts";
+import { createButtonStore, type ButtonStore } from "./lib/buttonstore.ts";
 import { createCursorLoop, scaleToRect, type MouseLike } from "./lib/cursor.ts";
 import { AimPredictor } from "./lib/predict.ts";
 import { JitterWindow, formatJitter } from "./lib/jitter.ts";
@@ -42,9 +43,9 @@ import {
   DEFAULT_SCREEN,
 } from "./lib/virtual.ts";
 import {
-  loadButtonConfig,
   parseButtonConfig,
   createButtonExecutor,
+  type ButtonConfig,
   type KeyboardLike,
 } from "./lib/buttons.ts";
 import {
@@ -63,8 +64,8 @@ import { phonePageUrl, qrLines, DEFAULT_PAGE_URL } from "./lib/qr.ts";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
-/** SDP offers are a few KB; anything bigger is not a phone calibrating. */
-const MAX_OFFER_BYTES = 64 * 1024;
+/** SDP offers and button configs are a few KB; anything bigger is hostile. */
+const MAX_BODY_BYTES = 64 * 1024;
 const TOO_BIG = Symbol("body too large");
 
 const readBody = (
@@ -120,6 +121,13 @@ export interface ServerOptions {
   mouse?: MouseLike;
   keyboard?: KeyboardLike;
   buttonsFile?: string;
+  /**
+   * Whether `buttonsFile` was named by the user (`--buttons`): an unreadable
+   * explicit file is a reported problem, an absent implicit one (the default
+   * next to the exe / in public/) silently falls back to the asset copy.
+   * Defaults to `buttonsFile !== undefined` for embedded/test callers.
+   */
+  buttonsExplicit?: boolean;
   /** PC key combo toggling tracking pause; `"off"` disables. Default `shift+space`. */
   pauseCombo?: string;
   /** Injected combo probe for tests — replaces the real key-state FFI. */
@@ -250,21 +258,17 @@ async function resolveTargetRect(
 }
 
 // ---------- buttons (protocol v2) ----------
-// Same buttons.json both sides read: an explicit file wins, otherwise it
-// comes from wherever the phone page itself comes from (disk or SEA blob).
-async function loadButtons(
-  opts: ServerOptions,
-  assets: AssetSource,
-  mouse: MouseLike,
-  keyboard: KeyboardLike,
-  log: Log,
-): Promise<(id: string, down: boolean) => Promise<boolean>> {
-  const btnCfg = opts.buttonsFile
-    ? loadButtonConfig(opts.buttonsFile)
-    : parseButtonConfig((await assets.read("buttons.json"))?.toString("utf8") ?? "");
-  for (const p of btnCfg.problems) log(`buttons: ${p}`);
-  log(`buttons: ${btnCfg.actions.size} action(s) mapped`);
-  return createButtonExecutor(btnCfg.actions, mouse, keyboard);
+// Same buttons.json both sides read, THROUGH the store (lib/buttonstore):
+// the live config file wins, the asset copy is the fallback, and `GET
+// /buttons.json` serves the same bytes this map was built from.
+async function loadButtons(store: ButtonStore, log: Log): Promise<ButtonConfig> {
+  const { text, problem } = await store.read();
+  const cfg: ButtonConfig = problem
+    ? { actions: new Map(), problems: [problem] }
+    : parseButtonConfig(text ?? "");
+  for (const p of cfg.problems) log(`buttons: ${p}`);
+  log(`buttons: ${cfg.actions.size} action(s) mapped`);
+  return cfg;
 }
 
 // ---------- pause hotkey (use the real mouse without disconnecting) ----------
@@ -395,6 +399,10 @@ interface HttpDeps {
   handleOffer(sdp: string): Promise<string>;
   /** Precomputed `GET /monitors` body — the aim targets the phone calibrates. */
   monitorsJson: string;
+  /** Current buttons.json text via the store (live file wins over the asset copy). */
+  buttonsRead(): Promise<string | null>;
+  /** Validates + persists a new buttons config; returns HTTP status + JSON body. */
+  buttonsSave(config: unknown): Promise<{ status: number; body: string }>;
 }
 
 async function handleRtcOffer(
@@ -403,7 +411,7 @@ async function handleRtcOffer(
   res: http.ServerResponse,
   cors: Record<string, string>,
 ): Promise<void> {
-  const body = await readBody(req, MAX_OFFER_BYTES);
+  const body = await readBody(req, MAX_BODY_BYTES);
   if (body === TOO_BIG) {
     res.writeHead(413, cors);
     res.end("offer too large");
@@ -439,6 +447,80 @@ async function handleRtcOffer(
   }
 }
 
+// The button editor's save: same guard ladder as /rtc/offer (413 → key gate →
+// shape), then the validated config is persisted + applied by `buttonsSave`.
+async function handleButtonsSave(
+  d: HttpDeps,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  const body = await readBody(req, MAX_BODY_BYTES);
+  if (body === TOO_BIG) {
+    res.writeHead(413, cors);
+    res.end("config too large");
+    return;
+  }
+  let key: unknown;
+  let config: unknown;
+  try {
+    const parsed = JSON.parse(body ?? "") as { key?: unknown; config?: unknown };
+    key = parsed.key;
+    config = parsed.config;
+  } catch {
+    config = undefined;
+  }
+  if (!d.gate.allow(req.socket.remoteAddress, typeof key === "string" ? key : undefined)) {
+    d.log(`buttons: save refused (missing/wrong session key) from ${req.socket.remoteAddress}`);
+    res.writeHead(403, cors);
+    res.end("session key required — scan the QR the server prints");
+    return;
+  }
+  const { status, body: out } = await d.buttonsSave(config);
+  res.writeHead(status, { "Content-Type": "application/json", ...cors });
+  res.end(out);
+}
+
+// A browser context posting to a state-changing route must be the hosted
+// page or same-origin (cors non-null); everything else is refused here.
+function guardedPost(
+  d: HttpDeps,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string> | null,
+  handler: (
+    d: HttpDeps,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    cors: Record<string, string>,
+  ) => Promise<void>,
+): void {
+  if (!cors) {
+    res.writeHead(403);
+    res.end("origin not allowed");
+    return;
+  }
+  void handler(d, req, res, cors);
+}
+
+// Through the store, not the raw assets: a live-editor save (or a
+// buttons.json next to the executable) wins over the baked copy.
+function serveButtonsJson(
+  d: HttpDeps,
+  res: http.ServerResponse,
+  cors: Record<string, string> | null,
+): void {
+  void d.buttonsRead().then((text) => {
+    if (text === null) {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json", ...cors });
+    res.end(text);
+  });
+}
+
 function createHttpHandler(d: HttpDeps): http.RequestListener {
   return (req, res) => {
     const info = { origin: req.headers.origin, host: req.headers.host };
@@ -458,14 +540,15 @@ function createHttpHandler(d: HttpDeps): http.RequestListener {
       return;
     }
     if (req.method === "POST" && normalized === "/rtc/offer") {
-      // The one state-changing route: a browser context must be the hosted
+      // The state-changing routes: a browser context must be the hosted
       // page or same-origin — this socket ends at the mouse and keyboard.
-      if (!cors) {
-        res.writeHead(403);
-        res.end("origin not allowed");
-        return;
-      }
-      void handleRtcOffer(d, req, res, cors);
+      guardedPost(d, req, res, cors, handleRtcOffer);
+      return;
+    }
+    if (req.method === "POST" && normalized === "/buttons") {
+      // State-changing like /rtc/offer: same origin rule, and the body must
+      // present the session key (checked inside handleButtonsSave).
+      guardedPost(d, req, res, cors, handleButtonsSave);
       return;
     }
     if (req.method === "GET" && normalized === "/monitors") {
@@ -473,6 +556,10 @@ function createHttpHandler(d: HttpDeps): http.RequestListener {
       // ungated like buttons.json — the aim intakes are what the key guards.
       res.writeHead(200, { "Content-Type": "application/json", ...cors });
       res.end(d.monitorsJson);
+      return;
+    }
+    if (req.method === "GET" && normalized === "/buttons.json") {
+      serveButtonsJson(d, res, cors);
       return;
     }
     // Assets are addressed by bare name ("index.html"), not by URL path.
@@ -542,6 +629,9 @@ async function printKeyAndUsbLines(c: ReportCtx, key: string | null): Promise<vo
   } else {
     c.log(`key : OFF — anyone who can reach this port can move this PC's mouse and keyboard`);
   }
+  c.log(
+    `Edit: open http://localhost:${c.httpPort}/editor.html${c.localFrag} on THIS PC — live button editor`,
+  );
   if (c.mode !== "wifi")
     c.log(
       `USB:  adb reverse tcp:${c.httpPort} tcp:${c.httpPort}  then open http://localhost:${c.httpPort}${c.localFrag} on the phone`,
@@ -625,7 +715,21 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     (e) => console.error("mouse:", e.message),
   );
 
-  const pressButton = await loadButtons(opts, assets, mouse, keyboard, log);
+  // The effective buttons.json: the live file (editor save target) wins, the
+  // asset copy is the fallback. Dev default = public/buttons.json (the very
+  // file the assets serve); embedded callers without a file cannot save (409).
+  const defaultButtonsFile = (): string | null => {
+    if (opts.buttonsFile) return opts.buttonsFile;
+    if (opts.publicDir) return path.join(opts.publicDir, "buttons.json");
+    return opts.assets ? null : path.join(ROOT, "public", "buttons.json");
+  };
+  const store = createButtonStore({
+    file: defaultButtonsFile(),
+    explicit: opts.buttonsExplicit ?? opts.buttonsFile !== undefined,
+    assets,
+  });
+  // `let` + arrow-wrapper: a live save swaps the executor without a restart.
+  let pressButton = createButtonExecutor((await loadButtons(store, log)).actions, mouse, keyboard);
 
   // While paused, aim and button-downs are dropped at the socket; button-ups
   // still pass so nothing held on the phone stays stuck down forever.
@@ -673,7 +777,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     predictor,
     jitter,
     mouse,
-    pressButton,
+    pressButton: (id, down) => pressButton(id, down),
     setMonitor,
     parkOnMonitor,
     log,
@@ -700,6 +804,57 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     })),
   });
 
+  // ---------- live button config (editor save + phone push) ----------
+  let buttonsRev = 0;
+  const notifyTimers = new Set<NodeJS.Timeout>();
+  // Declared as a `function` so the save closure below can reference it while
+  // the WS servers it uses are created further down; saves only ever run
+  // after startup completes.
+  function notifyButtons(): void {
+    const msg: ServerMsg = { type: "buttons", rev: buttonsRev };
+    const text = JSON.stringify(msg);
+    for (const c of wss.clients) if (c.readyState === c.OPEN) c.send(text);
+    if (wssTls) for (const c of wssTls.clients) if (c.readyState === c.OPEN) c.send(text);
+    // The DataChannel is lossy (unordered, no retransmits): repeat the tiny
+    // notification; the phone dedupes on `rev`.
+    for (const delay of [0, 150, 400]) {
+      const t = setTimeout(() => {
+        notifyTimers.delete(t);
+        rtcHub.broadcast(text);
+      }, delay);
+      notifyTimers.add(t);
+    }
+  }
+  const saveButtons = async (config: unknown): Promise<{ status: number; body: string }> => {
+    const fail = (status: number, problems: string[]): { status: number; body: string } => ({
+      status,
+      body: JSON.stringify({ ok: false, problems }),
+    });
+    if (
+      typeof config !== "object" ||
+      config === null ||
+      !Array.isArray((config as { buttons?: unknown }).buttons)
+    )
+      return fail(400, ['expected {"config":{"buttons":[...]}}']);
+    // Re-serialized HERE — raw client bytes never touch the disk — and strict:
+    // any problem refuses the save, so a live session cannot silently lose
+    // actions to a typo.
+    const text = JSON.stringify(config, null, 2) + "\n";
+    const cfg = parseButtonConfig(text);
+    if (cfg.problems.length) return fail(400, cfg.problems);
+    if (!store.file) return fail(409, ["no writable buttons.json location (embedded assets)"]);
+    try {
+      await store.write(text);
+    } catch (e) {
+      return fail(500, [`save failed: ${(e as Error).message}`]);
+    }
+    pressButton = createButtonExecutor(cfg.actions, mouse, keyboard);
+    log(`buttons: ${cfg.actions.size} action(s) mapped (live)`);
+    buttonsRev++;
+    notifyButtons();
+    return { status: 200, body: JSON.stringify({ ok: true, rev: buttonsRev }) };
+  };
+
   const pageOrigins = opts.pageOrigins ?? [new URL(opts.pageUrl ?? DEFAULT_PAGE_URL).origin];
   const handler = createHttpHandler({
     assets,
@@ -708,6 +863,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     log,
     handleOffer: (sdp) => rtcHub.handleOffer(sdp),
     monitorsJson,
+    buttonsRead: async () => (await store.read()).text,
+    buttonsSave: saveButtons,
   });
   const httpServer = http.createServer(handler);
   const tls = mode === "adb" ? null : loadTls(opts.certsDir ?? path.join(ROOT, "certs"));
@@ -743,6 +900,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     cursor.stop();
     hotkey?.stop();
     clearInterval(statsTimer);
+    for (const t of notifyTimers) clearTimeout(t);
     for (const c of wss.clients) c.terminate();
     if (wssTls) for (const c of wssTls.clients) c.terminate();
     const closeSrv = (s: http.Server | https.Server | null): Promise<void> =>

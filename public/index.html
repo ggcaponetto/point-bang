@@ -430,14 +430,29 @@
       // except "fire", which takes the big red slot in #controls. All buttons
       // fire on pointerDOWN — a "click" listener would add the whole tap
       // duration (~100ms) before the shot registers.
-      async function loadButtons() {
+      //
+      // IDEMPOTENT on purpose: the PC pushes {"type":"buttons"} after a live
+      // editor save and this re-runs mid-session — recalibration untouched.
+      let calibrated = false; // gates the fire-slot reveal on a mid-session rebuild
+      async function renderButtons() {
         try {
           // Remote mode reads the PC's buttons.json (the customer's local
           // config wins over the copy deployed beside this page) — usually
           // the fetch that triggers Chrome's one-time local-network prompt.
-          const cfg = await fetchButtons(hosts, (u, i) => fetch(u, i));
+          const cfg = await fetchButtons(hosts, (u, i) => fetch(u, i), transport.connectedHost());
           const strip = document.getElementById("btnStrip");
           const layer = document.getElementById("btnLayer");
+          // A held button about to be re-rendered must release FIRST — its
+          // pointercancel listener sends the button-up, so nothing on the PC
+          // stays stuck down when the element is thrown away.
+          for (const held of document.querySelectorAll("#btnLayer .held, #btnStrip .held"))
+            held.dispatchEvent(new Event("pointercancel"));
+          const oldFire = document.getElementById("btnFire");
+          if (oldFire?.classList.contains("held"))
+            oldFire.dispatchEvent(new Event("pointercancel"));
+          strip.replaceChildren();
+          layer.replaceChildren();
+          oldFire?.remove(); // never two #btnFire ids
           for (const b of (cfg.buttons ?? []).filter((b) => b.visible)) {
             const isFire = b.id === "fire";
             const rect = normalizeButtonRect(b.rect);
@@ -484,6 +499,9 @@
               strip.appendChild(el);
             }
           }
+          // A fire button rebuilt mid-session must not stay at its inline
+          // display:none — the session already revealed the controls.
+          if (calibrated) show("btnFire", true);
         } catch (e) {
           console.warn("buttons.json load failed:", e);
         }
@@ -524,7 +542,15 @@
           if (state === "failed" && detail) $("err").textContent = detail;
           if (ok) $("err").textContent = "";
         },
+        // The PC pushes {"type":"buttons","rev":N} after a live editor save.
+        // rev dedupes the repeats it sends over the lossy DataChannel.
+        onMessage: (m) => {
+          if (m.type !== "buttons" || (m.rev && m.rev <= buttonsRev)) return;
+          buttonsRev = m.rev || buttonsRev + 1;
+          void renderButtons();
+        },
       });
+      let buttonsRev = 0;
       function send(o) {
         transport.send(o);
       }
@@ -565,6 +591,7 @@
         activeMon = null;
         setHud("hMon", "—");
         show("hMonWrap", multi);
+        calibrated = false;
         $("btnCapture").style.display = "";
         show("btnFire", false);
         show("aimAdj", false);
@@ -635,6 +662,7 @@
             ? `Calibrated. Aim at the screen — cursor should follow; buttons are live.`
             : `Calibrated, but ${verdict} Recalibrate if aim is off.`,
         );
+        calibrated = true;
         $("btnCapture").style.display = "none";
         show("btnFire", true);
         show("aimAdj", true);
@@ -936,7 +964,7 @@
       // Last on purpose: nothing below depends on it, so awaiting the
       // buttons.json fetch (it can sit behind Chrome's local-network prompt
       // in remote mode) cannot delay the START button becoming usable.
-      await loadButtons();
+      await renderButtons();
     </script>
   </body>
 </html>

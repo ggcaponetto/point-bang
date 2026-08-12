@@ -7,6 +7,7 @@ import https from "node:https";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { startServer, type RunningServer } from "../server.ts";
+import type { ChannelLike } from "../lib/rtc.ts";
 import type { MouseLike } from "../lib/cursor.ts";
 import { lanIPv4 } from "../lib/net.ts";
 
@@ -743,12 +744,10 @@ describe("startServer rtc signaling", () => {
 
   /** Werift stand-in whose DataChannel the test can drive directly. */
   function fakeRtcPeer() {
-    let onDc:
-      ((dc: { onMessage: { subscribe(cb: (d: string | Buffer) => void): void } }) => void) | null =
-      null;
+    let onDc: ((dc: ChannelLike) => void) | null = null;
     const closed: number[] = [];
     const peer = {
-      onDataChannel: { subscribe: (cb: typeof onDc) => (onDc = cb) },
+      onDataChannel: { subscribe: (cb: (dc: ChannelLike) => void) => (onDc = cb) },
       connectionStateChange: { subscribe: () => {} },
       iceGatheringStateChange: { subscribe: () => {} },
       iceGatheringState: "complete",
@@ -762,8 +761,13 @@ describe("startServer rtc signaling", () => {
     };
     const openChannel = () => {
       let onMsg: ((d: string | Buffer) => void) | null = null;
-      onDc?.({ onMessage: { subscribe: (cb) => (onMsg = cb) } });
-      return { send: (d: string) => onMsg?.(d) };
+      const received: string[] = []; // server→phone pushes land here
+      onDc?.({
+        onMessage: { subscribe: (cb) => (onMsg = cb) },
+        readyState: "open",
+        send: (d: string) => received.push(d),
+      });
+      return { send: (d: string) => onMsg?.(d), received };
     };
     return { peer, openChannel, closed };
   }
@@ -913,6 +917,173 @@ describe("startServer rtc signaling", () => {
     });
     expect(body.status).toBe(200);
     expect(JSON.parse(body.text)).toEqual({ sdp: "v=0 answer" });
+  });
+});
+
+describe("startServer live button config (editor save + push)", () => {
+  const cfgWith = (action: string): object => ({
+    buttons: [{ id: "b1", label: "B1", action, visible: true }],
+  });
+
+  // Every save test writes into ITS OWN temp dir — never the repo public/.
+  function tempPublic(action = "key:a"): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pb-editor-"));
+    fs.writeFileSync(path.join(dir, "buttons.json"), JSON.stringify(cfgWith(action)));
+    return dir;
+  }
+
+  async function bootEditor(extra: Parameters<typeof startServer>[0] = {}) {
+    const f = fakeMouse();
+    const k = fakeKeyboard();
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      mouse: f.mouse,
+      keyboard: k.keyboard,
+      log: (l) => logs.push(l),
+      pauseCombo: "off",
+      ...extra,
+    });
+    return { ...f, ...k, logs, srv: running, base: `http://127.0.0.1:${running.httpPort}` };
+  }
+
+  const postButtons = (base: string, body: string, origin?: string) =>
+    fetch(`${base}/buttons`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(origin ? { origin } : {}) },
+      body,
+    });
+
+  it("saves live: file rewritten, GET serves it, WS phone pushed, new action fires", async () => {
+    const dir = tempPublic();
+    const { srv, base, buttons, logs } = await bootEditor({ publicDir: dir });
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    const pushes: string[] = [];
+    ws.on("message", (d) => pushes.push(String(d)));
+
+    const res = await postButtons(base, JSON.stringify({ config: cfgWith("mouse:right") }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, rev: 1 });
+    // the file on disk was atomically replaced …
+    expect(fs.readFileSync(path.join(dir, "buttons.json"), "utf8")).toContain("mouse:right");
+    // … GET serves the new config …
+    expect(await (await fetch(`${base}/buttons.json`)).text()).toContain("mouse:right");
+    // … the phone got the push …
+    await until(() => pushes.length > 0);
+    expect(JSON.parse(pushes[0])).toEqual({ type: "buttons", rev: 1 });
+    // … and the NEW action executes with no restart.
+    ws.send(JSON.stringify({ type: "button", id: "b1", down: true }));
+    await until(() => buttons.length > 0);
+    expect(buttons[0]).toBe("press:right");
+    expect(logs.some((l) => l.includes("1 action(s) mapped (live)"))).toBe(true);
+    ws.close();
+  });
+
+  it("refuses a config with problems: 400 + problems, nothing written", async () => {
+    const dir = tempPublic();
+    const { base } = await bootEditor({ publicDir: dir });
+    const res = await postButtons(base, JSON.stringify({ config: cfgWith("key:nope") }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      ok: false,
+      problems: ['button b1: unknown action "key:nope"'],
+    });
+    expect(fs.readFileSync(path.join(dir, "buttons.json"), "utf8")).toContain("key:a");
+  });
+
+  it("400s a body without a buttons array, 413s an oversized one", async () => {
+    const { base } = await bootEditor({ publicDir: tempPublic() });
+    expect((await postButtons(base, "{{{ nope")).status).toBe(400);
+    expect((await postButtons(base, JSON.stringify({ config: {} }))).status).toBe(400);
+    const huge = JSON.stringify({ config: cfgWith("key:a"), pad: "x".repeat(70_000) });
+    expect((await postButtons(base, huge)).status).toBe(413);
+  });
+
+  it("403s a foreign browser origin", async () => {
+    const dir = tempPublic();
+    const { base } = await bootEditor({ publicDir: dir });
+    const res = await postButtons(
+      base,
+      JSON.stringify({ config: cfgWith("mouse:left") }),
+      "https://evil.example",
+    );
+    expect(res.status).toBe(403);
+    expect(fs.readFileSync(path.join(dir, "buttons.json"), "utf8")).toContain("key:a");
+  });
+
+  it("enforces the session key when loopback is not exempt", async () => {
+    const dir = tempPublic();
+    const { base } = await bootEditor({
+      publicDir: dir,
+      key: "sesame-key-123",
+      keyLoopbackExempt: false,
+    });
+    const noKey = await postButtons(base, JSON.stringify({ config: cfgWith("mouse:left") }));
+    expect(noKey.status).toBe(403);
+    const withKey = await postButtons(
+      base,
+      JSON.stringify({ key: "sesame-key-123", config: cfgWith("mouse:left") }),
+    );
+    expect(withKey.status).toBe(200);
+  });
+
+  it("409s when there is nowhere to write (embedded assets, no file)", async () => {
+    const { base } = await bootEditor({
+      assets: {
+        async read(name) {
+          return name === "buttons.json" ? Buffer.from(JSON.stringify(cfgWith("key:a"))) : null;
+        },
+      },
+    });
+    const res = await postButtons(base, JSON.stringify({ config: cfgWith("mouse:left") }));
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { problems: string[] }).problems[0]).toContain("no writable");
+  });
+
+  it("serves an explicit --buttons file on GET /buttons.json (both sides agree)", async () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "pb-explicit-")), "mine.json");
+    fs.writeFileSync(file, JSON.stringify(cfgWith("key:x")));
+    const { base } = await bootEditor({ publicDir: PUBLIC, buttonsFile: file });
+    const text = await (await fetch(`${base}/buttons.json`)).text();
+    expect(text).toContain("key:x"); // the file, not the public/ copy
+  });
+
+  it("repeats the push over the lossy DataChannel, deduped by rev", async () => {
+    // Local werift stand-in (same shape as the rtc signaling suite's).
+    let onDc: ((dc: ChannelLike) => void) | null = null;
+    const peer = {
+      onDataChannel: { subscribe: (cb: (dc: ChannelLike) => void) => (onDc = cb) },
+      connectionStateChange: { subscribe: () => {} },
+      iceGatheringStateChange: { subscribe: () => {} },
+      iceGatheringState: "complete",
+      localDescription: { sdp: "v=0 answer" },
+      setRemoteDescription: async () => {},
+      createAnswer: async () => ({ type: "answer", sdp: "v=0 answer" }),
+      setLocalDescription: async () => ({}),
+      close: async () => {},
+    };
+    const { base } = await bootEditor({
+      publicDir: tempPublic(),
+      rtc: { createPeer: () => peer },
+    });
+    const offer = await fetch(`${base}/rtc/offer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sdp: "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n" }),
+    });
+    expect(offer.status).toBe(200);
+    const received: string[] = [];
+    onDc!({
+      onMessage: { subscribe: () => {} },
+      readyState: "open",
+      send: (d: string) => received.push(d),
+    });
+    const res = await postButtons(base, JSON.stringify({ config: cfgWith("mouse:left") }));
+    expect(res.status).toBe(200);
+    await until(() => received.length >= 3); // 0/150/400ms repeats
+    expect(JSON.parse(received[0])).toEqual({ type: "buttons", rev: 1 });
+    expect(received[0]).toBe(received[1]); // identical copies — the phone dedupes on rev
   });
 });
 

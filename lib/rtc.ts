@@ -20,6 +20,9 @@ import { RTCPeerConnection } from "werift";
 /** The slice of a werift RTCDataChannel we consume. */
 export interface ChannelLike {
   onMessage: { subscribe(cb: (data: string | Buffer) => void): void };
+  /** werift's channel state; only `"open"` channels are broadcast to. */
+  readyState: string;
+  send(data: string): void;
 }
 
 /** The slice of a werift RTCPeerConnection we consume — the mock seam. */
@@ -49,6 +52,8 @@ export interface RtcHub {
   handleOffer(sdp: string): Promise<string>;
   /** Live peer connections (any state short of evicted). */
   count(): number;
+  /** Sends to every open DataChannel across live peers; skips the rest. */
+  broadcast(text: string): void;
   /** Closes every live peer; part of server teardown. */
   close(): Promise<void>;
 }
@@ -100,8 +105,12 @@ export function createRtcHub(onRaw: (raw: string | Buffer) => void, deps: RtcHub
   const log = deps.log ?? console.log;
   const capMs = deps.gatherTimeoutMs ?? 3000;
   const peers = new Set<PeerLike>();
+  // Channels per peer, for server→phone pushes. A peer may open more than one
+  // channel in theory; all of them are remembered and dropped with the peer.
+  const channels = new Map<PeerLike, ChannelLike[]>();
 
   const evict = (peer: PeerLike): void => {
+    channels.delete(peer);
     if (!peers.delete(peer)) return; // already evicted — close() raced a state change
     peer.close().catch(() => {});
   };
@@ -111,7 +120,10 @@ export function createRtcHub(onRaw: (raw: string | Buffer) => void, deps: RtcHub
       if (typeof sdp !== "string" || !sdp.includes("m=")) throw new Error("not an SDP offer");
       const peer = createPeer();
       peers.add(peer);
-      peer.onDataChannel.subscribe((dc) => dc.onMessage.subscribe(onRaw));
+      peer.onDataChannel.subscribe((dc) => {
+        dc.onMessage.subscribe(onRaw);
+        channels.set(peer, [...(channels.get(peer) ?? []), dc]);
+      });
       peer.connectionStateChange.subscribe((state) => {
         if (state === "connected") log("phone connected (rtc)");
         if (state === "failed" || state === "closed" || state === "disconnected") {
@@ -135,9 +147,21 @@ export function createRtcHub(onRaw: (raw: string | Buffer) => void, deps: RtcHub
       return local.sdp;
     },
     count: () => peers.size,
+    broadcast(text: string): void {
+      for (const list of channels.values())
+        for (const dc of list) {
+          if (dc.readyState !== "open") continue;
+          try {
+            dc.send(text);
+          } catch {
+            // a channel closing mid-send must never throw out of a save
+          }
+        }
+    },
     async close(): Promise<void> {
       const open = [...peers];
       peers.clear();
+      channels.clear();
       await Promise.all(open.map((p) => p.close().catch(() => {})));
     },
   };

@@ -210,6 +210,110 @@ export function normalizeVibrate(v, defaultMs = 10) {
   return Math.min(Math.round(v), 100);
 }
 
+// ==================== button actions ====================
+// Shared vocabulary: the PC executor (lib/buttons) and the button editor page
+// validate action specs with the SAME functions, so a combo the editor accepts
+// can never be rejected at server load. Moved here from lib/buttons (2026-08-12)
+// exactly like normalizeButtonRect/normalizeVibrate before it.
+
+// Names below are libnut's own vocabulary — what `lib/input` hands to
+// keyToggle verbatim. Aliases cover the spellings people actually type;
+// anything not resolvable here is rejected at config load rather than
+// throwing mid-game on the first press.
+/** @type {Record<string, string>} */
+const KEY_ALIASES = {
+  ctrl: "control",
+  control: "control",
+  shift: "shift",
+  alt: "alt",
+  option: "alt",
+  // These are three genuinely different keys to libnut, so keep them apart
+  // instead of collapsing everything onto one "super".
+  win: "win",
+  cmd: "cmd",
+  command: "cmd",
+  meta: "meta",
+  super: "meta",
+  enter: "enter",
+  return: "return",
+  esc: "escape",
+  escape: "escape",
+  space: "space",
+  tab: "tab",
+  backspace: "backspace",
+  delete: "delete",
+  del: "delete",
+  insert: "insert",
+  ins: "insert",
+  up: "up",
+  down: "down",
+  left: "left",
+  right: "right",
+  home: "home",
+  end: "end",
+  pageup: "pageup",
+  pgup: "pageup",
+  pagedown: "pagedown",
+  pgdn: "pagedown",
+  capslock: "caps_lock",
+  numlock: "num_lock",
+  scrolllock: "scroll_lock",
+  printscreen: "printscreen",
+  menu: "menu",
+};
+
+// Punctuation libnut addresses by the character itself. "+" is missing on
+// purpose: it is the combo separator.
+const PUNCTUATION = new Set(["`", "-", "=", "[", "]", "\\", ";", "'", ",", ".", "/"]);
+
+/**
+ * A parsed button action: a key combo or a mouse button.
+ * @typedef {{ kind: "key", keys: string[] } | { kind: "mouse", button: "left" | "right" | "middle" }} ButtonAction
+ */
+
+/**
+ * Resolves one user-typed key name to its canonical (libnut) spelling, or
+ * null for anything unknown. Shared with the pause hotkey (`lib/hotkey`) so
+ * combos everywhere use the same vocabulary.
+ * @param {string} raw
+ * @returns {string | null}
+ */
+export function normalizeKey(raw) {
+  const k = raw.trim().toLowerCase();
+  if (KEY_ALIASES[k]) return KEY_ALIASES[k];
+  if (/^[a-z0-9]$/.test(k)) return k;
+  if (/^f([1-9]|1\d|2[0-4])$/.test(k)) return k;
+  if (/^numpad\d$/.test(k)) return `numpad_${k.slice(6)}`;
+  if (PUNCTUATION.has(k)) return k;
+  return null;
+}
+
+/**
+ * Parses an action spec like `key:ctrl+shift+f` or `mouse:right`.
+ * @param {string} spec
+ * @returns {ButtonAction | null} The parsed action, or `null` for unknown keys/malformed specs.
+ */
+export function parseAction(spec) {
+  if (spec.startsWith("mouse:")) {
+    const button = spec.slice("mouse:".length);
+    if (button === "left" || button === "right" || button === "middle")
+      return { kind: "mouse", button };
+    return null;
+  }
+  if (spec.startsWith("key:")) {
+    const parts = spec.slice("key:".length).split("+");
+    /** @type {string[]} */
+    const keys = [];
+    for (const part of parts) {
+      const k = normalizeKey(part);
+      if (!k) return null;
+      keys.push(k);
+    }
+    return keys.length ? { kind: "key", keys } : null;
+  }
+  return null;
+}
+
 /**
  * One Euro filter: adaptive low-pass — smooth when slow, responsive when
  * flicking. At-rest lag ≈ 1/(2π·minCutoff) seconds.

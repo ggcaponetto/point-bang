@@ -21,6 +21,7 @@
  * @property {string} readyState
  * @property {(() => void) | null} onopen
  * @property {(() => void) | null} onclose
+ * @property {((e: { data: unknown }) => void) | null} onmessage
  * @property {(data: string) => void} send
  * @property {() => void} close
  */
@@ -42,6 +43,7 @@
  * @property {(() => void) | null} onopen
  * @property {(() => void) | null} onclose
  * @property {(() => void) | null} onerror
+ * @property {((e: { data: unknown }) => void) | null} onmessage
  * @property {(data: string) => void} send
  * @property {() => void} close
  */
@@ -144,6 +146,28 @@ export async function fetchMonitors(hosts, fetchFn, connectedHost) {
 }
 
 /**
+ * Parses a server→phone push (protocol v2, server→client direction). The only
+ * message today is `{"type":"buttons","rev":N}` — the config changed,
+ * re-fetch buttons.json. Anything else (including binary frames) is null: an
+ * old server never sends, a new one may add types this page ignores. A
+ * missing/garbage rev normalizes to 0 so callers can still dedupe.
+ * @param {unknown} data
+ * @returns {{ type: "buttons", rev: number } | null}
+ */
+export function parseServerMessage(data) {
+  if (typeof data !== "string") return null;
+  /** @type {{ type?: unknown, rev?: unknown } | null} */
+  let m = null;
+  try {
+    m = JSON.parse(data);
+  } catch {
+    return null;
+  }
+  if (typeof m !== "object" || m?.type !== "buttons") return null;
+  return { type: "buttons", rev: typeof m.rev === "number" && Number.isFinite(m.rev) ? m.rev : 0 };
+}
+
+/**
  * One signaling round-trip: offer out, answer back. The session key goes in
  * the body (never a custom header — that would add CORS preflight surface).
  * @param {string} url
@@ -221,6 +245,7 @@ const failMessage = (hosts) =>
  * @param {new (config: { iceServers: unknown[] }) => PeerIsh} opts.Peer
  * @param {new (url: string) => SocketIsh} opts.Socket
  * @param {(state: "rtc-connecting" | "rtc" | "ws" | "closed" | "failed", detail?: string) => void} [opts.onStatus]
+ * @param {(m: { type: "buttons", rev: number }) => void} [opts.onMessage] server→phone pushes
  * @param {Partial<TransportTimes>} [opts.times]
  * @returns {{ send(o: object): void, close(): void, connectedHost(): string | null }}
  */
@@ -228,6 +253,12 @@ export function createTransport(opts) {
   const hosts = opts.hosts ?? [];
   const key = opts.key ?? null;
   const remote = hosts.length > 0;
+  const onMessage = opts.onMessage ?? (() => {});
+  /** Both intake directions share one shape. @param {{ data: unknown }} e */
+  const onIncoming = (e) => {
+    const m = parseServerMessage(e.data);
+    if (m) onMessage(m);
+  };
   /** @type {TransportTimes} */
   const times = {
     gatherMs: 2000,
@@ -283,6 +314,7 @@ export function createTransport(opts) {
       },
       close: () => pc.close(),
     };
+    dc.onmessage = onIncoming;
     onStatus("rtc");
     let dropped = false; // onclose and the state change both fire — act once
     const drop = () => {
@@ -308,6 +340,7 @@ export function createTransport(opts) {
       active = { send: (s) => ws.send(s), close: () => ws.close() };
       onStatus("ws");
     };
+    ws.onmessage = onIncoming;
     ws.onclose = () => {
       // fires whether the socket dropped or never opened at all
       if (closed) return;

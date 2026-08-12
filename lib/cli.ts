@@ -288,6 +288,16 @@ async function openServeTunnel(
   }
 }
 
+// The live-editor save target when no --buttons is given: the served public/
+// copy in a checkout (or an explicit --public dir), and next to the
+// executable in a SEA (the certs/ pattern — the baked asset copy serves
+// until the first save).
+function defaultButtonsFile(a: ServeArgs, deps: CliDeps, appDir: string): string {
+  if (a.public) return path.join(a.public, "buttons.json");
+  if (deps.isSea) return path.join(appDir, "buttons.json");
+  return path.join(appDir, "public", "buttons.json");
+}
+
 async function runServeCommand(
   a: ServeArgs,
   deps: CliDeps,
@@ -325,7 +335,8 @@ async function runServeCommand(
       env: deps.env,
       certsDir: a.certs ?? path.join(appDir, "certs"),
       assets: resolveAssets(deps, a.public, appDir),
-      buttonsFile: a.buttons,
+      buttonsFile: a.buttons ?? defaultButtonsFile(a, deps, appDir),
+      buttonsExplicit: a.buttons !== undefined,
       pageUrl: a.pageUrl,
       qr: a.qr,
       key: resolvedKey.key,
