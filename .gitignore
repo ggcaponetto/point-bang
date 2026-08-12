@@ -7,3 +7,4 @@ docs/public/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 site/public/
+.env

@@ -12,6 +12,7 @@
     "datachannel",
     "dlopen",
     "dlopens",
+    "dotenv",
     "duckstation",
     "eror",
     "esbuild",
