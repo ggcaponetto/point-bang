@@ -37,26 +37,23 @@ function useXrSupport(): XrStatus {
   return status;
 }
 
+/** Per-status alert content: severity + i18n keys, one row per XrStatus. */
+const XR_ALERT: Record<
+  XrStatus,
+  { severity: "success" | "info" | "warning"; label: string; hintKey: string | null }
+> = {
+  checking: { severity: "info", label: "xr.checking", hintKey: null },
+  supported: { severity: "success", label: "xr.supported", hintKey: "xr.supportedHint" },
+  unsupported: { severity: "warning", label: "xr.unsupported", hintKey: "xr.unsupportedHint" },
+  noWebxr: { severity: "warning", label: "xr.noWebxr", hintKey: "xr.noWebxrHint" },
+};
+
 function XrCheck() {
   const { t } = useTranslation();
   const status = useXrSupport();
-  const severity = status === "supported" ? "success" : status === "checking" ? "info" : "warning";
-  const label =
-    status === "checking"
-      ? t("xr.checking")
-      : status === "supported"
-        ? t("xr.supported")
-        : status === "unsupported"
-          ? t("xr.unsupported")
-          : t("xr.noWebxr");
-  const hint =
-    status === "supported"
-      ? t("xr.supportedHint")
-      : status === "unsupported"
-        ? t("xr.unsupportedHint")
-        : status === "noWebxr"
-          ? t("xr.noWebxrHint")
-          : null;
+  const { severity, label: labelKey, hintKey } = XR_ALERT[status];
+  const label = t(labelKey);
+  const hint = hintKey ? t(hintKey) : null;
   return (
     <Card elevation={4}>
       <CardContent>

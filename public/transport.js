@@ -209,7 +209,7 @@ export function createTransport(opts) {
     localOpenMs: 4000,
     retryMs: [3000, 6000, 12000],
     wsRetryMs: 1000,
-    ...(opts.times ?? {}),
+    ...opts.times,
   };
   const onStatus = opts.onStatus ?? (() => {});
 
@@ -291,38 +291,45 @@ export function createTransport(opts) {
     ws.onerror = () => {};
   }
 
+  /** Remote (hosted-page) rung: every LAN host, then backoff. @param {number} g */
+  async function remoteLadder(g) {
+    for (const h of hosts) {
+      try {
+        const { pc, dc } = await rtcAttempt(`http://${h}/rtc/offer`, true, times.openMs);
+        if (closed || g !== gen) return pc.close();
+        round = 0;
+        host = h;
+        adopt(pc, dc);
+        return;
+      } catch {
+        // next host
+      }
+    }
+    if (closed || g !== gen) return;
+    onStatus("failed", failMessage(hosts));
+    const delay = times.retryMs[Math.min(round, times.retryMs.length - 1)];
+    round += 1;
+    timer = setTimeout(() => void ladder(), delay);
+  }
+
+  /** Local (same-origin) rung: one RTC try, then the WS fallback. @param {number} g */
+  async function localLadder(g) {
+    try {
+      const { pc, dc } = await rtcAttempt("/rtc/offer", false, times.localOpenMs);
+      if (closed || g !== gen) return pc.close();
+      adopt(pc, dc);
+    } catch {
+      if (closed || g !== gen) return;
+      wsConnect();
+    }
+  }
+
   async function ladder() {
     if (closed || active) return;
     const g = ++gen;
     onStatus("rtc-connecting");
-    if (remote) {
-      for (const h of hosts) {
-        try {
-          const { pc, dc } = await rtcAttempt(`http://${h}/rtc/offer`, true, times.openMs);
-          if (closed || g !== gen) return pc.close();
-          round = 0;
-          host = h;
-          adopt(pc, dc);
-          return;
-        } catch {
-          // next host
-        }
-      }
-      if (closed || g !== gen) return;
-      onStatus("failed", failMessage(hosts));
-      const delay = times.retryMs[Math.min(round, times.retryMs.length - 1)];
-      round += 1;
-      timer = setTimeout(() => void ladder(), delay);
-    } else {
-      try {
-        const { pc, dc } = await rtcAttempt("/rtc/offer", false, times.localOpenMs);
-        if (closed || g !== gen) return pc.close();
-        adopt(pc, dc);
-      } catch {
-        if (closed || g !== gen) return;
-        wsConnect();
-      }
-    }
+    if (remote) await remoteLadder(g);
+    else await localLadder(g);
   }
   void ladder();
 

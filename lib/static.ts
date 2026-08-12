@@ -33,7 +33,7 @@ export function normalizeUrlPath(urlPath: string): string | null {
   }
   if (decoded.includes("\0")) return null;
   const file = decoded === "" || decoded === "/" ? "/index.html" : decoded;
-  return path.posix.normalize(file.replace(/\\/g, "/"));
+  return path.posix.normalize(file.replaceAll("\\", "/"));
 }
 
 /**

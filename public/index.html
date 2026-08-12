@@ -67,7 +67,7 @@
       }
       button:disabled {
         background: #333;
-        color: #666;
+        color: #a6a6a6; /* ≥4.5:1 on #333 — readable while clearly inactive */
       }
       #err {
         color: var(--bad);
@@ -247,9 +247,10 @@
         background: var(--acc);
         color: #04121f;
       }
-      /* the fire button keeps its trigger red even when placed by rect */
+      /* the fire button keeps its trigger red even when placed by rect
+         (darker + more opaque than --bad so white text stays ≥4.5:1) */
       #btnLayer #btnFire {
-        background: rgba(229, 72, 77, 0.55);
+        background: rgba(160, 26, 30, 0.85);
         color: #fff;
       }
       #btnLayer #btnFire.held {
@@ -292,9 +293,9 @@
         <span>fps <b id="hFps">—</b></span>
       </div>
       <div id="cross"></div>
-      <div id="btnLayer" style="display: none" oncontextmenu="return false;"></div>
+      <div id="btnLayer" style="display: none"></div>
       <div id="instr">Starting…</div>
-      <div id="aimAdj" style="display: none" oncontextmenu="return false;">
+      <div id="aimAdj" style="display: none">
         <div id="nudge" title="shift aim if calibration is slightly off">
           <span></span>
           <button class="nbtn" id="nUp">▲</button>
@@ -312,10 +313,11 @@
           min="0"
           max="100"
           value="40"
+          aria-label="aim smoothing"
           title="left: smooth/laggy — right: snappy/jittery"
         />
       </div>
-      <div id="btnStrip" style="display: none" oncontextmenu="return false;"></div>
+      <div id="btnStrip" style="display: none"></div>
       <div id="controls">
         <button id="btnCapture">CAPTURE</button>
         <button id="btnRestart" style="flex: 0 1 130px; background: #333; color: #ddd">
@@ -329,7 +331,6 @@
       // with the vitest suite). This inline script keeps only DOM/XR glue —
       // the page stays buildless.
       import {
-        V,
         forwardFromQuat,
         closestPointTwoRays,
         planeFromCorners,
@@ -437,10 +438,12 @@
           console.warn("buttons.json load failed:", e);
         }
       }
-      loadButtons();
 
       // ============================== UI helpers ==============================
       const $ = (id) => document.getElementById(id);
+      // Long-pressing any control must never pop the context menu mid-game.
+      // One listener on the overlay root covers every button inside it.
+      $("overlay").addEventListener("contextmenu", (e) => e.preventDefault());
       // btnFire is created from buttons.json, so it may not exist yet (or at all)
       function show(id, on) {
         const el = $(id);
@@ -607,6 +610,80 @@
         session.requestAnimationFrame(onFrame);
       }
 
+      const TRACK_CLS = { good: "ok", limited: "warn", lost: "bad" };
+
+      function trackStateOf(pose) {
+        if (!pose) return "lost";
+        return pose.emulatedPosition ? "limited" : "good";
+      }
+
+      function updateTrackingHud(trackState) {
+        setHud("hTrack", trackState, TRACK_CLS[trackState]);
+        if (trackState !== lastTrackState) {
+          send({ type: "state", tracking: trackState });
+          lastTrackState = trackState;
+        }
+      }
+
+      // hit test (calibration aid)
+      function updateHit(frame) {
+        if (!hitSource) return;
+        const hits = frame.getHitTestResults(hitSource);
+        if (hits.length === 0) {
+          lastHit = null;
+          return;
+        }
+        const hp = hits[0].getPose(refSpace);
+        lastHit = hp
+          ? {
+              point: [hp.transform.position.x, hp.transform.position.y, hp.transform.position.z],
+              result: hits[0],
+            }
+          : null;
+      }
+
+      // keep calibration glued to anchors (they self-correct as ARCore refines)
+      function refreshPlane(frame) {
+        if (!calib || calStage < 3) return;
+        for (let i = 0; i < 3; i++) {
+          const a = calib.anchors[i];
+          if (!a || !frame.trackedAnchors?.has(a)) continue;
+          const ap = frame.getPose(a.anchorSpace, refSpace);
+          if (ap)
+            calib.corners[i] = [
+              ap.transform.position.x,
+              ap.transform.position.y,
+              ap.transform.position.z,
+            ];
+        }
+        const [tl, tr, bl] = calib.corners;
+        plane = planeFromCorners(tl, tr, bl);
+      }
+
+      // aim -> u,v -> send
+      function sendAim(time, trackState) {
+        if (!plane || !lastPose) return;
+        const uv = intersectUV(plane, lastPose.pos, lastPose.dir);
+        if (!uv) return;
+        const u = (rawAim ? uv.u : fu.filter(uv.u, time)) + offU,
+          v = (rawAim ? uv.v : fv.filter(uv.v, time)) + offV;
+        send({ type: "aim", u, v, t: Date.now(), q: trackState === "good" ? 1 : 0.5 });
+        if ((frameCount & 7) === 0) {
+          setHud("hU", u.toFixed(3));
+          setHud("hV", v.toFixed(3));
+        }
+      }
+
+      function tickFps() {
+        frameCount++;
+        const now = performance.now();
+        if (now - fpsT > 1000) {
+          setHud("hFps", frameCount);
+          frameCount = 0;
+          fpsT = now;
+        }
+      }
+
       function onFrame(time, frame) {
         session.requestAnimationFrame(onFrame);
 
@@ -616,18 +693,9 @@
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        // viewer pose
         const pose = frame.getViewerPose(refSpace);
-        const trackState = !pose ? "lost" : pose.emulatedPosition ? "limited" : "good";
-        setHud(
-          "hTrack",
-          trackState,
-          trackState === "good" ? "ok" : trackState === "limited" ? "warn" : "bad",
-        );
-        if (trackState !== lastTrackState) {
-          send({ type: "state", tracking: trackState });
-          lastTrackState = trackState;
-        }
+        const trackState = trackStateOf(pose);
+        updateTrackingHud(trackState);
         if (!pose) {
           lastPose = null;
           return;
@@ -636,63 +704,10 @@
           q = pose.transform.orientation;
         lastPose = { pos: [p.x, p.y, p.z], dir: forwardFromQuat(q) };
 
-        // hit test (calibration aid)
-        if (hitSource) {
-          const hits = frame.getHitTestResults(hitSource);
-          if (hits.length > 0) {
-            const hp = hits[0].getPose(refSpace);
-            lastHit = hp
-              ? {
-                  point: [
-                    hp.transform.position.x,
-                    hp.transform.position.y,
-                    hp.transform.position.z,
-                  ],
-                  result: hits[0],
-                }
-              : null;
-          } else lastHit = null;
-        }
-
-        // keep calibration glued to anchors (they self-correct as ARCore refines)
-        if (calib && calStage >= 3) {
-          for (let i = 0; i < 3; i++) {
-            const a = calib.anchors[i];
-            if (!a || !frame.trackedAnchors?.has(a)) continue;
-            const ap = frame.getPose(a.anchorSpace, refSpace);
-            if (ap)
-              calib.corners[i] = [
-                ap.transform.position.x,
-                ap.transform.position.y,
-                ap.transform.position.z,
-              ];
-          }
-          const [tl, tr, bl] = calib.corners;
-          plane = planeFromCorners(tl, tr, bl);
-        }
-
-        // aim -> u,v -> send
-        if (plane && lastPose) {
-          const uv = intersectUV(plane, lastPose.pos, lastPose.dir);
-          if (uv) {
-            const u = (rawAim ? uv.u : fu.filter(uv.u, time)) + offU,
-              v = (rawAim ? uv.v : fv.filter(uv.v, time)) + offV;
-            send({ type: "aim", u, v, t: Date.now(), q: trackState === "good" ? 1 : 0.5 });
-            if ((frameCount & 7) === 0) {
-              setHud("hU", u.toFixed(3));
-              setHud("hV", v.toFixed(3));
-            }
-          }
-        }
-
-        // fps
-        frameCount++;
-        const now = performance.now();
-        if (now - fpsT > 1000) {
-          setHud("hFps", frameCount);
-          frameCount = 0;
-          fpsT = now;
-        }
+        updateHit(frame);
+        refreshPlane(frame);
+        sendAim(time, trackState);
+        tickFps();
       }
 
       // ============================== capture button ==============================
@@ -732,11 +747,9 @@
       $("btnRestart").addEventListener("click", resetCalibration);
 
       // ============================== boot ==============================
-      (async () => {
-        if (!("xr" in navigator)) {
-          $("err").textContent = "navigator.xr missing (need HTTPS or localhost + a WebXR browser)";
-          return;
-        }
+      if (!("xr" in navigator)) {
+        $("err").textContent = "navigator.xr missing (need HTTPS or localhost + a WebXR browser)";
+      } else {
         const ok = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
         const b = $("btnStart");
         if (ok) {
@@ -744,7 +757,12 @@
           b.textContent = "START AR";
           b.onclick = start;
         } else b.textContent = "immersive-ar not supported on this device";
-      })();
+      }
+
+      // Last on purpose: nothing below depends on it, so awaiting the
+      // buttons.json fetch (it can sit behind Chrome's local-network prompt
+      // in remote mode) cannot delay the START button becoming usable.
+      await loadButtons();
     </script>
   </body>
 </html>

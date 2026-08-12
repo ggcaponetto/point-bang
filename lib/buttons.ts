@@ -89,8 +89,8 @@ export function normalizeKey(raw: string): string | null {
   const k = raw.trim().toLowerCase();
   if (KEY_ALIASES[k]) return KEY_ALIASES[k];
   if (/^[a-z0-9]$/.test(k)) return k;
-  if (/^f([1-9]|1[0-9]|2[0-4])$/.test(k)) return k;
-  if (/^numpad[0-9]$/.test(k)) return `numpad_${k.slice(6)}`;
+  if (/^f([1-9]|1\d|2[0-4])$/.test(k)) return k;
+  if (/^numpad\d$/.test(k)) return `numpad_${k.slice(6)}`;
   if (PUNCTUATION.has(k)) return k;
   return null;
 }
@@ -212,10 +212,12 @@ export function createButtonExecutor(
     if (a.kind === "mouse") {
       if (down) await mouse.press(a.button);
       else await mouse.release(a.button);
+    } else if (down) {
+      // press in declared order (modifiers first)…
+      await keyboard.pressKeys(a.keys);
     } else {
-      // press in declared order (modifiers first), release in reverse
-      if (down) await keyboard.pressKeys(a.keys);
-      else await keyboard.releaseKeys([...a.keys].reverse());
+      // …release in reverse
+      await keyboard.releaseKeys([...a.keys].reverse());
     }
     return true;
   };

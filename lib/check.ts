@@ -29,11 +29,8 @@ export interface CheckDeps {
   env?: Record<string, string | undefined>;
 }
 
-/** @returns 0 when every embedded asset is present, 1 otherwise. */
-export async function runCheck(d: CheckDeps): Promise<number> {
-  const platform = d.platform ?? process.platform;
-  d.log(`point-bang ${VERSION}  (${platform}/${d.arch ?? process.arch}, node ${process.version})`);
-
+/** @returns The number of missing phone-page assets, logging each one. */
+async function checkAssets(d: CheckDeps): Promise<number> {
   let missing = 0;
   for (const name of PUBLIC_ASSETS) {
     const data = await d.assets.read(name);
@@ -49,28 +46,33 @@ export async function runCheck(d: CheckDeps): Promise<number> {
       d.log(`buttons: ${cfg.actions.size} action(s) mapped`);
     }
   }
+  return missing;
+}
 
+async function checkInput(d: CheckDeps, platform: string): Promise<void> {
   // libnut does not throw when X11 has no display to open — it prints
   // "Could not open main display" and kills the process. Nothing downstream
   // can catch that, so the only defense is not to call it.
   if (platform === "linux" && !(d.env ?? process.env).DISPLAY) {
     d.log("input: UNAVAILABLE — no DISPLAY set (headless session)");
     d.log("input: cursor injection needs a running X11 (or Xwayland) display.");
-  } else {
-    try {
-      const nut = await (d.loadNative ?? (() => loadLibNut(VERSION)))();
-      const s = nut.getScreenSize();
-      d.log(`input: ready — screen ${s.width}x${s.height}`);
-    } catch (e) {
-      d.log(`input: UNAVAILABLE — ${(e as Error).message}`);
-      d.log(
-        platform === "linux"
-          ? "input: Linux needs an X11 session with XTEST (install libx11 and libxtst; Wayland must run Xwayland)."
-          : "input: the native addon could not be loaded — see the troubleshooting guide.",
-      );
-    }
+    return;
   }
+  try {
+    const nut = await (d.loadNative ?? (() => loadLibNut(VERSION)))();
+    const s = nut.getScreenSize();
+    d.log(`input: ready — screen ${s.width}x${s.height}`);
+  } catch (e) {
+    d.log(`input: UNAVAILABLE — ${(e as Error).message}`);
+    d.log(
+      platform === "linux"
+        ? "input: Linux needs an X11 session with XTEST (install libx11 and libxtst; Wayland must run Xwayland)."
+        : "input: the native addon could not be loaded — see the troubleshooting guide.",
+    );
+  }
+}
 
+async function checkHotkey(d: CheckDeps, platform: string): Promise<void> {
   // The default combo stands in for whatever `serve --pause-combo` will get:
   // what is being proven here is that the FFI loads and can watch keys at all.
   try {
@@ -84,5 +86,14 @@ export async function runCheck(d: CheckDeps): Promise<number> {
   } catch (e) {
     d.log(`pause hotkey: unavailable — ${(e as Error).message}`);
   }
+}
+
+/** @returns 0 when every embedded asset is present, 1 otherwise. */
+export async function runCheck(d: CheckDeps): Promise<number> {
+  const platform = d.platform ?? process.platform;
+  d.log(`point-bang ${VERSION}  (${platform}/${d.arch ?? process.arch}, node ${process.version})`);
+  const missing = await checkAssets(d);
+  await checkInput(d, platform);
+  await checkHotkey(d, platform);
   return missing ? 1 : 0;
 }

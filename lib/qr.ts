@@ -29,7 +29,8 @@ export function phonePageUrl(
   if (addrs.length === 0) return null;
   const ordered = [...addrs.filter((a) => a.wifi), ...addrs.filter((a) => !a.wifi)].slice(0, 3);
   const hosts = ordered.map((a) => `${a.address}:${httpPort}`).join(",");
-  return `${pageUrl}#pc=${hosts}${key ? `&key=${key}` : ""}`;
+  const keyPart = key ? `&key=${key}` : "";
+  return `${pageUrl}#pc=${hosts}${keyPart}`;
 }
 
 type Generate = (text: string, opts: { small: boolean }, cb: (q: string) => void) => void;

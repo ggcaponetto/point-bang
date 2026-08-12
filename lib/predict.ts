@@ -27,9 +27,9 @@ interface Sample {
  */
 export class AimPredictor {
   private samples: Sample[] = [];
-  private lookaheadMs: number;
-  private maxTotalMs: number;
-  private windowMs: number;
+  private readonly lookaheadMs: number;
+  private readonly maxTotalMs: number;
+  private readonly windowMs: number;
 
   // lookaheadMs <= 0 disables extrapolation entirely (newest sample verbatim).
   // When positive it compensates phone-side capture->send latency we can't

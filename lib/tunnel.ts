@@ -133,8 +133,9 @@ export function formatTunnelReport(
   adopted = false,
   key: string | null = null,
 ): string[] {
+  const keyedUrl = key ? `${url}#key=${key}` : url;
   return [
-    `TUNNEL: ${url}${key ? `#key=${key}` : ""}  <-- open this on the phone, from any network`,
+    `TUNNEL: ${keyedUrl}  <-- open this on the phone, from any network`,
     "TUNNEL: it is HTTPS, so WebXR works with no mkcert and no Chrome flag",
     'TUNNEL: the free plan shows a one-time "Visit Site" warning page — tap through it',
     "TUNNEL: expect tens of ms more latency than USB; use it to set up, not to play",

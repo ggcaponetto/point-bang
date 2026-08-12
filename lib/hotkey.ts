@@ -58,11 +58,11 @@ const WIN_VK: Record<string, number[]> = {
 
 function winVks(key: string): number[] | null {
   if (WIN_VK[key]) return WIN_VK[key];
-  if (/^[a-z]$/.test(key)) return [0x41 + key.charCodeAt(0) - 97];
-  if (/^[0-9]$/.test(key)) return [0x30 + key.charCodeAt(0) - 48];
-  const f = /^f([1-9]|1[0-9]|2[0-4])$/.exec(key);
+  if (/^[a-z]$/.test(key)) return [0x41 + (key.codePointAt(0) ?? 0) - 97];
+  if (/^\d$/.test(key)) return [0x30 + (key.codePointAt(0) ?? 0) - 48];
+  const f = /^f([1-9]|1\d|2[0-4])$/.exec(key);
   if (f) return [0x70 + Number(f[1]) - 1];
-  const np = /^numpad_([0-9])$/.exec(key);
+  const np = /^numpad_(\d)$/.exec(key);
   if (np) return [0x60 + Number(np[1])];
   return null;
 }
@@ -96,9 +96,9 @@ const X_KEYSYM: Record<string, string[]> = {
 function xKeysyms(key: string): string[] | null {
   if (X_KEYSYM[key]) return X_KEYSYM[key];
   if (/^[a-z0-9]$/.test(key)) return [key];
-  const f = /^f([1-9]|1[0-9]|2[0-4])$/.exec(key);
+  const f = /^f([1-9]|1\d|2[0-4])$/.exec(key);
   if (f) return [`F${f[1]}`];
-  const np = /^numpad_([0-9])$/.exec(key);
+  const np = /^numpad_(\d)$/.exec(key);
   if (np) return [`KP_${np[1]}`];
   return null;
 }

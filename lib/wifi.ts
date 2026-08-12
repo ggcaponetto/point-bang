@@ -58,7 +58,7 @@ export function parseNetsh(output: string): WifiReport {
 // nmcli terse mode separates fields with ":" and backslash-escapes any colon
 // inside a value (SSIDs and MAC-shaped fields routinely contain them).
 function splitTerse(line: string): string[] {
-  return line.split(/(?<!\\):/).map((f) => f.replace(/\\:/g, ":"));
+  return line.split(/(?<!\\):/).map((f) => f.replaceAll("\\:", ":"));
 }
 
 /**
@@ -88,9 +88,11 @@ export function parseNmcli(output: string): WifiReport {
  * disconnected. `iw` reports no signal strength here.
  */
 export function parseIwDev(output: string): WifiReport {
-  const ssid = /^\s*ssid\s+(.+)$/m.exec(output)?.[1].trim();
+  // [ \t] instead of \s: \s matches newlines, and with the m flag that lets
+  // the engine backtrack across lines — super-linear on adversarial input.
+  const ssid = /^[ \t]*ssid[ \t]+(.+)$/m.exec(output)?.[1].trim();
   if (!ssid) return { connected: false };
-  const ch = /^\s*channel\s+(\d+)\s*\((\d+)\s*MHz\)/m.exec(output);
+  const ch = /^[ \t]*channel[ \t]+(\d+)[ \t]*\((\d+)[ \t]*MHz\)/m.exec(output);
   return {
     connected: true,
     ssid,
@@ -152,10 +154,8 @@ export function renderWifiReport(r: WifiReport): string[] {
   if (!r.connected) return ["Not connected to WiFi."];
   let verdict = r.band;
   if (!verdict && r.channel) verdict = bandFromChannel(+r.channel);
-  const out = [
-    `SSID:    ${r.ssid}`,
-    `Band:    ${verdict ?? "unknown"}${r.channel ? `  (channel ${r.channel})` : ""}`,
-  ];
+  const channelPart = r.channel ? `  (channel ${r.channel})` : "";
+  const out = [`SSID:    ${r.ssid}`, `Band:    ${verdict ?? "unknown"}${channelPart}`];
   if (r.signal) out.push(`Signal:  ${r.signal}`);
   if (verdict?.startsWith("2.4"))
     out.push(

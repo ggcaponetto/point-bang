@@ -51,7 +51,7 @@ import { loadKoffi } from "./lib/native.ts";
 import { VERSION } from "./lib/version.ts";
 import { createRtcHub, type PeerLike } from "./lib/rtc.ts";
 import { corsHeaders } from "./lib/cors.ts";
-import { createKeyGate, generateKey } from "./lib/auth.ts";
+import { createKeyGate, generateKey, type KeyGate } from "./lib/auth.ts";
 import { phonePageUrl, qrLines, DEFAULT_PAGE_URL } from "./lib/qr.ts";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -154,20 +154,16 @@ export interface RunningServer {
   close(): Promise<void>;
 }
 
-/**
- * Boots the whole PC side: static file serving, WebSocket intake, aim
- * prediction, the 2ms cursor loop, button execution and jitter stats.
- */
-export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
-  const log = opts.log ?? console.log;
-  const mode = opts.mode ?? "all";
-  const publicDir = opts.publicDir ?? path.join(ROOT, "public");
-  const assets = opts.assets ?? diskAssets(publicDir);
+type Log = (line: string) => void;
 
-  // ---------- input devices (real or virtual) ----------
-  // Decided before anything is opened: on a display-less Linux box, touching
-  // the native addon kills the process outright, so `auto` must route around
-  // it rather than try and recover.
+// ---------- input devices (real or virtual) ----------
+// Decided before anything is opened: on a display-less Linux box, touching
+// the native addon kills the process outright, so `auto` must route around
+// it rather than try and recover.
+async function setupInput(
+  opts: ServerOptions,
+  log: Log,
+): Promise<{ mouse: MouseLike; keyboard: KeyboardLike }> {
   const input = opts.input ?? "auto";
   const display = hasDisplay(opts.platform ?? process.platform, opts.env ?? process.env);
   const virtual = input === "none" || (input === "auto" && !display);
@@ -186,70 +182,193 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   }
   const virtualDeps = { log, size: opts.screen ?? DEFAULT_SCREEN };
   const mouse = opts.mouse ?? (virtual ? createVirtualMouse(virtualDeps) : await createMouse());
+  const keyboard =
+    opts.keyboard ?? (virtual ? createVirtualKeyboard(virtualDeps) : await createKeyboard());
+  return { mouse, keyboard };
+}
 
-  // ---------- static files + signaling (index.html only, no framework needed) ----------
-  const pageOrigins = opts.pageOrigins ?? [new URL(opts.pageUrl ?? DEFAULT_PAGE_URL).origin];
+// ---------- buttons (protocol v2) ----------
+// Same buttons.json both sides read: an explicit file wins, otherwise it
+// comes from wherever the phone page itself comes from (disk or SEA blob).
+async function loadButtons(
+  opts: ServerOptions,
+  assets: AssetSource,
+  mouse: MouseLike,
+  keyboard: KeyboardLike,
+  log: Log,
+): Promise<(id: string, down: boolean) => Promise<boolean>> {
+  const btnCfg = opts.buttonsFile
+    ? loadButtonConfig(opts.buttonsFile)
+    : parseButtonConfig((await assets.read("buttons.json"))?.toString("utf8") ?? "");
+  for (const p of btnCfg.problems) log(`buttons: ${p}`);
+  log(`buttons: ${btnCfg.actions.size} action(s) mapped`);
+  return createButtonExecutor(btnCfg.actions, mouse, keyboard);
+}
 
-  // The session key: CORS only constrains browsers — curl and any device on
-  // the LAN send no Origin. Both aim intakes end at the mouse and keyboard,
-  // so network clients must present the key from the QR fragment.
-  const gate = createKeyGate({
-    key: opts.key === undefined ? generateKey() : opts.key,
-    loopbackExempt: opts.keyLoopbackExempt ?? true,
-  });
-
-  const handleRtcOffer = async (
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    cors: Record<string, string>,
-  ): Promise<void> => {
-    const body = await readBody(req, MAX_OFFER_BYTES);
-    if (body === TOO_BIG) {
-      res.writeHead(413, cors);
-      res.end("offer too large");
-      return;
-    }
-    let sdp: unknown;
-    let key: unknown;
+// ---------- pause hotkey (use the real mouse without disconnecting) ----------
+async function setupPauseHotkey(
+  pauseCombo: string,
+  opts: ServerOptions,
+  log: Log,
+  onToggle: () => void,
+): Promise<HotkeyWatcher | null> {
+  if (pauseCombo === "off") return null;
+  const keys = parseCombo(pauseCombo);
+  let probe = opts.pauseProbe ?? null;
+  let reason: string | null = null;
+  if (!keys) {
+    probe = null;
+    reason = `unrecognized combo "${pauseCombo}" (expected e.g. shift+space)`;
+  } else if (!probe) {
     try {
-      const parsed = JSON.parse(body ?? "") as { sdp?: unknown; key?: unknown };
-      sdp = parsed.sdp;
-      key = parsed.key;
-    } catch {
-      sdp = undefined;
-    }
-    if (!gate.allow(req.socket.remoteAddress, typeof key === "string" ? key : undefined)) {
-      log(`rtc: offer refused (missing/wrong session key) from ${req.socket.remoteAddress}`);
-      res.writeHead(403, cors);
-      res.end("session key required — scan the QR the server prints");
-      return;
-    }
-    if (typeof sdp !== "string") {
-      res.writeHead(400, cors);
-      res.end('expected {"sdp":"<offer>"}');
-      return;
-    }
-    try {
-      const answer = await rtcHub.handleOffer(sdp);
-      res.writeHead(200, { "Content-Type": "application/json", ...cors });
-      res.end(JSON.stringify({ sdp: answer }));
+      const r = createComboProbe(keys, {
+        ffi: await loadKoffi(VERSION),
+        platform: opts.platform,
+        env: opts.env,
+      });
+      probe = r.probe;
+      reason = r.reason;
     } catch (e) {
-      res.writeHead(400, cors);
-      res.end((e as Error).message);
+      reason = (e as Error).message;
+    }
+  }
+  if (!probe) {
+    log(`pause hotkey: unavailable — ${reason}`);
+    return null;
+  }
+  log(`pause hotkey: ${pauseCombo} toggles tracking (the game still receives the combo)`);
+  return watchCombo(probe, onToggle, 25, (e) => log(`pause hotkey: stopped — ${e.message}`));
+}
+
+// ---------- protocol intake (shared by every transport) ----------
+interface IntakeDeps {
+  isPaused(): boolean;
+  predictor: AimPredictor;
+  jitter: JitterWindow;
+  mouse: MouseLike;
+  pressButton(id: string, down: boolean): Promise<boolean>;
+  log: Log;
+}
+
+function createMessageHandler(d: IntakeDeps): (m: ClientMsg) => Promise<void> {
+  const onAim = (m: Extract<ClientMsg, { type: "aim" }>): void => {
+    if (d.isPaused()) return;
+    const arrived = Date.now();
+    d.predictor.add(m.u, m.v, arrived);
+    if (typeof m.t === "number") d.jitter.add(arrived - m.t);
+  };
+  const onFire = async (): Promise<void> => {
+    if (d.isPaused()) return;
+    try {
+      await d.mouse.click();
+    } catch (e) {
+      console.error((e as Error).message);
     }
   };
+  const onCalib = (m: Extract<ClientMsg, { type: "calib" }>): void => {
+    const coords =
+      m.x !== undefined ? `(${m.x.toFixed(3)}, ${m.y!.toFixed(3)}, ${m.z!.toFixed(3)})` : "";
+    d.log(`calib ${m.stage} #${m.i ?? ""}: ${coords}`);
+  };
+  const onState = (m: Extract<ClientMsg, { type: "state" }>): void => {
+    d.log(`tracking: ${m.tracking}`);
+    // stale velocity must not keep extrapolating while tracking is lost
+    if (m.tracking === "lost") d.predictor.reset();
+  };
+  const onButton = async (m: Extract<ClientMsg, { type: "button" }>): Promise<void> => {
+    // while paused, presses are dropped but releases go through — a
+    // button held across the pause must not stay stuck down
+    if (d.isPaused() && m.down) return;
+    try {
+      if (!(await d.pressButton(m.id, m.down))) d.log(`button ${m.id}: no action mapped`);
+    } catch (e) {
+      console.error((e as Error).message);
+    }
+  };
+  return async (m) => {
+    switch (m.type) {
+      case "aim":
+        onAim(m);
+        break;
+      case "fire":
+        await onFire();
+        break;
+      case "calib":
+        onCalib(m);
+        break;
+      case "state":
+        onState(m);
+        break;
+      case "button":
+        await onButton(m);
+        break;
+    }
+  };
+}
 
-  const handler = (req: http.IncomingMessage, res: http.ServerResponse): void => {
+// ---------- static files + signaling (index.html only, no framework needed) ----------
+interface HttpDeps {
+  assets: AssetSource;
+  pageOrigins: string[];
+  gate: KeyGate;
+  log: Log;
+  handleOffer(sdp: string): Promise<string>;
+}
+
+async function handleRtcOffer(
+  d: HttpDeps,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  const body = await readBody(req, MAX_OFFER_BYTES);
+  if (body === TOO_BIG) {
+    res.writeHead(413, cors);
+    res.end("offer too large");
+    return;
+  }
+  let sdp: unknown;
+  let key: unknown;
+  try {
+    const parsed = JSON.parse(body ?? "") as { sdp?: unknown; key?: unknown };
+    sdp = parsed.sdp;
+    key = parsed.key;
+  } catch {
+    sdp = undefined;
+  }
+  if (!d.gate.allow(req.socket.remoteAddress, typeof key === "string" ? key : undefined)) {
+    d.log(`rtc: offer refused (missing/wrong session key) from ${req.socket.remoteAddress}`);
+    res.writeHead(403, cors);
+    res.end("session key required — scan the QR the server prints");
+    return;
+  }
+  if (typeof sdp !== "string") {
+    res.writeHead(400, cors);
+    res.end('expected {"sdp":"<offer>"}');
+    return;
+  }
+  try {
+    const answer = await d.handleOffer(sdp);
+    res.writeHead(200, { "Content-Type": "application/json", ...cors });
+    res.end(JSON.stringify({ sdp: answer }));
+  } catch (e) {
+    res.writeHead(400, cors);
+    res.end((e as Error).message);
+  }
+}
+
+function createHttpHandler(d: HttpDeps): http.RequestListener {
+  return (req, res) => {
     const info = { origin: req.headers.origin, host: req.headers.host };
     if (req.method === "OPTIONS") {
       // LNA/CORS preflight; a foreign Origin gets no allow headers, which
       // fails the browser's check without leaking anything.
-      const cors = corsHeaders(info, pageOrigins, true);
+      const cors = corsHeaders(info, d.pageOrigins, true);
       res.writeHead(cors ? 204 : 403, cors ?? {});
       res.end();
       return;
     }
-    const cors = corsHeaders(info, pageOrigins, false);
+    const cors = corsHeaders(info, d.pageOrigins, false);
     const normalized = normalizeUrlPath(req.url ?? "/");
     if (normalized === null) {
       res.writeHead(403);
@@ -264,26 +383,133 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         res.end("origin not allowed");
         return;
       }
-      void handleRtcOffer(req, res, cors);
+      void handleRtcOffer(d, req, res, cors);
       return;
     }
     // Assets are addressed by bare name ("index.html"), not by URL path.
     const name = normalized.replace(/^\/+/, "");
-    assets.read(name).then((data) => {
+    void d.assets.read(name).then((data) => {
       if (!data) {
         res.writeHead(404);
         res.end("not found");
         return;
       }
       // CORS on plain GETs too: the hosted page reads buttons.json from here.
-      res.writeHead(200, { "Content-Type": contentTypeFor(name), ...(cors ?? {}) });
+      // Spreading null adds nothing — exactly what a same-origin GET needs.
+      res.writeHead(200, { "Content-Type": contentTypeFor(name), ...cors });
       res.end(data);
     });
   };
-  const httpServer = http.createServer(handler);
+}
 
-  const tls = mode === "adb" ? null : loadTls(opts.certsDir ?? path.join(ROOT, "certs"));
-  const httpsServer = tls ? https.createServer(tls, handler) : null;
+// ---------- websocket ----------
+function createWsHandler(
+  gate: KeyGate,
+  intake: (raw: Buffer) => void,
+  log: Log,
+): (ws: WebSocket, req: http.IncomingMessage) => void {
+  return (ws, req) => {
+    // The upgrade URL carries `?key=` (the page copies it out of the
+    // fragment). 1008 = policy violation; the page shows the close reason.
+    // The base is a dummy for parsing only — nothing is fetched from it.
+    const presented = new URL(req.url ?? "/", "https://x").searchParams.get("key");
+    if (!gate.allow(req.socket.remoteAddress, presented)) {
+      log(`ws: connection refused (missing/wrong session key) from ${req.socket.remoteAddress}`);
+      ws.close(1008, "session key required — scan the QR the server prints");
+      return;
+    }
+    log(`phone connected: ${req.socket.remoteAddress}`);
+    ws.on("message", intake);
+    ws.on("close", () => log("phone disconnected"));
+  };
+}
+
+// ---------- listen + startup report ----------
+const listen = (srv: http.Server | https.Server, port: number): Promise<number> =>
+  new Promise((resolve, reject) => {
+    srv.once("error", reject);
+    srv.listen(port, "0.0.0.0", () => {
+      resolve((srv.address() as { port: number }).port);
+    });
+  });
+
+interface ReportCtx {
+  mode: ServerMode;
+  qr: boolean;
+  httpPort: number;
+  /** LAN URL fragment carrying the session key ("" when the gate is off). */
+  lanFrag: string;
+  /** Same for loopback URLs — empty while loopback is exempt. */
+  localFrag: string;
+  log: Log;
+}
+
+// Printed URLs carry the key in the fragment so scanning/typing them just
+// works; loopback URLs stay bare while loopback is exempt.
+async function printKeyAndUsbLines(c: ReportCtx, key: string | null): Promise<void> {
+  if (key) {
+    c.log(`key : network clients must present this run's session key (in the QR/URLs below);`);
+    c.log(`key : pass --key off to serve unauthenticated on a trusted network`);
+  } else {
+    c.log(`key : OFF — anyone who can reach this port can move this PC's mouse and keyboard`);
+  }
+  if (c.mode !== "wifi")
+    c.log(
+      `USB:  adb reverse tcp:${c.httpPort} tcp:${c.httpPort}  then open http://localhost:${c.httpPort}${c.localFrag} on the phone`,
+    );
+  if (c.mode === "adb" && c.qr) {
+    // localhost resolves ON THE PHONE, through the adb reverse tunnel —
+    // scanning just saves typing the URL.
+    c.log(`USB:  or scan to open http://localhost:${c.httpPort}${c.localFrag} on the phone:`);
+    for (const line of await qrLines(`http://localhost:${c.httpPort}${c.localFrag}`)) c.log(line);
+  }
+}
+
+function printWifiLines(c: ReportCtx, httpsPort: number | null): void {
+  if (httpsPort !== null) {
+    for (const ip of lanIPv4())
+      c.log(`WiFi: open https://${ip.address}:${httpsPort}${c.lanFrag} on the phone`);
+  } else if (c.mode === "wifi") {
+    c.log(`WiFi: no certs/cert.pem+key.pem — https off. Option A (no certs): on the phone`);
+    c.log(`WiFi: enable chrome://flags/#unsafe-treat-insecure-origin-as-secure and add one of:`);
+    for (const ip of lanIPv4()) {
+      const marker = ip.wifi ? "   <-- your WiFi" : "";
+      c.log(`WiFi:   http://${ip.address}:${c.httpPort}${c.lanFrag}${marker}`);
+    }
+  } else if (c.mode === "all") {
+    c.log(`WiFi: no certs/cert.pem+key.pem found — HTTPS off (see README "Run it over WiFi")`);
+  }
+}
+
+// ---------- setup QR (the consumer journey: run, scan, tap Allow) ----------
+async function printSetupQr(c: ReportCtx, pageUrl: string, key: string | null): Promise<void> {
+  if (c.mode === "adb" || !c.qr) return;
+  const qrUrl = phonePageUrl(pageUrl, lanIPv4(), c.httpPort, key);
+  if (!qrUrl) return;
+  c.log(`Phone: scan to play (page loads from ${pageUrl}):`);
+  for (const line of await qrLines(qrUrl)) c.log(line);
+  c.log(`Phone: or type  ${qrUrl}`);
+  c.log("Phone: Chrome asks once to allow local network access — tap Allow.");
+}
+
+/**
+ * Boots the whole PC side: static file serving, WebSocket intake, aim
+ * prediction, the 2ms cursor loop, button execution and jitter stats.
+ */
+export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
+  const log = opts.log ?? console.log;
+  const mode = opts.mode ?? "all";
+  const assets = opts.assets ?? diskAssets(opts.publicDir ?? path.join(ROOT, "public"));
+
+  const { mouse, keyboard } = await setupInput(opts, log);
+
+  // The session key: CORS only constrains browsers — curl and any device on
+  // the LAN send no Origin. Both aim intakes end at the mouse and keyboard,
+  // so network clients must present the key from the QR fragment.
+  const gate = createKeyGate({
+    key: opts.key === undefined ? generateKey() : opts.key,
+    loopbackExempt: opts.keyLoopbackExempt ?? true,
+  });
 
   // ---------- cursor control ----------
   const size = await mouse.screenSize();
@@ -296,23 +522,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     (e) => console.error("mouse:", e.message),
   );
 
-  // ---------- buttons (protocol v2) ----------
-  const keyboard =
-    opts.keyboard ?? (virtual ? createVirtualKeyboard(virtualDeps) : await createKeyboard());
-  // Same buttons.json both sides read: an explicit file wins, otherwise it
-  // comes from wherever the phone page itself comes from (disk or SEA blob).
-  const btnCfg = opts.buttonsFile
-    ? loadButtonConfig(opts.buttonsFile)
-    : parseButtonConfig((await assets.read("buttons.json"))?.toString("utf8") ?? "");
-  for (const p of btnCfg.problems) log(`buttons: ${p}`);
-  log(`buttons: ${btnCfg.actions.size} action(s) mapped`);
-  const pressButton = createButtonExecutor(btnCfg.actions, mouse, keyboard);
+  const pressButton = await loadButtons(opts, assets, mouse, keyboard, log);
 
-  // ---------- pause hotkey (use the real mouse without disconnecting) ----------
   // While paused, aim and button-downs are dropped at the socket; button-ups
   // still pass so nothing held on the phone stays stuck down forever.
   let paused = false;
-  let hotkey: HotkeyWatcher | null = null;
   const pauseCombo = opts.pauseCombo ?? "shift+space";
   const togglePause = (): void => {
     paused = !paused;
@@ -322,35 +536,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       paused ? `tracking PAUSED — the mouse is yours (${pauseCombo} resumes)` : "tracking resumed",
     );
   };
-  if (pauseCombo !== "off") {
-    const keys = parseCombo(pauseCombo);
-    let probe = opts.pauseProbe ?? null;
-    let reason: string | null = null;
-    if (!keys) {
-      probe = null;
-      reason = `unrecognized combo "${pauseCombo}" (expected e.g. shift+space)`;
-    } else if (!probe) {
-      try {
-        const r = createComboProbe(keys, {
-          ffi: await loadKoffi(VERSION),
-          platform: opts.platform,
-          env: opts.env,
-        });
-        probe = r.probe;
-        reason = r.reason;
-      } catch (e) {
-        reason = (e as Error).message;
-      }
-    }
-    if (probe) {
-      hotkey = watchCombo(probe, togglePause, 25, (e) =>
-        log(`pause hotkey: stopped — ${e.message}`),
-      );
-      log(`pause hotkey: ${pauseCombo} toggles tracking (the game still receives the combo)`);
-    } else {
-      log(`pause hotkey: unavailable — ${reason}`);
-    }
-  }
+  const hotkey = await setupPauseHotkey(pauseCombo, opts, log, togglePause);
 
   // ---------- latency / jitter stats ----------
   const statsMs = opts.statsIntervalMs ?? 2000;
@@ -360,138 +546,59 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     if (s) log(formatJitter(s, statsMs / 1000));
   }, statsMs);
 
-  // ---------- protocol intake (shared by every transport) ----------
-  const handleMessage = async (d: ClientMsg): Promise<void> => {
-    switch (d.type) {
-      case "aim": {
-        if (paused) break;
-        const arrived = Date.now();
-        predictor.add(d.u, d.v, arrived);
-        if (typeof d.t === "number") jitter.add(arrived - d.t);
-        break;
-      }
-      case "fire":
-        if (paused) break;
-        try {
-          await mouse.click();
-        } catch (e) {
-          console.error((e as Error).message);
-        }
-        break;
-      case "calib":
-        log(
-          `calib ${d.stage} #${d.i ?? ""}: ` +
-            (d.x !== undefined
-              ? `(${d.x.toFixed(3)}, ${d.y!.toFixed(3)}, ${d.z!.toFixed(3)})`
-              : ""),
-        );
-        break;
-      case "state":
-        log(`tracking: ${d.tracking}`);
-        // stale velocity must not keep extrapolating while tracking is lost
-        if (d.tracking === "lost") predictor.reset();
-        break;
-      case "button":
-        // while paused, presses are dropped but releases go through — a
-        // button held across the pause must not stay stuck down
-        if (paused && d.down) break;
-        try {
-          if (!(await pressButton(d.id, d.down))) log(`button ${d.id}: no action mapped`);
-        } catch (e) {
-          console.error((e as Error).message);
-        }
-        break;
-    }
+  const handleMessage = createMessageHandler({
+    isPaused: () => paused,
+    predictor,
+    jitter,
+    mouse,
+    pressButton,
+    log,
+  });
+  const intake = (raw: Buffer | string): void => {
+    const d = parseMessage(raw);
+    if (d) void handleMessage(d);
   };
 
   // ---------- webrtc intake (same bytes, same handler as the WS) ----------
-  const rtcHub = createRtcHub(
-    (raw) => {
-      const d = parseMessage(raw);
-      if (d) void handleMessage(d);
-    },
-    { createPeer: opts.rtc?.createPeer, log },
-  );
+  const rtcHub = createRtcHub(intake, { createPeer: opts.rtc?.createPeer, log });
 
-  // ---------- websocket ----------
-  const onConnection = (ws: WebSocket, req: http.IncomingMessage): void => {
-    // The upgrade URL carries `?key=` (the page copies it out of the
-    // fragment). 1008 = policy violation; the page shows the close reason.
-    // The base is a dummy for parsing only — nothing is fetched from it.
-    const presented = new URL(req.url ?? "/", "https://x").searchParams.get("key");
-    if (!gate.allow(req.socket.remoteAddress, presented)) {
-      log(`ws: connection refused (missing/wrong session key) from ${req.socket.remoteAddress}`);
-      ws.close(1008, "session key required — scan the QR the server prints");
-      return;
-    }
-    log(`phone connected: ${req.socket.remoteAddress}`);
-    ws.on("message", (raw: Buffer) => {
-      const d = parseMessage(raw);
-      if (d) void handleMessage(d);
-    });
-    ws.on("close", () => log("phone disconnected"));
-  };
+  const pageOrigins = opts.pageOrigins ?? [new URL(opts.pageUrl ?? DEFAULT_PAGE_URL).origin];
+  const handler = createHttpHandler({
+    assets,
+    pageOrigins,
+    gate,
+    log,
+    handleOffer: (sdp) => rtcHub.handleOffer(sdp),
+  });
+  const httpServer = http.createServer(handler);
+  const tls = mode === "adb" ? null : loadTls(opts.certsDir ?? path.join(ROOT, "certs"));
+  const httpsServer = tls ? https.createServer(tls, handler) : null;
+
+  const onConnection = createWsHandler(gate, intake, log);
   const wss = new WebSocketServer({ server: httpServer });
   wss.on("connection", onConnection);
   const wssTls = httpsServer ? new WebSocketServer({ server: httpsServer }) : null;
   wssTls?.on("connection", onConnection);
 
-  // ---------- listen ----------
-  const listen = (srv: http.Server | https.Server, port: number): Promise<number> =>
-    new Promise((resolve, reject) => {
-      srv.once("error", reject);
-      srv.listen(port, "0.0.0.0", () => {
-        resolve((srv.address() as { port: number }).port);
-      });
-    });
-
   const httpPort = await listen(httpServer, opts.port ?? 8443);
   log(`http+ws on :${httpPort}`);
-  // Printed URLs carry the key in the fragment so scanning/typing them just
-  // works; loopback URLs stay bare while loopback is exempt.
-  const lanFrag = gate.key ? `#key=${gate.key}` : "";
-  const localFrag = gate.required("127.0.0.1") ? lanFrag : "";
-  if (gate.key)
-    log(`key : network clients must present this run's session key (in the QR/URLs below);`);
-  if (gate.key) log(`key : pass --key off to serve unauthenticated on a trusted network`);
-  else log(`key : OFF — anyone who can reach this port can move this PC's mouse and keyboard`);
-  if (mode !== "wifi")
-    log(
-      `USB:  adb reverse tcp:${httpPort} tcp:${httpPort}  then open http://localhost:${httpPort}${localFrag} on the phone`,
-    );
-  if (mode === "adb" && opts.qr !== false) {
-    // localhost resolves ON THE PHONE, through the adb reverse tunnel —
-    // scanning just saves typing the URL.
-    log(`USB:  or scan to open http://localhost:${httpPort}${localFrag} on the phone:`);
-    for (const line of await qrLines(`http://localhost:${httpPort}${localFrag}`)) log(line);
-  }
+  const report: ReportCtx = {
+    mode,
+    qr: opts.qr !== false,
+    httpPort,
+    lanFrag: gate.key ? `#key=${gate.key}` : "",
+    localFrag: gate.required("127.0.0.1") && gate.key ? `#key=${gate.key}` : "",
+    log,
+  };
+  await printKeyAndUsbLines(report, gate.key);
 
   let httpsPort: number | null = null;
   if (httpsServer) {
     httpsPort = await listen(httpsServer, opts.httpsPort ?? 8444);
     log(`https+wss on :${httpsPort}`);
-    for (const ip of lanIPv4())
-      log(`WiFi: open https://${ip.address}:${httpsPort}${lanFrag} on the phone`);
-  } else if (mode === "wifi") {
-    log(`WiFi: no certs/cert.pem+key.pem — https off. Option A (no certs): on the phone`);
-    log(`WiFi: enable chrome://flags/#unsafe-treat-insecure-origin-as-secure and add one of:`);
-    for (const ip of lanIPv4())
-      log(`WiFi:   http://${ip.address}:${httpPort}${lanFrag}${ip.wifi ? "   <-- your WiFi" : ""}`);
-  } else if (mode === "all") {
-    log(`WiFi: no certs/cert.pem+key.pem found — HTTPS off (see README "Run it over WiFi")`);
   }
-
-  // ---------- setup QR (the consumer journey: run, scan, tap Allow) ----------
-  if (mode !== "adb" && opts.qr !== false) {
-    const pageUrl = opts.pageUrl ?? DEFAULT_PAGE_URL;
-    const qrUrl = phonePageUrl(pageUrl, lanIPv4(), httpPort, gate.key);
-    if (qrUrl) {
-      log(`Phone: scan to play (page loads from ${pageUrl}):`);
-      for (const line of await qrLines(qrUrl)) log(line);
-      log(`Phone: or type  ${qrUrl}`);
-      log("Phone: Chrome asks once to allow local network access — tap Allow.");
-    }
-  }
+  printWifiLines(report, httpsPort);
+  await printSetupQr(report, opts.pageUrl ?? DEFAULT_PAGE_URL, gate.key);
 
   const close = (): Promise<void> => {
     cursor.stop();

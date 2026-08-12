@@ -348,7 +348,7 @@ describe("createTransport — remote mode (QR / hosted page)", () => {
     t.close();
     const callsAtClose = f.calls.length;
     await new Promise((r) => setTimeout(r, 80));
-    expect(f.calls.length).toBe(callsAtClose);
+    expect(f.calls).toHaveLength(callsAtClose);
   });
 });
 

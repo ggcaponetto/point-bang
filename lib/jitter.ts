@@ -38,7 +38,7 @@ export class JitterWindow {
       count: jit.length,
       p50: percentile(jit, 0.5),
       p95: percentile(jit, 0.95),
-      max: jit[jit.length - 1],
+      max: jit.at(-1) ?? 0,
     };
     this.diffs = [];
     return summary;

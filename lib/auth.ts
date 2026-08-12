@@ -55,7 +55,7 @@ export function resolveKey(
 export function isLoopback(addr: string | undefined): boolean {
   if (!addr) return false;
   const bare = addr.replace(/^::ffff:/i, "");
-  return bare === "::1" || /^127\./.test(bare);
+  return bare === "::1" || bare.startsWith("127.");
 }
 
 /** Decides, per connection, whether a presented key opens the gate. */

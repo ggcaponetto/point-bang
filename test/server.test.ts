@@ -455,7 +455,7 @@ describe("startServer pause hotkey", () => {
     expect(t.buttons).toEqual(["press:right", "release:right"]);
     expect(t.keys).toEqual([]);
     expect(t.clicks).toHaveLength(0);
-    expect(t.moves.length).toBe(movesWhenPaused);
+    expect(t.moves).toHaveLength(movesWhenPaused);
 
     comboDown = false; // release the combo …
     await new Promise((r) => setTimeout(r, 80)); // let the watcher see the release
@@ -557,14 +557,14 @@ describe("startServer rtc signaling", () => {
 
     await srv.close();
     running = null;
-    expect(rtc.closed.length).toBe(1); // teardown closes live peers
+    expect(rtc.closed).toHaveLength(1); // teardown closes live peers
   });
 
   it("403s a foreign browser origin — this socket ends at the mouse", async () => {
     const { base, moves } = await boot();
     const res = await postOffer(base, JSON.stringify({ sdp: OFFER }), "https://evil.example");
     expect(res.status).toBe(403);
-    expect(moves.length).toBe(0);
+    expect(moves).toHaveLength(0);
   });
 
   it("allows same-origin and no-origin posts (localhost flows, curl)", async () => {
@@ -681,8 +681,8 @@ describe("startServer setup QR", () => {
     return logs;
   }
 
-  it("prints the QR banner outside adb mode when a LAN address exists", async () => {
-    if (lanIPv4().length === 0) return; // machine without a LAN: nothing to encode
+  it("prints the QR banner outside adb mode when a LAN address exists", async (ctx) => {
+    if (lanIPv4().length === 0) ctx.skip(); // machine without a LAN: nothing to encode
     const logs = await bootMode("all");
     const joined = logs.join("\n");
     expect(joined).toContain("Phone: scan to play");
