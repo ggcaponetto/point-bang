@@ -365,6 +365,9 @@ describe("startServer monitor selection", () => {
       keyboard: fakeKeyboard().keyboard,
       log: (l) => logs.push(l),
       pauseCombo: "off",
+      // Pin a display-ful platform: on Linux CI `auto` input would resolve
+      // to virtual and bypass the injected probe. Devices are fakes anyway.
+      platform: "win32",
       ...opts,
     });
     return { ...f, logs, srv: running };
