@@ -481,6 +481,24 @@ async function handleButtonsSave(
   res.end(out);
 }
 
+// Through the store, not the raw assets: a live-editor save (or a
+// buttons.json next to the executable) wins over the baked copy.
+function serveButtonsJson(
+  d: HttpDeps,
+  res: http.ServerResponse,
+  cors: Record<string, string> | null,
+): void {
+  void d.buttonsRead().then((text) => {
+    if (text === null) {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json", ...cors });
+    res.end(text);
+  });
+}
+
 function createHttpHandler(d: HttpDeps): http.RequestListener {
   return (req, res) => {
     const info = { origin: req.headers.origin, host: req.headers.host };
@@ -529,17 +547,7 @@ function createHttpHandler(d: HttpDeps): http.RequestListener {
       return;
     }
     if (req.method === "GET" && normalized === "/buttons.json") {
-      // Through the store, not the raw assets: a live-editor save (or a
-      // buttons.json next to the executable) wins over the baked copy.
-      void d.buttonsRead().then((text) => {
-        if (text === null) {
-          res.writeHead(404);
-          res.end("not found");
-          return;
-        }
-        res.writeHead(200, { "Content-Type": "application/json", ...cors });
-        res.end(text);
-      });
+      serveButtonsJson(d, res, cors);
       return;
     }
     // Assets are addressed by bare name ("index.html"), not by URL path.
@@ -698,14 +706,13 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // The effective buttons.json: the live file (editor save target) wins, the
   // asset copy is the fallback. Dev default = public/buttons.json (the very
   // file the assets serve); embedded callers without a file cannot save (409).
+  const defaultButtonsFile = (): string | null => {
+    if (opts.buttonsFile) return opts.buttonsFile;
+    if (opts.publicDir) return path.join(opts.publicDir, "buttons.json");
+    return opts.assets ? null : path.join(ROOT, "public", "buttons.json");
+  };
   const store = createButtonStore({
-    file:
-      opts.buttonsFile ??
-      (opts.publicDir
-        ? path.join(opts.publicDir, "buttons.json")
-        : opts.assets
-          ? null
-          : path.join(ROOT, "public", "buttons.json")),
+    file: defaultButtonsFile(),
     explicit: opts.buttonsExplicit ?? opts.buttonsFile !== undefined,
     assets,
   });

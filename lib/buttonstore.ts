@@ -86,11 +86,19 @@ export function createButtonStore(opts: {
     },
     async write(text) {
       if (!opts.file) throw new Error("no writable buttons.json location");
+      // Validate the target path BEFORE touching the filesystem, mirroring
+      // the read guard: resolve the real parent directory, re-join the bare
+      // basename (kills traversal segments), and require a .json extension —
+      // a `--buttons` value can never write outside its stated directory.
+      const dir = await fs.realpath(path.dirname(opts.file));
+      const target = path.join(dir, path.basename(opts.file));
+      if (path.extname(target).toLowerCase() !== ".json")
+        throw new Error(`buttons config must be a plain .json file, got ${opts.file}`);
       // Same-dir temp + rename: a crash mid-write can never leave a torn
       // config, and rename on the same volume is atomic on Windows and Linux.
-      const tmp = `${opts.file}.tmp`;
+      const tmp = `${target}.tmp`;
       await fs.writeFile(tmp, text, "utf8");
-      await fs.rename(tmp, opts.file);
+      await fs.rename(tmp, target);
     },
   };
 }

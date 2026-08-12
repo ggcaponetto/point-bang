@@ -112,6 +112,26 @@ export function updateButton(config, id, patch) {
 }
 
 /**
+ * The per-entry checks behind {@link configProblems}.
+ * @param {Record<string, unknown>} d @param {string} id
+ * @returns {string[]}
+ */
+function entryProblems(d, id) {
+  const problems = [];
+  if (d.rect !== undefined && !normalizeButtonRect(d.rect))
+    problems.push(`button ${id}: bad rect ignored (need {x,y,w,h} in % of the screen)`);
+  if (d.vibrate !== undefined && !usableVibrate(d.vibrate))
+    problems.push(`button ${id}: bad vibrate ignored (need true/false or a pulse in ms)`);
+  if (!d.action) return problems;
+  if (typeof d.action !== "string") {
+    problems.push(`button ${id}: unknown action ${JSON.stringify(d.action)}`);
+  } else if (!parseAction(d.action)) {
+    problems.push(`button ${id}: unknown action "${d.action}"`);
+  }
+  return problems;
+}
+
+/**
  * Client-side mirror of the server's save verdicts (lib/buttons
  * parseButtonConfig, via the SAME math.js validators) plus a duplicate-id
  * check the server tolerates but a config should not contain. Empty array =
@@ -120,8 +140,8 @@ export function updateButton(config, id, patch) {
  * @returns {string[]}
  */
 export function configProblems(config) {
-  const c = /** @type {{ buttons?: unknown }} */ (config);
-  if (typeof c !== "object" || c === null || !Array.isArray(c.buttons))
+  const c = /** @type {{ buttons?: unknown } | null} */ (config);
+  if (typeof c !== "object" || !Array.isArray(c?.buttons))
     return ['config must be {"buttons": [...]}'];
   const problems = [];
   const seen = new Set();
@@ -133,13 +153,7 @@ export function configProblems(config) {
     }
     if (seen.has(d.id)) problems.push(`button ${d.id}: duplicate id`);
     seen.add(d.id);
-    if (d.rect !== undefined && !normalizeButtonRect(d.rect))
-      problems.push(`button ${d.id}: bad rect ignored (need {x,y,w,h} in % of the screen)`);
-    if (d.vibrate !== undefined && !usableVibrate(d.vibrate))
-      problems.push(`button ${d.id}: bad vibrate ignored (need true/false or a pulse in ms)`);
-    if (!d.action) continue;
-    if (typeof d.action !== "string" || !parseAction(d.action))
-      problems.push(`button ${d.id}: unknown action "${String(d.action)}"`);
+    problems.push(...entryProblems(d, d.id));
   }
   return problems;
 }

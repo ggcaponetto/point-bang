@@ -1,4 +1,4 @@
-import { normalizeButtonRect, normalizeKey, parseAction } from "../public/math.js";
+import { normalizeButtonRect, parseAction } from "../public/math.js";
 import type { MouseButton, MouseLike } from "./cursor.ts";
 
 /**
@@ -33,7 +33,7 @@ export type ButtonAction = { kind: "key"; keys: string[] } | { kind: "mouse"; bu
 // in public/math.js since 2026-08-12 so the button editor page validates
 // specs with the exact same code. Re-exported here: lib/hotkey and the tests
 // keep their import site, and this module stays the buttons API.
-export { normalizeKey, parseAction };
+export { normalizeKey, parseAction } from "../public/math.js";
 
 interface ButtonDef {
   id: string;

@@ -156,14 +156,14 @@ export async function fetchMonitors(hosts, fetchFn, connectedHost) {
  */
 export function parseServerMessage(data) {
   if (typeof data !== "string") return null;
-  let d;
+  /** @type {{ type?: unknown, rev?: unknown } | null} */
+  let m = null;
   try {
-    d = JSON.parse(data);
+    m = JSON.parse(data);
   } catch {
     return null;
   }
-  const m = /** @type {{ type?: unknown, rev?: unknown }} */ (d);
-  if (typeof m !== "object" || m === null || m.type !== "buttons") return null;
+  if (typeof m !== "object" || m?.type !== "buttons") return null;
   return { type: "buttons", rev: typeof m.rev === "number" && Number.isFinite(m.rev) ? m.rev : 0 };
 }
 

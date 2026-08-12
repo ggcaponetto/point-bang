@@ -68,6 +68,13 @@ describe("createButtonStore", () => {
     expect(await store.read()).toEqual({ text: "NEW", problem: null });
   });
 
+  it("write refuses a non-.json target before touching the filesystem", async () => {
+    const file = write(tmpDir(), "buttons.txt", "x");
+    const store = createButtonStore({ file, explicit: true, assets: assetsWith(null) });
+    await expect(store.write("y")).rejects.toThrow("plain .json");
+    expect(fs.readFileSync(file, "utf8")).toBe("x"); // untouched
+  });
+
   it("write surfaces IO failures (missing directory)", async () => {
     const file = path.join(os.tmpdir(), "btnstore-nodir", "sub", "buttons.json");
     const store = createButtonStore({ file, explicit: false, assets: assetsWith(null) });
