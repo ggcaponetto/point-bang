@@ -58,7 +58,7 @@ export function parseNetsh(output: string): WifiReport {
 // nmcli terse mode separates fields with ":" and backslash-escapes any colon
 // inside a value (SSIDs and MAC-shaped fields routinely contain them).
 function splitTerse(line: string): string[] {
-  return line.split(/(?<!\\):/).map((f) => f.replaceAll("\\:", ":"));
+  return line.split(/(?<!\\):/).map((f) => f.replaceAll(String.raw`\:`, ":"));
 }
 
 /**
@@ -92,7 +92,9 @@ export function parseIwDev(output: string): WifiReport {
   // the engine backtrack across lines — super-linear on adversarial input.
   const ssid = /^[ \t]*ssid[ \t]+(.+)$/m.exec(output)?.[1].trim();
   if (!ssid) return { connected: false };
-  const ch = /^[ \t]*channel[ \t]+(\d+)[ \t]*\((\d+)[ \t]*MHz\)/m.exec(output);
+  // iw prints exactly "channel %d (%d MHz)" — single spaces, bounded digits.
+  // Anything looser (e.g. \d+ then optional space) backtracks super-linearly.
+  const ch = /^[ \t]*channel (\d{1,5}) \((\d{1,6}) MHz\)/m.exec(output);
   return {
     connected: true,
     ssid,
