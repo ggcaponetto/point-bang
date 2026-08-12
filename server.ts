@@ -49,8 +49,39 @@ import {
 } from "./lib/hotkey.ts";
 import { loadKoffi } from "./lib/native.ts";
 import { VERSION } from "./lib/version.ts";
+import { createRtcHub, type PeerLike } from "./lib/rtc.ts";
+import { corsHeaders } from "./lib/cors.ts";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
+
+/** Where the QR sends the phone: the GitHub-Pages-hosted copy of `public/`. */
+export const DEFAULT_PAGE_URL = "https://ggcaponetto.github.io/point-bang/phone/";
+
+/** SDP offers are a few KB; anything bigger is not a phone calibrating. */
+const MAX_OFFER_BYTES = 64 * 1024;
+const TOO_BIG = Symbol("body too large");
+
+const readBody = (
+  req: http.IncomingMessage,
+  max: number,
+): Promise<string | typeof TOO_BIG | null> =>
+  new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > max) {
+        // Drain, don't destroy: killing the socket would eat the 413.
+        req.removeAllListeners("data");
+        req.resume();
+        resolve(TOO_BIG);
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", () => resolve(null));
+  });
 
 /**
  * How the server presents itself:
@@ -95,6 +126,12 @@ export interface ServerOptions {
   screen?: { w: number; h: number };
   platform?: string;
   env?: Record<string, string | undefined>;
+  /** Page the setup QR points at; also seeds the CORS allowlist. */
+  pageUrl?: string;
+  /** Origins allowed to signal cross-origin. Default: the `pageUrl` origin. */
+  pageOrigins?: string[];
+  /** Injected WebRTC peer factory for tests — replaces real werift. */
+  rtc?: { createPeer?: () => PeerLike };
 }
 
 /** A started server: bound ports plus a full-teardown `close()`. */
@@ -137,12 +174,67 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const virtualDeps = { log, size: opts.screen ?? DEFAULT_SCREEN };
   const mouse = opts.mouse ?? (virtual ? createVirtualMouse(virtualDeps) : await createMouse());
 
-  // ---------- static file server (index.html only, no framework needed) ----------
+  // ---------- static files + signaling (index.html only, no framework needed) ----------
+  const pageOrigins = opts.pageOrigins ?? [new URL(opts.pageUrl ?? DEFAULT_PAGE_URL).origin];
+
+  const handleRtcOffer = async (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    cors: Record<string, string>,
+  ): Promise<void> => {
+    const body = await readBody(req, MAX_OFFER_BYTES);
+    if (body === TOO_BIG) {
+      res.writeHead(413, cors);
+      res.end("offer too large");
+      return;
+    }
+    let sdp: unknown;
+    try {
+      sdp = (JSON.parse(body ?? "") as { sdp?: unknown }).sdp;
+    } catch {
+      sdp = undefined;
+    }
+    if (typeof sdp !== "string") {
+      res.writeHead(400, cors);
+      res.end('expected {"sdp":"<offer>"}');
+      return;
+    }
+    try {
+      const answer = await rtcHub.handleOffer(sdp);
+      res.writeHead(200, { "Content-Type": "application/json", ...cors });
+      res.end(JSON.stringify({ sdp: answer }));
+    } catch (e) {
+      res.writeHead(400, cors);
+      res.end((e as Error).message);
+    }
+  };
+
   const handler = (req: http.IncomingMessage, res: http.ServerResponse): void => {
+    const info = { origin: req.headers.origin, host: req.headers.host };
+    if (req.method === "OPTIONS") {
+      // LNA/CORS preflight; a foreign Origin gets no allow headers, which
+      // fails the browser's check without leaking anything.
+      const cors = corsHeaders(info, pageOrigins, true);
+      res.writeHead(cors ? 204 : 403, cors ?? {});
+      res.end();
+      return;
+    }
+    const cors = corsHeaders(info, pageOrigins, false);
     const normalized = normalizeUrlPath(req.url ?? "/");
     if (normalized === null) {
       res.writeHead(403);
       res.end();
+      return;
+    }
+    if (req.method === "POST" && normalized === "/rtc/offer") {
+      // The one state-changing route: a browser context must be the hosted
+      // page or same-origin — this socket ends at the mouse and keyboard.
+      if (!cors) {
+        res.writeHead(403);
+        res.end("origin not allowed");
+        return;
+      }
+      void handleRtcOffer(req, res, cors);
       return;
     }
     // Assets are addressed by bare name ("index.html"), not by URL path.
@@ -153,7 +245,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         res.end("not found");
         return;
       }
-      res.writeHead(200, { "Content-Type": contentTypeFor(name) });
+      // CORS on plain GETs too: the hosted page reads buttons.json from here.
+      res.writeHead(200, { "Content-Type": contentTypeFor(name), ...(cors ?? {}) });
       res.end(data);
     });
   };
@@ -281,6 +374,15 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
   };
 
+  // ---------- webrtc intake (same bytes, same handler as the WS) ----------
+  const rtcHub = createRtcHub(
+    (raw) => {
+      const d = parseMessage(raw);
+      if (d) void handleMessage(d);
+    },
+    { createPeer: opts.rtc?.createPeer, log },
+  );
+
   // ---------- websocket ----------
   const onConnection = (ws: WebSocket, req: http.IncomingMessage): void => {
     log(`phone connected: ${req.socket.remoteAddress}`);
@@ -333,7 +435,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     if (wssTls) for (const c of wssTls.clients) c.terminate();
     const closeSrv = (s: http.Server | https.Server | null): Promise<void> =>
       new Promise((r) => (s ? s.close(() => r()) : r()));
-    return Promise.all([closeSrv(httpServer), closeSrv(httpsServer)]).then(() => {});
+    return Promise.all([closeSrv(httpServer), closeSrv(httpsServer), rtcHub.close()]).then(
+      () => {},
+    );
   };
 
   return { httpPort, httpsPort, close };

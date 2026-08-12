@@ -483,3 +483,182 @@ describe("startServer pause hotkey", () => {
     expect(logs.filter((l) => l.includes("ffi died"))).toHaveLength(1);
   });
 });
+
+describe("startServer rtc signaling", () => {
+  const PAGE_ORIGIN = "https://ggcaponetto.github.io";
+  const OFFER = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n";
+
+  /** Werift stand-in whose DataChannel the test can drive directly. */
+  function fakeRtcPeer() {
+    let onDc:
+      ((dc: { onMessage: { subscribe(cb: (d: string | Buffer) => void): void } }) => void) | null =
+      null;
+    const closed: number[] = [];
+    const peer = {
+      onDataChannel: { subscribe: (cb: typeof onDc) => (onDc = cb) },
+      connectionStateChange: { subscribe: () => {} },
+      iceGatheringStateChange: { subscribe: () => {} },
+      iceGatheringState: "complete",
+      localDescription: { sdp: "v=0 answer" },
+      setRemoteDescription: async () => {},
+      createAnswer: async () => ({ type: "answer", sdp: "v=0 answer" }),
+      setLocalDescription: async () => ({}),
+      close: async () => {
+        closed.push(1);
+      },
+    };
+    const openChannel = () => {
+      let onMsg: ((d: string | Buffer) => void) | null = null;
+      onDc?.({ onMessage: { subscribe: (cb) => (onMsg = cb) } });
+      return { send: (d: string) => onMsg?.(d) };
+    };
+    return { peer, openChannel, closed };
+  }
+
+  async function boot() {
+    const f = fakeMouse();
+    const rtc = fakeRtcPeer();
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      publicDir: PUBLIC,
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: (l) => logs.push(l),
+      pauseCombo: "off",
+      rtc: { createPeer: () => rtc.peer },
+    });
+    return { ...f, rtc, logs, srv: running, base: `http://127.0.0.1:${running.httpPort}` };
+  }
+
+  const postOffer = (base: string, body: string, origin?: string) =>
+    fetch(`${base}/rtc/offer`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(origin ? { origin } : {}) },
+      body,
+    });
+
+  it("answers an offer from the hosted page and feeds its channel into the aim path", async () => {
+    const { base, rtc, moves, clicks, srv } = await boot();
+    const res = await postOffer(base, JSON.stringify({ sdp: OFFER }), PAGE_ORIGIN);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe(PAGE_ORIGIN);
+    expect(await res.json()).toEqual({ sdp: "v=0 answer" });
+
+    const dc = rtc.openChannel();
+    dc.send("{{{ not json"); // garbage must be dropped, not crash
+    dc.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5, t: Date.now(), q: 1 }));
+    await until(() => moves.length > 0);
+    expect(moves[0]).toEqual([960, 540]);
+    dc.send(JSON.stringify({ type: "fire" }));
+    await until(() => clicks.length > 0);
+
+    await srv.close();
+    running = null;
+    expect(rtc.closed.length).toBe(1); // teardown closes live peers
+  });
+
+  it("403s a foreign browser origin — this socket ends at the mouse", async () => {
+    const { base, moves } = await boot();
+    const res = await postOffer(base, JSON.stringify({ sdp: OFFER }), "https://evil.example");
+    expect(res.status).toBe(403);
+    expect(moves.length).toBe(0);
+  });
+
+  it("allows same-origin and no-origin posts (localhost flows, curl)", async () => {
+    const { base, srv } = await boot();
+    const sameOrigin = await postOffer(
+      base,
+      JSON.stringify({ sdp: OFFER }),
+      `http://127.0.0.1:${srv.httpPort}`,
+    );
+    expect(sameOrigin.status).toBe(200);
+    const noOrigin = await postOffer(base, JSON.stringify({ sdp: OFFER }));
+    expect(noOrigin.status).toBe(200);
+  });
+
+  it("400s malformed bodies and non-SDP offers", async () => {
+    const { base } = await boot();
+    expect((await postOffer(base, "{{{ nope", PAGE_ORIGIN)).status).toBe(400);
+    expect((await postOffer(base, JSON.stringify({ nope: 1 }), PAGE_ORIGIN)).status).toBe(400);
+    expect((await postOffer(base, JSON.stringify({ sdp: "hello" }), PAGE_ORIGIN)).status).toBe(400);
+  });
+
+  it("413s an oversized body", async () => {
+    const { base } = await boot();
+    const res = await postOffer(
+      base,
+      JSON.stringify({ sdp: "m=".padEnd(70_000, "x") }),
+      PAGE_ORIGIN,
+    );
+    expect(res.status).toBe(413);
+  });
+
+  it("preflight: 204 with the private-network opt-in for the page, 403 for strangers", async () => {
+    const { base } = await boot();
+    const ok = await fetch(`${base}/rtc/offer`, {
+      method: "OPTIONS",
+      headers: { origin: PAGE_ORIGIN, "access-control-request-method": "POST" },
+    });
+    expect(ok.status).toBe(204);
+    expect(ok.headers.get("access-control-allow-origin")).toBe(PAGE_ORIGIN);
+    expect(ok.headers.get("access-control-allow-private-network")).toBe("true");
+
+    const no = await fetch(`${base}/rtc/offer`, {
+      method: "OPTIONS",
+      headers: { origin: "https://evil.example" },
+    });
+    expect(no.status).toBe(403);
+    expect(no.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("serves buttons.json to the hosted page with CORS (local config wins remotely)", async () => {
+    const { base } = await boot();
+    const res = await fetch(`${base}/buttons.json`, { headers: { origin: PAGE_ORIGIN } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe(PAGE_ORIGIN);
+    const strange = await fetch(`${base}/buttons.json`, {
+      headers: { origin: "https://evil.example" },
+    });
+    expect(strange.status).toBe(200); // static read is public; no ACAO = browser blocks it
+    expect(strange.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("signals over the https server too when certs exist", async () => {
+    const f = fakeMouse();
+    const rtc = fakeRtcPeer();
+    running = await startServer({
+      port: 0,
+      httpsPort: 0,
+      certsDir: FIXTURES,
+      publicDir: PUBLIC,
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: () => {},
+      pauseCombo: "off",
+      rtc: { createPeer: () => rtc.peer },
+    });
+    const body = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+      const req = https.request(
+        {
+          host: "127.0.0.1",
+          port: running!.httpsPort!,
+          path: "/rtc/offer",
+          method: "POST",
+          headers: { "content-type": "application/json", origin: PAGE_ORIGIN },
+          rejectUnauthorized: false,
+        },
+        (res) => {
+          let text = "";
+          res.on("data", (c) => (text += c));
+          res.on("end", () => resolve({ status: res.statusCode!, text }));
+        },
+      );
+      req.on("error", reject);
+      req.end(JSON.stringify({ sdp: OFFER }));
+    });
+    expect(body.status).toBe(200);
+    expect(JSON.parse(body.text)).toEqual({ sdp: "v=0 answer" });
+  });
+});
