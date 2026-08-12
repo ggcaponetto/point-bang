@@ -128,11 +128,13 @@ const fresh = () => {
 
 function transport(opts: {
   hosts: string[];
+  key?: string | null;
   fetchFn: (url: string, init: Record<string, unknown>) => Promise<never> | Promise<unknown>;
   onStatus?: (s: string, d?: string) => void;
 }) {
   return createTransport({
     hosts: opts.hosts,
+    key: opts.key,
     wsUrl: "ws://same.origin:8443",
     fetchFn: opts.fetchFn as never,
     Peer: FakePeer as never,
@@ -146,21 +148,36 @@ describe("parseFragment", () => {
   it("reads a host list", () => {
     expect(parseFragment("#pc=192.168.1.5:8443,10.0.0.3:9000")).toEqual({
       hosts: ["192.168.1.5:8443", "10.0.0.3:9000"],
+      key: null,
     });
   });
   it("returns no hosts for an empty/missing/foreign fragment", () => {
-    expect(parseFragment("")).toEqual({ hosts: [] });
-    expect(parseFragment("#")).toEqual({ hosts: [] });
-    expect(parseFragment("#x=y")).toEqual({ hosts: [] });
-    expect(parseFragment(undefined as never)).toEqual({ hosts: [] });
+    expect(parseFragment("")).toEqual({ hosts: [], key: null });
+    expect(parseFragment("#")).toEqual({ hosts: [], key: null });
+    expect(parseFragment("#x=y")).toEqual({ hosts: [], key: null });
+    expect(parseFragment(undefined as never)).toEqual({ hosts: [], key: null });
   });
   it("drops garbage entries but keeps valid ones", () => {
     expect(parseFragment("#pc=nope,192.168.1.5:8443,evil/path:80,:1,h:99999")).toEqual({
       hosts: ["192.168.1.5:8443"],
+      key: null,
     });
   });
   it("accepts bracketed IPv6", () => {
-    expect(parseFragment("#pc=[fe80::1]:8443")).toEqual({ hosts: ["[fe80::1]:8443"] });
+    expect(parseFragment("#pc=[fe80::1]:8443")).toEqual({ hosts: ["[fe80::1]:8443"], key: null });
+  });
+  it("reads the session key, with or without hosts", () => {
+    expect(parseFragment("#pc=192.168.1.5:8443&key=abc123-XY")).toEqual({
+      hosts: ["192.168.1.5:8443"],
+      key: "abc123-XY",
+    });
+    // the printed localhost/mkcert URLs carry only the key
+    expect(parseFragment("#key=abc123-XY")).toEqual({ hosts: [], key: "abc123-XY" });
+  });
+  it("drops a malformed key rather than sending junk", () => {
+    expect(parseFragment("#key=too+short").key).toBeNull();
+    expect(parseFragment("#key=has spaces in it").key).toBeNull();
+    expect(parseFragment(`#key=${"x".repeat(129)}`).key).toBeNull();
   });
 });
 
@@ -220,6 +237,19 @@ describe("exchangeOffer", () => {
     await expect(
       exchangeOffer("/rtc/offer", "o", empty as never, { crossOrigin: false, timeoutMs: 100 }),
     ).rejects.toThrow("no sdp");
+  });
+
+  it("sends the session key in the body when given one", async () => {
+    const f = fakeFetch();
+    await exchangeOffer("http://a:1/rtc/offer", "my-offer", f.fn as never, {
+      crossOrigin: true,
+      timeoutMs: 100,
+      key: "abc123-XY",
+    });
+    expect(JSON.parse(f.calls[0].init.body as string)).toEqual({
+      sdp: "my-offer",
+      key: "abc123-XY",
+    });
   });
 
   it("aborts through the signal after timeoutMs", async () => {
@@ -294,6 +324,21 @@ describe("createTransport — remote mode (QR / hosted page)", () => {
     t.close();
   });
 
+  it("presents the fragment key on every signaling attempt", async () => {
+    fresh();
+    const f = fakeFetch();
+    const status: string[] = [];
+    const t = transport({
+      hosts: ["a:1"],
+      key: "abc123-XY",
+      fetchFn: f.fn,
+      onStatus: (s) => status.push(s),
+    });
+    await until(() => status.includes("rtc"));
+    expect(JSON.parse(f.calls[0].init.body as string).key).toBe("abc123-XY");
+    t.close();
+  });
+
   it("close() during backoff stops the retry loop", async () => {
     fresh();
     const f = fakeFetch(() => true);
@@ -329,6 +374,22 @@ describe("createTransport — local mode (page served by the PC)", () => {
     expect(FakeSocket.instances[0].url).toBe("ws://same.origin:8443");
     t.send({ type: "fire" });
     expect(FakeSocket.instances[0].sent).toEqual(['{"type":"fire"}']);
+    t.close();
+  });
+
+  it("carries the key into the WS fallback URL as a query param", async () => {
+    fresh();
+    const f = fakeFetch(() => true);
+    const status: string[] = [];
+    const t = transport({
+      hosts: [],
+      key: "abc123-XY",
+      fetchFn: f.fn,
+      onStatus: (s) => status.push(s),
+    });
+    await until(() => status.includes("ws"));
+    expect(FakeSocket.instances[0].url).toBe("ws://same.origin:8443/?key=abc123-XY");
+    expect(JSON.parse(f.calls[0].init.body as string).key).toBe("abc123-XY");
     t.close();
   });
 

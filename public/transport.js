@@ -59,11 +59,16 @@
 /** Accepts `host:port` (or `[v6]:port`) — anything else in the QR is dropped. */
 const HOST_RE = /^([a-z0-9.-]+|\[[0-9a-f:.]+\]):(\d{1,5})$/i;
 
+/** Session keys as the server mints them (lib/auth) — junk is dropped. */
+const KEY_RE = /^[A-Za-z0-9._~-]{8,128}$/;
+
 /**
- * Reads the PC addresses out of the URL fragment. No `pc=` key (or nothing
- * valid in it) means local mode.
- * @param {string} hash e.g. "#pc=192.168.1.5:8443,10.0.0.3:8443"
- * @returns {{ hosts: string[] }}
+ * Reads the PC addresses and the session key out of the URL fragment. No
+ * `pc=` key (or nothing valid in it) means local mode. The key is present in
+ * BOTH modes: the fragment is how the QR (or a printed URL) hands the phone
+ * its credential without it ever reaching the page host.
+ * @param {string} hash e.g. "#pc=192.168.1.5:8443,10.0.0.3:8443&key=abc12345"
+ * @returns {{ hosts: string[], key: string | null }}
  */
 export function parseFragment(hash) {
   const params = new URLSearchParams((hash ?? "").replace(/^#/, ""));
@@ -74,7 +79,8 @@ export function parseFragment(hash) {
       const m = HOST_RE.exec(h);
       return m !== null && Number(m[2]) >= 1 && Number(m[2]) <= 65535;
     });
-  return { hosts };
+  const rawKey = params.get("key") ?? "";
+  return { hosts, key: KEY_RE.test(rawKey) ? rawKey : null };
 }
 
 /**
@@ -111,11 +117,12 @@ export async function fetchButtons(hosts, fetchFn, connectedHost) {
 }
 
 /**
- * One signaling round-trip: offer out, answer back.
+ * One signaling round-trip: offer out, answer back. The session key goes in
+ * the body (never a custom header — that would add CORS preflight surface).
  * @param {string} url
  * @param {string} sdp
  * @param {FetchLike} fetchFn
- * @param {{ crossOrigin: boolean, timeoutMs: number }} opts
+ * @param {{ crossOrigin: boolean, timeoutMs: number, key?: string | null }} opts
  * @returns {Promise<string>} the answer SDP
  */
 export async function exchangeOffer(url, sdp, fetchFn, opts) {
@@ -126,7 +133,7 @@ export async function exchangeOffer(url, sdp, fetchFn, opts) {
     const init = {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sdp }),
+      body: JSON.stringify(opts.key ? { sdp, key: opts.key } : { sdp }),
       signal: ctrl.signal,
     };
     // Local Network Access: declares the target so Chrome 142+ exempts this
@@ -182,6 +189,7 @@ const failMessage = (hosts) =>
  * @param {Object} opts
  * @param {string[]} opts.hosts       from {@link parseFragment}; [] = local mode
  * @param {string} opts.wsUrl         same-origin WS endpoint (local mode only)
+ * @param {string | null} [opts.key]  session key from {@link parseFragment}
  * @param {FetchLike} opts.fetchFn
  * @param {new (config: { iceServers: unknown[] }) => PeerIsh} opts.Peer
  * @param {new (url: string) => SocketIsh} opts.Socket
@@ -191,6 +199,7 @@ const failMessage = (hosts) =>
  */
 export function createTransport(opts) {
   const hosts = opts.hosts ?? [];
+  const key = opts.key ?? null;
   const remote = hosts.length > 0;
   /** @type {TransportTimes} */
   const times = {
@@ -228,6 +237,7 @@ export function createTransport(opts) {
       const answer = await exchangeOffer(offerUrl, sdp, opts.fetchFn, {
         crossOrigin,
         timeoutMs: times.offerMs,
+        key,
       });
       await pc.setRemoteDescription({ type: "answer", sdp: answer });
       await channelOpen(dc, pc, openCapMs);
@@ -263,7 +273,9 @@ export function createTransport(opts) {
   }
 
   function wsConnect() {
-    const ws = new opts.Socket(opts.wsUrl);
+    // The key travels as a query param: the WS API has no headers, and the
+    // upgrade URL is the one thing the server sees before accepting.
+    const ws = new opts.Socket(key ? `${opts.wsUrl}/?key=${encodeURIComponent(key)}` : opts.wsUrl);
     ws.onopen = () => {
       if (closed) return ws.close();
       active = { send: (s) => ws.send(s), close: () => ws.close() };

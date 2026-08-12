@@ -30,6 +30,16 @@ describe("phonePageUrl", () => {
 
   it("returns null when there is no LAN address to encode", () => {
     expect(phonePageUrl(DEFAULT_PAGE_URL, [], 8443)).toBeNull();
+    expect(phonePageUrl(DEFAULT_PAGE_URL, [], 8443, "abc123-XY")).toBeNull();
+  });
+
+  it("appends the session key to the fragment — scanning hands over the credential", () => {
+    const url = phonePageUrl(DEFAULT_PAGE_URL, [addr("192.168.1.5", true)], 8443, "abc123-XY");
+    expect(url).toBe(`${DEFAULT_PAGE_URL}#pc=192.168.1.5:8443&key=abc123-XY`);
+    // null = gate off: the fragment stays key-free
+    expect(phonePageUrl(DEFAULT_PAGE_URL, [addr("192.168.1.5", true)], 8443, null)).toBe(
+      `${DEFAULT_PAGE_URL}#pc=192.168.1.5:8443`,
+    );
   });
 });
 

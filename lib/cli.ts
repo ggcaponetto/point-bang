@@ -9,6 +9,7 @@ import { adbReverse } from "./adb.ts";
 import { runCheck } from "./check.ts";
 import type { LibNut } from "./native.ts";
 import { lanIPv4, formatIpReport } from "./net.ts";
+import { resolveKey } from "./auth.ts";
 import { DEFAULT_PAGE_URL } from "./qr.ts";
 import { wifiMain } from "./wifi.ts";
 import { VERSION } from "./version.ts";
@@ -84,6 +85,7 @@ interface ServeArgs {
   buttons?: string;
   pageUrl: string;
   qr: boolean;
+  key: string;
 }
 
 const numFromEnv = (raw: string | undefined): number | undefined => {
@@ -179,6 +181,13 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
             type: "boolean",
             default: true,
             describe: "print the setup QR on startup; --no-qr disables it",
+          })
+          .option("key", {
+            type: "string",
+            default: "auto",
+            describe:
+              "session key network clients must present (it rides the QR); " +
+              "'auto' generates one per run, 'off' disables authentication",
           }),
       )
       // Standalone counterpart to `serve --tunnel ngrok`: run it in a second
@@ -252,6 +261,10 @@ export async function runCli(
   }
   if (command === "tunnel") {
     log(`TUNNEL: exposing local :${a.port} — start the server separately if it is not up yet`);
+    // This process cannot know the server's session key, and the server sees
+    // tunnel traffic as loopback (exempt). Prefer `serve --tunnel ngrok`.
+    log("TUNNEL: NOTE — a separately-started server treats tunnel traffic as local and");
+    log("TUNNEL: will NOT require its session key; use `serve --tunnel ngrok` for that.");
     try {
       const tunnel = await (deps.tunnel ?? startNgrok)(a.port, { url: a.url });
       for (const line of formatTunnelReport(tunnel.url, tunnel.adopted)) log(line);
@@ -271,6 +284,11 @@ export async function runCli(
     error(`--screen: expected WxH (e.g. 1920x1080), got "${a.screen}"`);
     return 1;
   }
+  const resolvedKey = resolveKey(a.key);
+  if (resolvedKey.problem) {
+    error(resolvedKey.problem);
+    return 1;
+  }
   if (a.mode === "adb") log((deps.adb ?? adbReverse)(a.port).detail);
   try {
     const server = await (deps.start ?? startServer)({
@@ -288,6 +306,10 @@ export async function runCli(
       buttonsFile: a.buttons,
       pageUrl: a.pageUrl,
       qr: a.qr,
+      key: resolvedKey.key,
+      // ngrok forwards the public internet to loopback — with the tunnel in
+      // this process, loopback connections must present the key too.
+      keyLoopbackExempt: a.tunnel !== "ngrok",
       log,
     });
     if (a.tunnel === "ngrok") {
@@ -296,7 +318,7 @@ export async function runCli(
       // 502s to the phone.
       try {
         const tunnel = await (deps.tunnel ?? startNgrok)(server.httpPort, { url: a.tunnelUrl });
-        for (const line of formatTunnelReport(tunnel.url, tunnel.adopted)) log(line);
+        for (const line of formatTunnelReport(tunnel.url, tunnel.adopted, server.key)) log(line);
         (deps.onShutdown ?? onSignals)(() => tunnel.stop());
       } catch (e) {
         // The server is up and the USB/LAN flows still work — an optional

@@ -107,19 +107,33 @@ export function summarizeNgrokOutput(lines: string[]): string {
 /**
  * The lines printed once a tunnel is up. Split out so they can be asserted.
  *
- * The security line is not decoration. The WebSocket has no authentication —
- * on a LAN that is a considered trade-off, but a tunnel puts the same socket
- * on the public internet, where anyone holding the URL can move the mouse and
- * press keys on this machine. Whoever opens one deserves to be told plainly.
+ * The security lines are not decoration: a tunnel puts a socket that moves
+ * the mouse and presses keys on the public internet. With a session `key`
+ * the URL's fragment carries the credential — the socket refuses anyone
+ * without it, but the full URL is still the key to this machine. Without a
+ * key (`--key off`, or the standalone `tunnel` command in front of a server
+ * whose loopback exemption is on), the URL alone is enough — whoever opens
+ * one deserves to be told plainly.
  */
-export function formatTunnelReport(url: string, adopted = false): string[] {
+export function formatTunnelReport(
+  url: string,
+  adopted = false,
+  key: string | null = null,
+): string[] {
   return [
-    `TUNNEL: ${url}  <-- open this on the phone, from any network`,
+    `TUNNEL: ${url}${key ? `#key=${key}` : ""}  <-- open this on the phone, from any network`,
     "TUNNEL: it is HTTPS, so WebXR works with no mkcert and no Chrome flag",
     'TUNNEL: the free plan shows a one-time "Visit Site" warning page — tap through it',
     "TUNNEL: expect tens of ms more latency than USB; use it to set up, not to play",
-    "TUNNEL: WARNING — unauthenticated: anyone with this URL can move your mouse and",
-    "TUNNEL: press keys on this PC. Share it with nobody and Ctrl+C when you are done.",
+    ...(key
+      ? [
+          "TUNNEL: connections must present the session key in this URL's #fragment —",
+          "TUNNEL: it IS the key to this PC's mouse and keyboard. Share it with nobody.",
+        ]
+      : [
+          "TUNNEL: WARNING — unauthenticated: anyone with this URL can move your mouse and",
+          "TUNNEL: press keys on this PC. Share it with nobody and Ctrl+C when you are done.",
+        ]),
     ...(adopted
       ? [
           "TUNNEL: this agent was already running — reusing it and leaving it up.",

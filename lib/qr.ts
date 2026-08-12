@@ -16,16 +16,20 @@ export const DEFAULT_PAGE_URL = "https://ggcaponetto.github.io/point-bang/phone/
 /**
  * The URL the QR encodes: WiFi-flagged interfaces first (that is the network
  * the phone shares), capped at three hosts to keep the QR scannable in an
- * 80-column terminal. Null when there is no LAN address to offer.
+ * 80-column terminal. Null when there is no LAN address to offer. The
+ * session key rides the same fragment — scanning is what hands the phone
+ * its credential.
  */
 export function phonePageUrl(
   pageUrl: string,
   addrs: LanAddress[],
   httpPort: number,
+  key?: string | null,
 ): string | null {
   if (addrs.length === 0) return null;
   const ordered = [...addrs.filter((a) => a.wifi), ...addrs.filter((a) => !a.wifi)].slice(0, 3);
-  return `${pageUrl}#pc=${ordered.map((a) => `${a.address}:${httpPort}`).join(",")}`;
+  const hosts = ordered.map((a) => `${a.address}:${httpPort}`).join(",");
+  return `${pageUrl}#pc=${hosts}${key ? `&key=${key}` : ""}`;
 }
 
 type Generate = (text: string, opts: { small: boolean }, cb: (q: string) => void) => void;

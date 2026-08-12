@@ -51,6 +51,7 @@ import { loadKoffi } from "./lib/native.ts";
 import { VERSION } from "./lib/version.ts";
 import { createRtcHub, type PeerLike } from "./lib/rtc.ts";
 import { corsHeaders } from "./lib/cors.ts";
+import { createKeyGate, generateKey } from "./lib/auth.ts";
 import { phonePageUrl, qrLines, DEFAULT_PAGE_URL } from "./lib/qr.ts";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -132,12 +133,24 @@ export interface ServerOptions {
   pageOrigins?: string[];
   /** Injected WebRTC peer factory for tests — replaces real werift. */
   rtc?: { createPeer?: () => PeerLike };
+  /**
+   * Session key network clients must present (WS `?key=`, `/rtc/offer` body).
+   * Undefined = generate one per run; null = gate off (trusted LAN).
+   */
+  key?: string | null;
+  /**
+   * Whether loopback connections skip the key (default true — the adb/USB
+   * flow). MUST be false when a tunnel forwards the internet to loopback.
+   */
+  keyLoopbackExempt?: boolean;
 }
 
 /** A started server: bound ports plus a full-teardown `close()`. */
 export interface RunningServer {
   httpPort: number;
   httpsPort: number | null;
+  /** The session key in force, for callers printing URLs (tunnel). */
+  key: string | null;
   close(): Promise<void>;
 }
 
@@ -177,6 +190,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // ---------- static files + signaling (index.html only, no framework needed) ----------
   const pageOrigins = opts.pageOrigins ?? [new URL(opts.pageUrl ?? DEFAULT_PAGE_URL).origin];
 
+  // The session key: CORS only constrains browsers — curl and any device on
+  // the LAN send no Origin. Both aim intakes end at the mouse and keyboard,
+  // so network clients must present the key from the QR fragment.
+  const gate = createKeyGate({
+    key: opts.key === undefined ? generateKey() : opts.key,
+    loopbackExempt: opts.keyLoopbackExempt ?? true,
+  });
+
   const handleRtcOffer = async (
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -189,10 +210,19 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       return;
     }
     let sdp: unknown;
+    let key: unknown;
     try {
-      sdp = (JSON.parse(body ?? "") as { sdp?: unknown }).sdp;
+      const parsed = JSON.parse(body ?? "") as { sdp?: unknown; key?: unknown };
+      sdp = parsed.sdp;
+      key = parsed.key;
     } catch {
       sdp = undefined;
+    }
+    if (!gate.allow(req.socket.remoteAddress, typeof key === "string" ? key : undefined)) {
+      log(`rtc: offer refused (missing/wrong session key) from ${req.socket.remoteAddress}`);
+      res.writeHead(403, cors);
+      res.end("session key required — scan the QR the server prints");
+      return;
     }
     if (typeof sdp !== "string") {
       res.writeHead(400, cors);
@@ -385,6 +415,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   // ---------- websocket ----------
   const onConnection = (ws: WebSocket, req: http.IncomingMessage): void => {
+    // The upgrade URL carries `?key=` (the page copies it out of the
+    // fragment). 1008 = policy violation; the page shows the close reason.
+    const presented = new URL(req.url ?? "/", "http://x").searchParams.get("key");
+    if (!gate.allow(req.socket.remoteAddress, presented)) {
+      log(`ws: connection refused (missing/wrong session key) from ${req.socket.remoteAddress}`);
+      ws.close(1008, "session key required — scan the QR the server prints");
+      return;
+    }
     log(`phone connected: ${req.socket.remoteAddress}`);
     ws.on("message", (raw: Buffer) => {
       const d = parseMessage(raw);
@@ -408,27 +446,36 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   const httpPort = await listen(httpServer, opts.port ?? 8443);
   log(`http+ws on :${httpPort}`);
+  // Printed URLs carry the key in the fragment so scanning/typing them just
+  // works; loopback URLs stay bare while loopback is exempt.
+  const lanFrag = gate.key ? `#key=${gate.key}` : "";
+  const localFrag = gate.required("127.0.0.1") ? lanFrag : "";
+  if (gate.key)
+    log(`key : network clients must present this run's session key (in the QR/URLs below);`);
+  if (gate.key) log(`key : pass --key off to serve unauthenticated on a trusted network`);
+  else log(`key : OFF — anyone who can reach this port can move this PC's mouse and keyboard`);
   if (mode !== "wifi")
     log(
-      `USB:  adb reverse tcp:${httpPort} tcp:${httpPort}  then open http://localhost:${httpPort} on the phone`,
+      `USB:  adb reverse tcp:${httpPort} tcp:${httpPort}  then open http://localhost:${httpPort}${localFrag} on the phone`,
     );
   if (mode === "adb" && opts.qr !== false) {
     // localhost resolves ON THE PHONE, through the adb reverse tunnel —
     // scanning just saves typing the URL.
-    log(`USB:  or scan to open http://localhost:${httpPort} on the phone:`);
-    for (const line of await qrLines(`http://localhost:${httpPort}`)) log(line);
+    log(`USB:  or scan to open http://localhost:${httpPort}${localFrag} on the phone:`);
+    for (const line of await qrLines(`http://localhost:${httpPort}${localFrag}`)) log(line);
   }
 
   let httpsPort: number | null = null;
   if (httpsServer) {
     httpsPort = await listen(httpsServer, opts.httpsPort ?? 8444);
     log(`https+wss on :${httpsPort}`);
-    for (const ip of lanIPv4()) log(`WiFi: open https://${ip.address}:${httpsPort} on the phone`);
+    for (const ip of lanIPv4())
+      log(`WiFi: open https://${ip.address}:${httpsPort}${lanFrag} on the phone`);
   } else if (mode === "wifi") {
     log(`WiFi: no certs/cert.pem+key.pem — https off. Option A (no certs): on the phone`);
     log(`WiFi: enable chrome://flags/#unsafe-treat-insecure-origin-as-secure and add one of:`);
     for (const ip of lanIPv4())
-      log(`WiFi:   http://${ip.address}:${httpPort}${ip.wifi ? "   <-- your WiFi" : ""}`);
+      log(`WiFi:   http://${ip.address}:${httpPort}${lanFrag}${ip.wifi ? "   <-- your WiFi" : ""}`);
   } else if (mode === "all") {
     log(`WiFi: no certs/cert.pem+key.pem found — HTTPS off (see README "Run it over WiFi")`);
   }
@@ -436,7 +483,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // ---------- setup QR (the consumer journey: run, scan, tap Allow) ----------
   if (mode !== "adb" && opts.qr !== false) {
     const pageUrl = opts.pageUrl ?? DEFAULT_PAGE_URL;
-    const qrUrl = phonePageUrl(pageUrl, lanIPv4(), httpPort);
+    const qrUrl = phonePageUrl(pageUrl, lanIPv4(), httpPort, gate.key);
     if (qrUrl) {
       log(`Phone: scan to play (page loads from ${pageUrl}):`);
       for (const line of await qrLines(qrUrl)) log(line);
@@ -458,5 +505,5 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     );
   };
 
-  return { httpPort, httpsPort, close };
+  return { httpPort, httpsPort, key: gate.key, close };
 }

@@ -707,3 +707,120 @@ describe("startServer setup QR", () => {
     expect(adb.join("\n")).not.toContain("scan to open");
   });
 });
+
+describe("startServer session key", () => {
+  const KEY = "testkey-123456";
+  const OFFER = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n";
+
+  /** Minimal werift stand-in — signaling is what's under test here. */
+  const fakePeer = () => ({
+    onDataChannel: { subscribe: () => {} },
+    connectionStateChange: { subscribe: () => {} },
+    iceGatheringStateChange: { subscribe: () => {} },
+    iceGatheringState: "complete",
+    localDescription: { sdp: "v=0 answer" },
+    setRemoteDescription: async () => {},
+    createAnswer: async () => ({ type: "answer", sdp: "v=0 answer" }),
+    setLocalDescription: async () => ({}),
+    close: async () => {},
+  });
+
+  async function boot(opts: { key?: string | null; keyLoopbackExempt?: boolean } = {}) {
+    const f = fakeMouse();
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      publicDir: PUBLIC,
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: (l) => logs.push(l),
+      pauseCombo: "off",
+      qr: false,
+      rtc: { createPeer: fakePeer },
+      ...opts,
+    });
+    return { ...f, logs, srv: running, base: `http://127.0.0.1:${running.httpPort}` };
+  }
+
+  /** Opens a WS and reports how it ended: open, or closed with code+reason. */
+  const wsAttempt = (
+    url: string,
+  ): Promise<{ opened: boolean; code?: number; reason?: string; ws: WebSocket }> =>
+    new Promise((resolve, reject) => {
+      const ws = new WebSocket(url);
+      let opened = false;
+      ws.on("open", () => (opened = true));
+      ws.on("close", (code, reason) => resolve({ opened, code, reason: reason.toString(), ws }));
+      ws.on("error", reject);
+      setTimeout(() => opened && resolve({ opened, ws }), 150);
+    });
+
+  it("refuses a keyless WS when loopback is not exempt (1008 + a hint)", async () => {
+    const { srv } = await boot({ key: KEY, keyLoopbackExempt: false });
+    const r = await wsAttempt(`ws://127.0.0.1:${srv.httpPort}`);
+    expect(r.code).toBe(1008);
+    expect(r.reason).toContain("session key");
+    const wrong = await wsAttempt(`ws://127.0.0.1:${srv.httpPort}/?key=wrong-key-123`);
+    expect(wrong.code).toBe(1008);
+  });
+
+  it("a WS presenting the key streams aim as usual", async () => {
+    const { srv, moves } = await boot({ key: KEY, keyLoopbackExempt: false });
+    const r = await wsAttempt(`ws://127.0.0.1:${srv.httpPort}/?key=${KEY}`);
+    expect(r.opened).toBe(true);
+    r.ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5, t: Date.now(), q: 1 }));
+    await until(() => moves.length > 0);
+    expect(moves[0]).toEqual([960, 540]);
+    r.ws.close();
+  });
+
+  it("403s a keyless /rtc/offer and answers one carrying the key", async () => {
+    const { base } = await boot({ key: KEY, keyLoopbackExempt: false });
+    const post = (body: object) =>
+      fetch(`${base}/rtc/offer`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const refused = await post({ sdp: OFFER });
+    expect(refused.status).toBe(403);
+    expect(await refused.text()).toContain("session key");
+    expect((await post({ sdp: OFFER, key: "wrong-key-123" })).status).toBe(403);
+    const ok = await post({ sdp: OFFER, key: KEY });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ sdp: "v=0 answer" });
+  });
+
+  it("loopback is exempt by default — the adb flow needs no key", async () => {
+    const { srv, moves } = await boot({ key: KEY }); // exemption defaulted on
+    const r = await wsAttempt(`ws://127.0.0.1:${srv.httpPort}`);
+    expect(r.opened).toBe(true);
+    r.ws.send(JSON.stringify({ type: "aim", u: 0.25, v: 0.5, t: Date.now(), q: 1 }));
+    await until(() => moves.length > 0);
+    r.ws.close();
+  });
+
+  it("key null = gate off, and the banner says so loudly", async () => {
+    const { srv, logs } = await boot({ key: null, keyLoopbackExempt: false });
+    const r = await wsAttempt(`ws://127.0.0.1:${srv.httpPort}`);
+    expect(r.opened).toBe(true);
+    r.ws.close();
+    expect(logs.join("\n")).toContain("key : OFF");
+  });
+
+  it("generates a key when none is provided and prints it into the URLs", async () => {
+    const { srv, logs } = await boot({ keyLoopbackExempt: false });
+    expect(srv.key).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    const joined = logs.join("\n");
+    expect(joined).toContain("session key");
+    expect(joined).toContain(`http://localhost:${srv.httpPort}#key=${srv.key}`);
+  });
+
+  it("keeps loopback URLs bare while loopback is exempt", async () => {
+    const { srv, logs } = await boot({ key: KEY });
+    expect(srv.key).toBe(KEY);
+    expect(logs.join("\n")).toContain(`http://localhost:${srv.httpPort} on the phone`);
+    expect(logs.join("\n")).not.toContain(`localhost:${srv.httpPort}#key=`);
+  });
+});

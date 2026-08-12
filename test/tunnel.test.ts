@@ -154,6 +154,14 @@ describe("formatTunnelReport", () => {
     expect(lines).toMatch(/unauthenticated/i);
     expect(lines).toMatch(/move your mouse/i);
   });
+
+  it("with a session key: embeds it in the URL and reframes the warning", () => {
+    const lines = formatTunnelReport("https://x.ngrok-free.app", false, "abc123-XY").join("\n");
+    expect(lines).toContain("https://x.ngrok-free.app#key=abc123-XY");
+    expect(lines).toMatch(/session key/i);
+    expect(lines).toMatch(/share it with nobody/i);
+    expect(lines).not.toMatch(/unauthenticated/i);
+  });
 });
 
 describe("startNgrok", () => {

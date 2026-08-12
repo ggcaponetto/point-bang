@@ -111,6 +111,29 @@ describe("serve flags", () => {
     expect(seen()).toMatchObject({ mode: "adb", port: 1234 });
   });
 
+  it("generates a session key by default, loopback exempt", async () => {
+    const { deps, seen } = spyDeps();
+    await runCli([], deps);
+    expect(seen()!.key).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(seen()!.keyLoopbackExempt).toBe(true);
+  });
+
+  it("--key off disables the gate; an explicit key passes through", async () => {
+    const off = spyDeps();
+    await runCli(["--key", "off"], off.deps);
+    expect(off.seen()!.key).toBeNull();
+    const fixed = spyDeps();
+    await runCli(["--key", "my-fixed-key.01"], fixed.deps);
+    expect(fixed.seen()!.key).toBe("my-fixed-key.01");
+  });
+
+  it("refuses an unusable --key before booting anything", async () => {
+    const { deps, errors, seen } = spyDeps();
+    expect(await runCli(["--key", "way too short"], deps)).toBe(1);
+    expect(errors.join("\n")).toContain("--key");
+    expect(seen()).toBeNull();
+  });
+
   it("runs adb reverse only in adb mode, on the chosen port", async () => {
     const ports: number[] = [];
     const { deps, logs } = spyDeps({
@@ -189,6 +212,31 @@ describe("public tunnel", () => {
     expect(t.stops).toHaveLength(1);
   });
 
+  it("drops the loopback exemption — ngrok forwards the internet to loopback", async () => {
+    const t = tunnelDeps();
+    const { deps, seen } = spyDeps(t.deps);
+    await runCli(["--tunnel", "ngrok"], deps);
+    expect(seen()!.keyLoopbackExempt).toBe(false);
+    const plain = spyDeps();
+    await runCli([], plain.deps);
+    expect(plain.seen()!.keyLoopbackExempt).toBe(true);
+  });
+
+  it("prints the tunnel URL with the server's session key in the fragment", async () => {
+    const t = tunnelDeps();
+    const { deps, logs } = spyDeps({
+      ...t.deps,
+      start: (async () => ({
+        httpPort: 12345,
+        httpsPort: null,
+        key: "abc123-XY",
+        close: async () => {},
+      })) as never,
+    });
+    await runCli(["--tunnel", "ngrok"], deps);
+    expect(logs.join("\n")).toContain("https://x.ngrok-free.app#key=abc123-XY");
+  });
+
   it("keeps serving when the tunnel fails, and says why", async () => {
     const t = tunnelDeps("fail");
     const { deps, errors } = spyDeps(t.deps);
@@ -231,6 +279,8 @@ describe("tunnel command", () => {
     expect(await runCli(["tunnel"], deps)).toBe(0);
     expect(t.asked).toEqual([{ port: 8443, url: undefined }]);
     expect(logs.join("\n")).toContain("https://y.ngrok-free.app");
+    // it cannot know the server's key — say so instead of implying safety
+    expect(logs.join("\n")).toContain("will NOT require its session key");
   });
 
   it("takes --port and --url, and honours PORT so it matches a running serve", async () => {

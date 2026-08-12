@@ -343,7 +343,7 @@
       // #pc=<ip:port,...> in the QR the PC prints ⇒ remote mode (page from
       // the hosted origin, WebRTC over the LAN). No fragment ⇒ this page came
       // from the PC itself and talks to its own origin.
-      const { hosts } = parseFragment(location.hash);
+      const { hosts, key } = parseFragment(location.hash);
 
       let fu = new OneEuro(),
         fv = new OneEuro();
@@ -460,6 +460,7 @@
       // owns the ladder, retries and backoff — this is display glue).
       const transport = createTransport({
         hosts,
+        key,
         wsUrl: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`,
         fetchFn: (u, i) => fetch(u, i),
         Peer: RTCPeerConnection,
