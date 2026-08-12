@@ -8,6 +8,7 @@ import {
   intersectUV,
   intersectUVT,
   pickPlaneUV,
+  swapMonitorSlots,
   normalizeButtonRect,
   normalizeVibrate,
   OneEuro,
@@ -145,6 +146,49 @@ describe("plane helpers", () => {
       expect(hit.m).toBe(2);
       expect(pickPlaneUV([null, null], [0.2, 0.8875, 0], [0, 0, -1])).toBeNull();
     });
+  });
+});
+
+describe("swapMonitorSlots", () => {
+  // Mirrors the phone's four parallel per-monitor arrays.
+  const fresh = () => [
+    ["calibA", "calibB", "calibC"],
+    ["planeA", "planeB", "planeC"],
+    ["filtA", "filtB", "filtC"],
+    ["offA", "offB", "offC"],
+  ];
+
+  it("swaps slots a,b in every parallel array", () => {
+    const arrays = fresh();
+    swapMonitorSlots(arrays, 0, 2, null);
+    expect(arrays).toEqual([
+      ["calibC", "calibB", "calibA"],
+      ["planeC", "planeB", "planeA"],
+      ["filtC", "filtB", "filtA"],
+      ["offC", "offB", "offA"],
+    ]);
+  });
+
+  it("remaps the active monitor across the swap", () => {
+    expect(swapMonitorSlots(fresh(), 0, 1, 1)).toBe(2);
+    expect(swapMonitorSlots(fresh(), 0, 1, 2)).toBe(1);
+    expect(swapMonitorSlots(fresh(), 0, 1, 3)).toBe(3); // uninvolved slot
+    expect(swapMonitorSlots(fresh(), 0, 1, null)).toBeNull(); // nothing aimed yet
+  });
+
+  it("is a no-op on a===b or an unusable index", () => {
+    for (const [a, b] of [
+      [1, 1],
+      [-1, 0],
+      [0, 3],
+      [0.5, 1],
+      [NaN, 1],
+    ]) {
+      const arrays = fresh();
+      expect(swapMonitorSlots(arrays, a, b, 2)).toBe(2);
+      expect(arrays).toEqual(fresh());
+    }
+    expect(swapMonitorSlots([], 0, 1, 1)).toBe(1); // no arrays at all
   });
 });
 

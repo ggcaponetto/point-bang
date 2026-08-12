@@ -26,9 +26,37 @@ describe("parseMessage", () => {
       });
     }
   });
-  it("passes the calib monitor index through", () => {
+  it("passes the calib monitor index through and drops a malformed one", () => {
     expect(parseMessage('{"type":"calib","stage":"corner","i":1,"m":2}')).toMatchObject({
       i: 1,
+      m: 2,
+    });
+    for (const bad of ["0", "1.5", '"two"']) {
+      const m = parseMessage(`{"type":"calib","stage":"target","m":${bad}}`);
+      expect(m).toMatchObject({ type: "calib", stage: "target" });
+      expect(m).not.toHaveProperty("m");
+    }
+  });
+  it("keeps the aim calibration tag only when it is the literal 1", () => {
+    expect(parseMessage('{"type":"aim","u":0.5,"v":0.3,"m":1,"cal":1}')).toEqual({
+      type: "aim",
+      u: 0.5,
+      v: 0.3,
+      m: 1,
+      cal: 1,
+    });
+    for (const bad of ["0", "2", "true", '"1"']) {
+      expect(parseMessage(`{"type":"aim","u":0.5,"v":0.3,"cal":${bad}}`)).toEqual({
+        type: "aim",
+        u: 0.5,
+        v: 0.3,
+      });
+    }
+  });
+  it("parses calib stage target (v2 additive)", () => {
+    expect(parseMessage('{"type":"calib","stage":"target","m":2}')).toEqual({
+      type: "calib",
+      stage: "target",
       m: 2,
     });
   });

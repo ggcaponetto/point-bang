@@ -297,6 +297,16 @@
       <div id="btnLayer" style="display: none"></div>
       <div id="instr">Starting…</div>
       <div id="aimAdj" style="display: none">
+        <!-- multi-monitor only: reassign the aimed plane if the monitors were
+             calibrated in the wrong order (hidden inline, revealed by JS) -->
+        <button
+          class="nbtn"
+          id="mSwap"
+          style="display: none; width: 140px"
+          title="aim lands on the wrong monitor? swap the assignment"
+        >
+          SWAP
+        </button>
         <div id="nudge" title="shift aim if calibration is slightly off">
           <span></span>
           <button class="nbtn" id="nUp">▲</button>
@@ -339,6 +349,7 @@
         intersectUV,
         intersectUVT,
         pickPlaneUV,
+        swapMonitorSlots,
         normalizeButtonRect,
         normalizeVibrate,
         OneEuro,
@@ -532,6 +543,10 @@
       // typed-in value; the input remains the fallback for old servers.
       const expectedFor = (i) => (targets?.[i] ? targets[i].w / targets[i].h : expectedAspect);
       const monName = (i) => targets?.[i]?.label ?? `monitor ${i + 1}`;
+      // While true, aim is tagged `cal:1` and the PC drops it — the cursor
+      // stays parked on the monitor being calibrated instead of half-following
+      // the already-calibrated planes.
+      const calibrating = () => multi && calibs.some((c) => !c.done);
 
       function resetCalibration() {
         for (const c of calibs) for (const a of c.anchors) a?.delete?.();
@@ -553,12 +568,18 @@
         $("btnCapture").style.display = "";
         show("btnFire", false);
         show("aimAdj", false);
+        show("mSwap", false);
         show("btnStrip", false);
         show("btnLayer", false);
         refreshNudgeLabel();
         promptStage();
       }
       function promptStage() {
+        // Tell the PC which monitor is being calibrated so it parks the
+        // cursor there — re-sent before every corner on purpose: sends are
+        // fire-and-forget and the DataChannel is lossy, so the repeat is the
+        // recovery (and a no-op when already parked).
+        if (multi) send({ type: "calib", stage: "target", m: curMon + 1 });
         const c = CORNERS[calStage];
         const where = multi
           ? `${c} corner of ${monName(curMon)} (${curMon + 1}/${numMon})`
@@ -617,9 +638,40 @@
         $("btnCapture").style.display = "none";
         show("btnFire", true);
         show("aimAdj", true);
+        show("mSwap", multi);
+        refreshSwapLabel();
         show("btnStrip", true);
         show("btnLayer", true);
       }
+
+      // ============================== monitor swap ==============================
+      // Calibrated the panels in the wrong order? A tap reassigns the aimed
+      // plane to the next monitor (with 2 monitors that is exactly a swap).
+      // Purely phone-side: the aim `m` tag is just the slot index + 1, so
+      // permuting the per-monitor arrays IS the fix — the PC resets its
+      // predictor on the `m` change it sees in the very next sample.
+      function refreshSwapLabel() {
+        if (!multi) return;
+        $("mSwap").textContent =
+          numMon === 2 ? "SWAP 1↔2" : `→ ${monName((aimedIdx() + 1) % numMon)}`;
+      }
+      $("mSwap").addEventListener("click", () => {
+        const a = aimedIdx();
+        const b = (a + 1) % numMon;
+        activeMon = swapMonitorSlots([calibs, planes, filters, offs], a, b, activeMon);
+        setHud("hMon", activeMon ? `${activeMon}/${numMon}` : "—");
+        refreshNudgeLabel();
+        refreshSwapLabel();
+        // re-verdict the aimed plane's aspect against its NEW monitor
+        const idx = aimedIdx();
+        const slot = calibs[idx];
+        if (slot?.done) {
+          const asp = aspectFromCorners(...slot.corners);
+          const expect = expectedFor(idx);
+          setHud("hAsp", asp.toFixed(2), Math.abs(asp - expect) / expect < 0.08 ? "ok" : "warn");
+        }
+        instr(`Swapped: ${monName(a)} ↔ ${monName(b)} — aim at each panel to verify`);
+      });
 
       // ============================== XR ==============================
       let session = null,
@@ -775,6 +827,7 @@
           filters[aim.idx].fv.reset();
           setHud("hMon", `${aim.m}/${numMon}`);
           refreshNudgeLabel();
+          refreshSwapLabel();
         }
         const f = filters[aim.idx];
         const o = offs[aim.idx];
@@ -787,6 +840,7 @@
           t: Date.now(),
           q: trackState === "good" ? 1 : 0.5,
           ...(multi ? { m: aim.m } : {}),
+          ...(calibrating() ? { cal: 1 } : {}),
         });
         if ((frameCount & 7) === 0) {
           setHud("hU", u.toFixed(3));

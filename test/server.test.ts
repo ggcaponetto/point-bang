@@ -1,4 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import https from "node:https";
@@ -76,7 +78,7 @@ describe("startServer (http only)", () => {
   // pauseCombo "off" everywhere a test does not opt in: the real probe reads
   // the actual keyboard, and a test must never react to keys the developer
   // happens to be holding.
-  async function boot() {
+  async function boot(extra: Partial<Parameters<typeof startServer>[0]> = {}) {
     const f = fakeMouse();
     const k = fakeKeyboard();
     const logs: string[] = [];
@@ -89,6 +91,7 @@ describe("startServer (http only)", () => {
       log: (l) => logs.push(l),
       statsIntervalMs: 50,
       pauseCombo: "off",
+      ...extra,
     });
     return { ...f, ...k, logs, srv: running };
   }
@@ -175,11 +178,25 @@ describe("startServer (http only)", () => {
   });
 
   it("executes configured buttons: mouse hold, key, fire slot, unknown id", async () => {
-    const { srv, buttons, keys, logs } = await boot();
+    // A fixed config, NOT the live public/buttons.json — that file is the
+    // user's to edit, and this test must not break when they remap buttons.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pb-buttons-"));
+    const file = path.join(dir, "buttons.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        buttons: [
+          { id: "fire", action: "mouse:left" },
+          { id: "b1", action: "mouse:right" },
+          { id: "b2", action: "key:a" },
+          { id: "b3", action: "key:b" },
+        ],
+      }),
+    );
+    const { srv, buttons, keys, logs } = await boot({ buttonsFile: file });
     expect(logs.some((l) => l.includes("buttons: 4 action(s) mapped"))).toBe(true);
 
     const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
-    // b1 = mouse:right in public/buttons.json
     ws.send(JSON.stringify({ type: "button", id: "b1", down: true }));
     await until(() => buttons.length > 0);
     ws.send(JSON.stringify({ type: "button", id: "b1", down: false }));
@@ -446,6 +463,86 @@ describe("startServer monitor selection", () => {
     ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5, m: 2 }));
     await until(() => moves.length > 0);
     expect(moves[0]).toEqual([960, 540]); // monitor 1, not 2
+    ws.close();
+  });
+
+  it("parks the cursor on the monitor being calibrated (calib stage target)", async () => {
+    const { srv, moves, logs } = await bootWith({
+      monitor: { kind: "all" },
+      monitorProbe: async () => TWO,
+    });
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "calib", stage: "target", m: 2 }));
+    await until(() => moves.length > 0);
+    expect(moves[0]).toEqual([-1920 + 960, 540]); // center of the second monitor
+    await until(() => logs.some((l) => l.includes("calibrating monitor 2")));
+    ws.close();
+  });
+
+  it("drops cal-tagged aim while calibrating, resumes on the first untagged sample", async () => {
+    const { srv, moves } = await bootWith({
+      monitor: { kind: "all" },
+      monitorProbe: async () => TWO,
+    });
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "calib", stage: "target", m: 1 }));
+    await until(() => moves.length > 0);
+    expect(moves[0]).toEqual([960, 540]); // parked at monitor 1's center
+    // tagged aim must not move the cursor off the park …
+    ws.send(JSON.stringify({ type: "aim", u: 0.1, v: 0.1, m: 2, cal: 1 }));
+    await new Promise((r) => setTimeout(r, 30)); // a leaked aim would move within ~2ms ticks
+    expect(moves).toHaveLength(1);
+    // … the first untagged sample does — resume is the absence of the tag
+    ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5, m: 2 }));
+    await until(() => moves.length > 1);
+    expect(moves[1]).toEqual([-1920 + 960, 540]);
+    ws.close();
+  });
+
+  it("ignores a park with an out-of-range or missing monitor index", async () => {
+    const { srv, moves } = await bootWith({
+      monitor: { kind: "all" },
+      monitorProbe: async () => TWO,
+    });
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "calib", stage: "target", m: 3 })); // out of range
+    ws.send(JSON.stringify({ type: "calib", stage: "target" })); // no m (old phone)
+    // a real aim afterwards is the ordering fence: no park move ever landed
+    ws.send(JSON.stringify({ type: "aim", u: 0, v: 0 }));
+    await until(() => moves.length > 0);
+    expect(moves).toHaveLength(1);
+    expect(moves[0]).toEqual([-1920, 0]);
+    ws.close();
+  });
+
+  it("single-rect mode: calib stage target is a silent no-op", async () => {
+    const { srv, moves } = await bootWith({
+      monitor: { kind: "index", index: 1 },
+      monitorProbe: async () => TWO,
+    });
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "calib", stage: "target", m: 2 }));
+    ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5 }));
+    await until(() => moves.length > 0);
+    expect(moves).toHaveLength(1);
+    expect(moves[0]).toEqual([960, 540]);
+    ws.close();
+  });
+
+  it("does not yank the parked cursor while tracking is paused", async () => {
+    let comboDown = false;
+    const { srv, moves, logs } = await bootWith({
+      monitor: { kind: "all" },
+      monitorProbe: async () => TWO,
+      pauseCombo: "shift+space",
+      pauseProbe: { down: () => comboDown },
+    });
+    comboDown = true;
+    await until(() => logs.some((l) => l.includes("tracking PAUSED")));
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "calib", stage: "target", m: 2 }));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(moves).toHaveLength(0); // the user paused to own the mouse
     ws.close();
   });
 

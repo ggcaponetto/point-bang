@@ -122,7 +122,10 @@ node cli.ts --help   # every option is a flag
   `--monitor 2` aims at one of them, `--monitor all` spans the whole
   desktop with each monitor calibrated as its own plane (bezels and
   angled panels stay accurate, with independent aim correction per
-  monitor), and the default stays the primary screen. (X11 multi-monitor
+  monitor), and the default stays the primary screen. During calibration
+  the PC cursor jumps to the monitor you should aim at next, and if you
+  still calibrated them in the wrong order, one tap on SWAP in the aim
+  panel fixes the assignment — no recalibration. (X11 multi-monitor
   setups that relied on the old implicit span: that is `--monitor all`
   now.)
 - **Pause hotkey** — `shift+space` pauses tracking so the real mouse
