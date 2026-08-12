@@ -50,7 +50,7 @@ jobs:
           fail_ci_if_error: false
       - name: SonarQube scan
         if: runner.os == 'Linux' && env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
