@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { scaleToScreen, createCursorLoop, type MouseLike } from "../lib/cursor.ts";
+import { scaleToRect, createCursorLoop, type MouseLike } from "../lib/cursor.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Windows timer resolution can be ~15.6ms — poll for conditions instead of
@@ -29,16 +29,26 @@ function fakeMouse(overrides: Partial<MouseLike> = {}): MouseLike & { moves: [nu
   };
 }
 
-const SIZE = () => ({ w: 1920, h: 1080 });
+const FULL = { x: 0, y: 0, w: 1920, h: 1080 };
+const SIZE = () => FULL;
 
-describe("scaleToScreen", () => {
+describe("scaleToRect", () => {
   it("maps u,v proportions to pixels", () => {
-    expect(scaleToScreen(0.5, 0.5, 1920, 1080)).toEqual({ x: 960, y: 540 });
-    expect(scaleToScreen(0, 0, 1920, 1080)).toEqual({ x: 0, y: 0 });
-    expect(scaleToScreen(1, 1, 1920, 1080)).toEqual({ x: 1919, y: 1079 });
+    expect(scaleToRect(0.5, 0.5, FULL)).toEqual({ x: 960, y: 540 });
+    expect(scaleToRect(0, 0, FULL)).toEqual({ x: 0, y: 0 });
+    expect(scaleToRect(1, 1, FULL)).toEqual({ x: 1919, y: 1079 });
   });
   it("clamps off-screen values (reload gesture stays phone-side)", () => {
-    expect(scaleToScreen(-0.4, 1.7, 1920, 1080)).toEqual({ x: 0, y: 1079 });
+    expect(scaleToRect(-0.4, 1.7, FULL)).toEqual({ x: 0, y: 1079 });
+  });
+  it("maps into an offset monitor rect, including negative origins", () => {
+    const second = { x: -1920, y: 0, w: 1920, h: 1080 };
+    expect(scaleToRect(0, 0, second)).toEqual({ x: -1920, y: 0 });
+    expect(scaleToRect(1, 1, second)).toEqual({ x: -1, y: 1079 });
+    expect(scaleToRect(0.5, 0.5, { x: 1920, y: 200, w: 1280, h: 720 })).toEqual({
+      x: 1920 + 640,
+      y: 200 + 360,
+    });
   });
 });
 
@@ -49,6 +59,22 @@ describe("createCursorLoop (pull model)", () => {
     await sleep(10);
     loop.stop();
     expect(m.moves).toEqual([]);
+  });
+
+  it("applies a first move to (-1,-1) — a real pixel on a negative-origin monitor", async () => {
+    const m = fakeMouse();
+    // bottom-right pixel of a monitor ending at the primary's left edge
+    const rect = { x: -100, y: -100, w: 100, h: 100 };
+    const loop = createCursorLoop(
+      m,
+      () => rect,
+      () => ({ u: 1, v: 1 }),
+      undefined,
+      1,
+    );
+    await until(() => m.moves.length > 0);
+    loop.stop();
+    expect(m.moves).toEqual([[-1, -1]]);
   });
 
   it("moves once per distinct target pixel — no repeats for a steady aim", async () => {

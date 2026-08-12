@@ -513,11 +513,12 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   // ---------- cursor control ----------
   const size = await mouse.screenSize();
+  const rect = { x: 0, y: 0, w: size.w, h: size.h };
   log(`Screen: ${size.w}x${size.h}`);
   const predictor = new AimPredictor(opts.predictMs ?? 0);
   const cursor = createCursorLoop(
     mouse,
-    () => size,
+    () => rect,
     () => predictor.predict(Date.now()),
     (e) => console.error("mouse:", e.message),
   );
