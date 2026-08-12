@@ -9,6 +9,7 @@
 | `action`  | What the PC does — see below                               |
 | `visible` | Whether the phone shows the button                         |
 | `rect`    | _(optional)_ Where the phone places it — see **Placement** |
+| `vibrate` | _(optional)_ Haptic tick on press — see **Haptics**        |
 
 The phone renders the visible buttons during play; the server maps the same
 file's ids to actions. One file, both sides.
@@ -52,6 +53,24 @@ Every button sends **down and up as separate events**: touching presses,
 letting go releases. Holds, rapid fire and duck-style mechanics all behave.
 Combos release in reverse order (`ctrl+shift+f` releases `f`, `shift`,
 `ctrl`).
+
+## Haptics
+
+Every button gives a very short vibration tick when touched — a trigger
+click, deliberately nothing like a notification buzz. Control it per button
+with `vibrate`:
+
+```json
+"vibrate": false    silence this button
+"vibrate": 5        custom pulse length in ms (capped at 100)
+"vibrate": true     the default 10ms tick (same as leaving it out)
+```
+
+The pulse fires on touch-down only, and a new press cancels the previous
+pulse, so rapid fire stays crisp. Two things worth knowing: iOS Safari has no
+vibration API, so it's a silent no-op there; and the vibration motor shakes
+the same phone the AR tracking runs on — if your aim visibly wobbles when
+firing, shorten the pulse or set `"vibrate": false` on the trigger.
 
 ## FIRE is a button too
 

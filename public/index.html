@@ -340,6 +340,7 @@
         intersectUVT,
         pickPlaneUV,
         normalizeButtonRect,
+        normalizeVibrate,
         OneEuro,
       } from "./math.js";
       import { parseFragment, createTransport, fetchButtons, fetchMonitors } from "./transport.js";
@@ -406,6 +407,10 @@
       document.getElementById("nRight").onclick = () => nudge(OFF_STEP, 0);
       document.getElementById("nReset").onclick = () => setOffset(0, 0);
 
+      // Default haptic tick on button press, ms. Kept very short: this is a
+      // trigger click, not a notification buzz.
+      const VIBRATE_MS = 10;
+
       // ============================== configurable buttons ==============================
       // Rendered from buttons.json (same file maps ids to PC actions).
       // pointerdown/up => {"type":"button",id,down} so press-and-hold works.
@@ -425,6 +430,10 @@
           for (const b of (cfg.buttons ?? []).filter((b) => b.visible)) {
             const isFire = b.id === "fire";
             const rect = normalizeButtonRect(b.rect);
+            // Trigger-click haptics: VERY short on purpose (rapid fire must
+            // stay crisp, and the motor shakes the IMU ARCore is tracking).
+            // Per-button off/tune via "vibrate": false | <ms> in buttons.json.
+            const vibrateMs = normalizeVibrate(b.vibrate, VIBRATE_MS);
             const el = document.createElement("button");
             if (isFire) el.id = "btnFire";
             if (rect) {
@@ -447,6 +456,9 @@
             el.addEventListener("pointerdown", (e) => {
               e.preventDefault();
               el.classList.add("held");
+              // press only, never release; a new pulse cancels the previous
+              // one, so holding or hammering the trigger never smears
+              if (vibrateMs) navigator.vibrate?.(vibrateMs);
               send({ type: "button", id: b.id, down: true });
             });
             el.addEventListener("pointerup", release);

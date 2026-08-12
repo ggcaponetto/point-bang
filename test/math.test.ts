@@ -9,6 +9,7 @@ import {
   intersectUVT,
   pickPlaneUV,
   normalizeButtonRect,
+  normalizeVibrate,
   OneEuro,
 } from "../public/math.js";
 
@@ -144,6 +145,26 @@ describe("plane helpers", () => {
       expect(hit.m).toBe(2);
       expect(pickPlaneUV([null, null], [0.2, 0.8875, 0], [0, 0, -1])).toBeNull();
     });
+  });
+});
+
+describe("normalizeVibrate", () => {
+  it("absent/true = the default tick, false/0 = off", () => {
+    expect(normalizeVibrate(undefined)).toBe(10);
+    expect(normalizeVibrate(true)).toBe(10);
+    expect(normalizeVibrate(undefined, 7)).toBe(7);
+    expect(normalizeVibrate(false)).toBe(0);
+    expect(normalizeVibrate(0)).toBe(0);
+  });
+  it("numbers are ms, rounded and capped — a click, not a phone call", () => {
+    expect(normalizeVibrate(5)).toBe(5);
+    expect(normalizeVibrate(7.6)).toBe(8);
+    expect(normalizeVibrate(250)).toBe(100);
+  });
+  it("garbage is silent (the server reports it, the phone must not buzz)", () => {
+    for (const bad of ["loud", NaN, -5, Infinity, {}, null]) {
+      expect(normalizeVibrate(bad)).toBe(0);
+    }
   });
 });
 

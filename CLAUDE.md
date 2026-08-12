@@ -201,8 +201,13 @@ v2 (IMPLEMENTED, additive): `{"type":"button","id":"b1".."b20","down":bool}`
 — ids/labels/actions/placement configured in `public/buttons.json` (single
 source of truth: phone renders `visible` buttons from it where their `rect`
 says, PC maps ids to key combos or mouse press/release via lib/buttons.ts and
-reports malformed rects). down/up as separate events so holds work; keys
-release in reverse order.
+reports malformed rects/vibrate values). down/up as separate events so holds
+work; keys release in reverse order. Per-button haptics (2026-08-12): optional
+`vibrate` — absent/true = 10ms tick, false = off, number = pulse ms (cap 100;
+`normalizeVibrate` in math.js) — fired phone-side on pointerdown only. Kept
+VERY short by user requirement (Time-Crisis rapid fire) and because the motor
+shakes the IMU ARCore tracks; per-button `false` is the escape hatch if aim
+wobbles on fire. iOS has no vibration API — silent no-op.
 
 v2 (IMPLEMENTED 2026-08-12, additive): `aim`/`calib` gain optional `m` = 1-based
 monitor index (per-monitor calibration). The phone learns the aim targets via
