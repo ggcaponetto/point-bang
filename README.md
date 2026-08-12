@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🔫 point-bang
+<img src="assets/logo.svg" alt="point-bang logo" width="120" height="120">
+
+# point-bang
 
 **Your phone is the lightgun.**
 
@@ -10,16 +12,43 @@ No custom hardware. No markers. No sensor bars.
 
 [![CI](https://github.com/ggcaponetto/point-bang/actions/workflows/ci.yml/badge.svg)](https://github.com/ggcaponetto/point-bang/actions/workflows/ci.yml)
 [![Docs](https://github.com/ggcaponetto/point-bang/actions/workflows/docs.yml/badge.svg)](https://ggcaponetto.github.io/point-bang/)
+[![codecov](https://codecov.io/gh/ggcaponetto/point-bang/branch/main/graph/badge.svg)](https://codecov.io/gh/ggcaponetto/point-bang)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ggcaponetto_point-bang&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ggcaponetto_point-bang)
+[![Release](https://img.shields.io/github/v/release/ggcaponetto/point-bang?include_prereleases)](https://github.com/ggcaponetto/point-bang/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node ≥ 23.6](https://img.shields.io/badge/node-%E2%89%A5%2023.6-brightgreen)](https://nodejs.org)
 
-**[📖 Documentation](https://ggcaponetto.github.io/point-bang/)** ·
-[Getting Started](https://ggcaponetto.github.io/point-bang/guide/getting-started) ·
+**[🎯 Start here (players)](https://ggcaponetto.github.io/point-bang/start/)** ·
+[📖 Documentation](https://ggcaponetto.github.io/point-bang/) ·
 [API Reference](https://ggcaponetto.github.io/point-bang/api/)
 
 </div>
 
 ---
+
+## 🎮 Getting started (players)
+
+No Node, no build tools, no certificates — three steps:
+
+1. **Check your phone** — open
+   **[the start page](https://ggcaponetto.github.io/point-bang/start/)** on
+   your Android phone; it tells you on the spot whether WebXR AR is
+   supported (and how to fix it if not).
+2. **Run point-bang on the PC** — download the single executable for
+   Windows or Linux from
+   [Releases](https://github.com/ggcaponetto/point-bang/releases) and run
+   it. It prints a QR code. (Windows: accept the firewall prompt for
+   private networks.)
+3. **Scan, allow, play** — scan the QR with the phone, tap **Allow** on
+   Chrome's one-time local-network prompt, calibrate on your three screen
+   corners, and the PC cursor follows your aim. Aim data flows over a
+   WebRTC DataChannel directly across your WiFi.
+
+Then set up an actual game — **[Your First Game
+→](https://ggcaponetto.github.io/point-bang/guide/first-game)** walks
+through Time Crisis in DuckStation and MAME lightgun classics. Prefer a
+cable? The [USB flow](https://ggcaponetto.github.io/point-bang/guide/getting-started)
+has the lowest jitter of all and charges the phone while you play.
 
 ## How it works
 
@@ -29,7 +58,7 @@ flowchart LR
         A[ARCore 6DoF pose] --> B[aim ray × calibrated screen plane]
         B --> C[One Euro filter]
     end
-    C -- "WebSocket (USB tunnel or WiFi)" --> D
+    C -- "WebRTC DataChannel (LAN) or WebSocket (USB)" --> D
     subgraph pc [🖥️ PC — Node]
         D[newest aim sample<br/>optional prediction] --> E[2ms cursor loop]
         E --> F[absolute mouse input]
@@ -41,9 +70,14 @@ ARCore's visual-inertial tracking gives **absolute, drift-corrected aim at
 gyro-class latency** (~15–30ms phone-side) — the camera corrects the IMU, so
 there's no yaw drift and no recentering. You calibrate once per session by
 pointing at three screen corners; WebXR anchors keep the calibration
-self-correcting as ARCore refines its map of your room.
+self-correcting as ARCore refines its map of your room. The wireless setup
+needs **zero certificates**: the phone page is hosted over HTTPS, signaling
+is one Local-Network-Access fetch, and WebRTC brings its own encryption.
 
-## Quick start
+## 🛠️ Getting started (developers)
+
+Requires Node ≥ 23.6 (TypeScript runs natively via type stripping — no
+build step anywhere in the dev loop):
 
 ```sh
 git clone https://github.com/ggcaponetto/point-bang.git
@@ -53,86 +87,58 @@ npm run start:adb    # USB flow: sets up the adb tunnel for you
 ```
 
 Open **http://localhost:8443** in Chrome on the phone, tap **START AR**,
-capture the three corners — the PC cursor follows your aim.
-
-### No cable? Scan the QR
-
-`npm start` (or the executable) prints a QR code: scan it, tap **Allow** on
-Chrome's one-time local-network prompt, play. The page loads from this
-repo's GitHub Pages (a secure context, so WebXR just works) and the aim
-streams over a WebRTC DataChannel **directly across your WiFi** — no
-certificates, no Chrome flags, no accounts, and nothing touches the
-internet after the page load. Needs Chrome 142+ on the phone.
-
-`npm run start:tunnel` still exposes a public ngrok URL for playing from
-another network entirely. Full setup, calibration and WiFi details:
-**[Getting Started →](https://ggcaponetto.github.io/point-bang/guide/getting-started)**
-
-### Or skip Node entirely
-
-`npm run build:sea` produces a single self-contained executable —
-`dist/point-bang` on Linux, `dist/point-bang.exe` on Windows — with the phone
-page and the input driver baked in. Copy it anywhere:
+capture the three corners. `npm start` additionally prints the QR for the
+wireless flow, `npm run start:tunnel` exposes a public ngrok URL, and the
+[development guide](https://ggcaponetto.github.io/point-bang/reference/development)
+covers testing the remote flow against uncommitted code.
 
 ```sh
-point-bang serve --mode adb --port 8443
-point-bang tunnel           # public HTTPS URL, alongside a running serve
-point-bang check            # is this install working?
-point-bang wifi             # 2.4 or 5 GHz?
-point-bang --help
+npm run validate     # format:check + typecheck + knip + tests (90% coverage gate)
+npm run build:sea    # single self-contained executable -> dist/point-bang[.exe]
+node cli.ts --help   # every option is a flag
 ```
 
 ## Highlights
 
 - 🎯 **Absolute aim, no drift** — WebXR `immersive-ar` with anchor-pinned,
   self-correcting calibration; two-ray fallback for hard-to-track screens.
+- 📷 **Scan-to-play wireless setup** — the startup QR loads the hosted page
+  over HTTPS and connects a WebRTC DataChannel straight across the LAN via
+  Chrome's Local Network Access permission: zero certificates, zero flags,
+  zero accounts (Chrome 142+).
 - ⚡ **Latency-obsessed** — One Euro filtering phone-side, a 2ms newest-wins
   cursor loop, zeroed input-driver delays, optional aim extrapolation
   (`--predict-ms`, off by default), and live p50/p95 jitter stats to prove it.
 - 🕹️ **20 assignable buttons** — one JSON file maps on-screen buttons to any
   key combo or mouse button, press-and-hold included, and places each one
-  anywhere on the screen (default: big LEFT/RIGHT click halves plus A/B).
-  FIRE itself is just a remappable button.
-- 🎚️ **Tunable feel** — smoothing↔snappy slider (100% = raw aim), aim-offset
-  nudge pad, `--predict-ms` lookahead control.
-- ⏸️ **Pause hotkey** — `shift+space` on the PC keyboard pauses tracking so
-  the real mouse works, and resumes it right where you left off. Configurable
-  (`--pause-combo ctrl+f9`, `--pause-combo off`), works in the single
-  executable, never swallows the combo from the focused game.
-- 📷 **Scan-to-play wireless setup** — the startup QR loads the hosted page
-  over HTTPS and connects a WebRTC DataChannel straight across the LAN via
-  Chrome's Local Network Access permission: zero certificates, zero flags,
-  zero accounts (Chrome 142+).
-- 🌍 **Play-anywhere setup path** — `--tunnel ngrok` publishes an HTTPS URL the
-  phone can open from any network, WebXR secure context and `wss://` aim
-  stream included, with no certificates to install.
-- 👀 **Runs headless** — no display (container, CI, SSH)? `serve` prints the
-  aim instead of moving a cursor rather than dying on X11; `--input none`
-  forces it anywhere.
-- 🖥️ **Windows and Linux, equally** — one yargs CLI, no environment-variable
-  syntax that only bash understands, band detection via `netsh`/`nmcli`/`iw`,
-  and CI that runs the whole suite on both.
-- 🧰 **Zero build steps to develop** — TypeScript runs natively on Node ≥ 23.6
-  and the phone page is buildless ES modules; the only build is the optional
-  single-executable one.
-- 🧪 **Seriously tested** — 218 tests, 90%+ coverage enforced on every
+  anywhere on the screen. FIRE itself is just a remappable button.
+- ⏸️ **Pause hotkey** — `shift+space` pauses tracking so the real mouse
+  works, and resumes right where you left off; configurable, and never
+  swallows the combo from the focused game.
+- 🌍 **Play-anywhere setup path** — `--tunnel ngrok` publishes an HTTPS URL
+  the phone can open from any network.
+- 👀 **Runs headless** — no display? `serve` prints the aim instead of
+  moving a cursor; `--input none` forces it anywhere.
+- 🖥️ **Windows and Linux, equally** — one yargs CLI, no bash-only syntax,
+  CI runs the whole suite on both.
+- 🧪 **Seriously tested** — 300+ tests, 90%+ coverage enforced on every
   metric, integration tests with fake input devices, prettier/knip/husky
-  gates.
+  gates, Codecov + SonarQube quality tracking.
 
 ## Project status
 
-Working proof of concept — calibrate, aim, shoot works end-to-end over USB
-and WiFi, including the QR → WebRTC consumer flow. On the
+Working end-to-end: calibrate, aim, shoot — over USB, WiFi (QR → WebRTC),
+mkcert HTTPS, or an ngrok tunnel. On the
 [roadmap](https://ggcaponetto.github.io/point-bang/reference/architecture):
 a measurement harness (accuracy/drift reports), MAME/RetroArch integration
 testing, and multi-gun support.
 
 ## Contributing
 
-PRs welcome. `npm run validate` must pass (formatting, types, dead code,
-tests with 90% coverage) — husky enforces it on push. See
-[Development](https://ggcaponetto.github.io/point-bang/reference/development)
-for commands and conventions.
+PRs are very welcome — including **community guides, hacks and mods**,
+which get linked from the docs. Read
+[CONTRIBUTING.md](CONTRIBUTING.md) for setup, the `npm run validate` gate
+and commit conventions, and mind the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
