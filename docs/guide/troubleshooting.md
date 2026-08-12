@@ -7,10 +7,31 @@ injection is available — which covers most of what follows.
 ## The phone can't reach the PC over WiFi (Windows)
 
 The first run raises a Windows Defender Firewall prompt. If it was dismissed,
-Node is blocked and the page never loads — and in the QR flow the phone's
-local-network fetch fails the same way, so the page shows the "Couldn't reach
-the PC" message. Re-allow it for **private** networks, or use the USB flow,
-which needs no firewall rule.
+the program is blocked and the page never loads — and in the QR flow the
+phone's local-network fetch fails the same way, so the page shows the
+"Couldn't reach the PC" message. Re-allow it for **private** networks, or use
+the USB flow, which needs no firewall rule.
+
+**Firewall rules are per-executable.** `npm start` working proves nothing
+about `point-bang.exe`: the npm flow runs under `node.exe`, which has its
+own rule. Worse, denying the prompt once creates a permanent **Block** rule
+for that binary — after that, no prompt ever reappears and every connection
+attempt fails silently. Check and fix in an **admin** PowerShell:
+
+```powershell
+# is the exe blocked?
+Get-NetFirewallApplicationFilter |
+  Where-Object Program -match 'point-bang' |
+  Get-NetFirewallRule | Select-Object DisplayName, Action, Enabled
+
+# replace a Block with an Allow (adjust the path to where your exe lives)
+Remove-NetFirewallRule -DisplayName "point-bang.exe"
+New-NetFirewallRule -DisplayName "point-bang" -Direction Inbound `
+  -Program "C:\path\to\point-bang.exe" -Action Allow -Profile Private,Public
+```
+
+Moving or renaming the exe means a new prompt (and a new rule) — the rule
+binds to the full path.
 
 ## QR flow: "Couldn't reach the PC at …"
 

@@ -406,7 +406,12 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   `lib/virtual.ts`); keep any new native call behind the same guard. Windows games in exclusive
   fullscreen sometimes ignore synthetic cursor moves ⇒ koffi/SendInput path.
 - Windows raises a Defender Firewall prompt on the first `serve`; dismissing
-  it silently breaks the WiFi flow while USB keeps working.
+  it silently breaks the WiFi flow while USB keeps working. The rule is
+  **per-executable path**: node.exe being allowed says nothing about
+  dist\point-bang.exe (verified 2026-08-12 — npm flow connected, exe did
+  not), and DENYING the prompt writes a permanent Block rule that
+  suppresses future prompts for that binary. Troubleshooting documents the
+  admin-PowerShell check/fix.
 - `--tunnel ngrok` publishes an **unauthenticated** socket that moves the mouse
   and presses keys to the public internet. The startup banner says so; do not
   quiet it. Other tunnel facts, all confirmed against agent 3.39: the free plan
