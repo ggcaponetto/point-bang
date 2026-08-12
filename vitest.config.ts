@@ -5,6 +5,8 @@ export default defineConfig({
     include: ["test/**/*.test.ts"],
     coverage: {
       provider: "v8",
+      // lcov feeds Codecov and the Sonar scan in CI
+      reporter: ["text", "lcov"],
       include: ["lib/**/*.ts", "server.ts", "cli.ts", "public/math.js", "public/transport.js"],
       thresholds: {
         lines: 90,
