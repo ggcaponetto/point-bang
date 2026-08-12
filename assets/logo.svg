@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="point-bang logo: a crosshair inside a phone">
+  <rect width="512" height="512" rx="96" fill="#0e1116"/>
+  <!-- phone -->
+  <rect x="156" y="76" width="200" height="360" rx="36" fill="none" stroke="#4aa3ff" stroke-width="20"/>
+  <line x1="226" y1="114" x2="286" y2="114" stroke="#4aa3ff" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="256" cy="398" r="11" fill="#4aa3ff"/>
+  <!-- crosshair -->
+  <circle cx="256" cy="256" r="64" fill="none" stroke="#e5484d" stroke-width="16"/>
+  <line x1="256" y1="168" x2="256" y2="206" stroke="#e5484d" stroke-width="16" stroke-linecap="round"/>
+  <line x1="256" y1="306" x2="256" y2="344" stroke="#e5484d" stroke-width="16" stroke-linecap="round"/>
+  <line x1="168" y1="256" x2="206" y2="256" stroke="#e5484d" stroke-width="16" stroke-linecap="round"/>
+  <line x1="306" y1="256" x2="344" y2="256" stroke="#e5484d" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="256" cy="256" r="13" fill="#e5484d"/>
+</svg>

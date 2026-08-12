@@ -22,4 +22,9 @@ for (const name of PUBLIC_ASSETS) {
   if (!fs.existsSync(src)) throw new Error(`missing public asset: ${src}`);
   fs.copyFileSync(src, path.join(DEST, name));
 }
-console.log(`pages: copied ${PUBLIC_ASSETS.length} phone-page files -> ${DEST}`);
+// the logo doubles as the docs-site favicon/brand mark
+fs.copyFileSync(
+  path.join(ROOT, "assets", "logo.svg"),
+  path.join(ROOT, "docs", "public", "logo.svg"),
+);
+console.log(`pages: copied ${PUBLIC_ASSETS.length} phone-page files + logo -> ${DEST}`);

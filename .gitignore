@@ -6,3 +6,4 @@ docs/api/
 docs/public/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+site/public/

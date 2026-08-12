@@ -7,8 +7,11 @@ export default defineConfig({
   base: "/point-bang/",
   lastUpdated: true,
   ignoreDeadLinks: [/^https?:\/\/localhost/],
+  head: [["link", { rel: "icon", type: "image/svg+xml", href: "/point-bang/logo.svg" }]],
   themeConfig: {
+    logo: "/logo.svg",
     nav: [
+      { text: "Start (for players)", link: "https://ggcaponetto.github.io/point-bang/start/" },
       { text: "Guide", link: "/guide/getting-started" },
       { text: "Reference", link: "/reference/protocol" },
       { text: "API", link: "/api/" },
