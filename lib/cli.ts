@@ -325,7 +325,17 @@ async function runServeCommand(
       env: deps.env,
       certsDir: a.certs ?? path.join(appDir, "certs"),
       assets: resolveAssets(deps, a.public, appDir),
-      buttonsFile: a.buttons,
+      // The live-editor save target when no --buttons is given: next to the
+      // executable in a SEA (the certs/ pattern — the baked asset copy serves
+      // until the first save), the served public/ copy in a checkout.
+      buttonsFile:
+        a.buttons ??
+        (a.public
+          ? path.join(a.public, "buttons.json")
+          : deps.isSea
+            ? path.join(appDir, "buttons.json")
+            : path.join(appDir, "public", "buttons.json")),
+      buttonsExplicit: a.buttons !== undefined,
       pageUrl: a.pageUrl,
       qr: a.qr,
       key: resolvedKey.key,

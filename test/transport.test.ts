@@ -5,6 +5,7 @@ import {
   fetchButtons,
   fetchMonitors,
   exchangeOffer,
+  parseServerMessage,
   createTransport,
 } from "../public/transport.js";
 
@@ -30,6 +31,7 @@ class FakeChannel {
   readyState = "connecting";
   onopen: (() => void) | null = null;
   onclose: (() => void) | null = null;
+  onmessage: ((e: { data: unknown }) => void) | null = null;
   sent: string[] = [];
   opts: unknown;
   send(d: string) {
@@ -84,6 +86,7 @@ class FakeSocket {
   onopen: (() => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  onmessage: ((e: { data: unknown }) => void) | null = null;
   sent: string[] = [];
   url: string;
   constructor(url: string) {
@@ -132,6 +135,7 @@ function transport(opts: {
   key?: string | null;
   fetchFn: (url: string, init: Record<string, unknown>) => Promise<never> | Promise<unknown>;
   onStatus?: (s: string, d?: string) => void;
+  onMessage?: (m: { type: "buttons"; rev: number }) => void;
 }) {
   return createTransport({
     hosts: opts.hosts,
@@ -141,6 +145,7 @@ function transport(opts: {
     Peer: FakePeer as never,
     Socket: FakeSocket as never,
     onStatus: opts.onStatus as never,
+    onMessage: opts.onMessage,
     times: TIMES,
   });
 }
@@ -298,6 +303,57 @@ describe("exchangeOffer", () => {
     await expect(
       exchangeOffer("/rtc/offer", "o", hang as never, { crossOrigin: false, timeoutMs: 10 }),
     ).rejects.toThrow("aborted");
+  });
+});
+
+describe("parseServerMessage", () => {
+  it("parses the buttons push and normalizes a broken rev to 0", () => {
+    expect(parseServerMessage('{"type":"buttons","rev":3}')).toEqual({ type: "buttons", rev: 3 });
+    expect(parseServerMessage('{"type":"buttons"}')).toEqual({ type: "buttons", rev: 0 });
+    expect(parseServerMessage('{"type":"buttons","rev":"x"}')).toEqual({ type: "buttons", rev: 0 });
+  });
+  it("nulls everything else — garbage, unknown types, binary frames", () => {
+    expect(parseServerMessage("{{{ nope")).toBeNull();
+    expect(parseServerMessage('"buttons"')).toBeNull();
+    expect(parseServerMessage("null")).toBeNull();
+    expect(parseServerMessage('{"type":"aim","u":0.5,"v":0.5}')).toBeNull();
+    expect(parseServerMessage(Buffer.from("x"))).toBeNull();
+  });
+});
+
+describe("createTransport — server pushes (onMessage)", () => {
+  it("delivers pushes arriving over the DataChannel, dropping garbage", async () => {
+    fresh();
+    const status: string[] = [];
+    const pushes: { rev: number }[] = [];
+    const t = transport({
+      hosts: ["a:1"],
+      fetchFn: fakeFetch().fn,
+      onStatus: (s) => status.push(s),
+      onMessage: (m) => pushes.push(m),
+    });
+    await until(() => status.includes("rtc"));
+    const dc = FakePeer.instances[0].channel;
+    dc.onmessage?.({ data: "{{{ garbage" });
+    dc.onmessage?.({ data: '{"type":"buttons","rev":1}' });
+    expect(pushes).toEqual([{ type: "buttons", rev: 1 }]);
+    t.close();
+  });
+
+  it("delivers pushes arriving over the WS fallback", async () => {
+    fresh();
+    const status: string[] = [];
+    const pushes: { rev: number }[] = [];
+    const t = transport({
+      hosts: [],
+      fetchFn: fakeFetch(() => true).fn, // RTC signaling fails → WS
+      onStatus: (s) => status.push(s),
+      onMessage: (m) => pushes.push(m),
+    });
+    await until(() => status.includes("ws"));
+    FakeSocket.instances[0].onmessage?.({ data: '{"type":"buttons","rev":2}' });
+    expect(pushes).toEqual([{ type: "buttons", rev: 2 }]);
+    t.close();
   });
 });
 

@@ -54,6 +54,19 @@ interface ButtonMsg {
 export type ClientMsg = AimMsg | FireMsg | CalibMsg | StateMsg | ButtonMsg;
 
 /**
+ * v2 additive — the first server→client message: the button config changed,
+ * re-fetch buttons.json and re-render the overlay. `rev` is a per-run
+ * monotonic counter: the DataChannel copy is deliberately sent several times
+ * (that transport is lossy), so the phone applies only `rev > lastSeen`.
+ * Phone-side parsing lives in `transport.js` (`parseServerMessage`) — old
+ * phones have no message listener at all and ignore this safely.
+ */
+export interface ServerMsg {
+  type: "buttons";
+  rev: number;
+}
+
+/**
  * Parses and validates a raw WebSocket payload.
  *
  * @returns The typed message, or `null` for anything that isn't a valid

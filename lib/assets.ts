@@ -12,8 +12,15 @@ import { safeResolve } from "./static.ts";
  * @module
  */
 
-/** The files the phone page needs; also the SEA asset key list. */
-export const PUBLIC_ASSETS = ["index.html", "math.js", "buttons.json", "transport.js"];
+/** The files the phone page + button editor need; also the SEA asset key list. */
+export const PUBLIC_ASSETS = [
+  "index.html",
+  "math.js",
+  "buttons.json",
+  "transport.js",
+  "editor.html",
+  "editor.js",
+];
 
 /** A read-only bundle of named files. */
 export interface AssetSource {

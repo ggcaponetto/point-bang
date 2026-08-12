@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>point-bang — button editor</title>
+    <style>
+      :root {
+        --bg: #111;
+        --panel: #1c1c1c;
+        --line: #333;
+        --text: #eee;
+        --dim: #999;
+        --accent: #e33;
+        --ok: #4c4;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.45 system-ui,
+          sans-serif;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      header h1 {
+        font-size: 16px;
+        margin: 0;
+      }
+      #status {
+        color: var(--dim);
+        flex: 1;
+      }
+      #save {
+        padding: 8px 22px;
+        font-weight: 700;
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      #save:disabled {
+        background: #444;
+        color: #888;
+        cursor: not-allowed;
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        gap: 16px;
+        padding: 16px;
+      }
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+      }
+      /* the phone-shaped canvas: rects are % of the PHONE viewport */
+      #frame {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 19.5 / 9;
+        background: #000;
+        border: 2px solid var(--line);
+        border-radius: 12px;
+        touch-action: none;
+        overflow: hidden;
+      }
+      #frame.portrait {
+        aspect-ratio: 9 / 19.5;
+        max-width: 340px;
+      }
+      .btn {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #2a2a2add;
+        border: 1px solid #555;
+        border-radius: 8px;
+        color: var(--text);
+        font-weight: 600;
+        overflow: hidden;
+        cursor: grab;
+        user-select: none;
+      }
+      .btn.sel {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent);
+      }
+      .handle {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background: var(--accent);
+        border-radius: 3px;
+        transform: translate(-50%, -50%);
+      }
+      .under {
+        margin-top: 8px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        color: var(--dim);
+      }
+      .chip {
+        padding: 4px 10px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--text);
+        cursor: pointer;
+      }
+      aside {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+        align-self: start;
+      }
+      #list {
+        max-height: 260px;
+        overflow-y: auto;
+        margin-bottom: 12px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        padding: 4px 6px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--dim);
+      }
+      .row.sel {
+        background: #2a2a2a;
+        color: var(--text);
+      }
+      .row b {
+        color: var(--text);
+        min-width: 34px;
+      }
+      .row .act {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #inspector label {
+        display: block;
+        margin: 8px 0 2px;
+        color: var(--dim);
+      }
+      #inspector input[type="text"] {
+        width: 100%;
+        padding: 6px 8px;
+        background: #111;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      #inspector input.bad {
+        border-color: var(--accent);
+      }
+      #rmRect {
+        margin-top: 10px;
+        background: #333;
+        color: var(--text);
+        border: 0;
+        border-radius: 6px;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
+      #problems {
+        margin: 0 16px 16px;
+        padding: 0 0 0 20px;
+        color: var(--accent);
+      }
+      #problems:empty {
+        display: none;
+      }
+      .hint {
+        color: var(--dim);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Button editor</h1>
+      <div id="status">loading buttons.json…</div>
+      <button id="save" disabled>Save</button>
+    </header>
+    <main>
+      <section>
+        <div id="frame"></div>
+        <div class="under">
+          <label><input type="checkbox" id="portrait" /> portrait phone</label>
+          <span id="chipLabel" hidden>place on canvas:</span>
+          <span id="chips"></span>
+        </div>
+        <p class="hint">
+          Drag a button to move it, drag a corner to resize (1% snap). Positions are % of the phone
+          screen. Save applies live: the PC remaps actions and a connected phone re-renders — no
+          recalibration.
+        </p>
+      </section>
+      <aside>
+        <div id="list"></div>
+        <div id="inspector" hidden>
+          <label>label <input type="text" id="fLabel" /></label>
+          <label>
+            action
+            <input
+              type="text"
+              id="fAction"
+              list="actions"
+              placeholder="key:r / mouse:left / empty"
+            />
+          </label>
+          <datalist id="actions">
+            <option value="mouse:left"></option>
+            <option value="mouse:right"></option>
+            <option value="mouse:middle"></option>
+            <option value="key:r"></option>
+            <option value="key:enter"></option>
+            <option value="key:space"></option>
+            <option value="key:ctrl+shift+f"></option>
+          </datalist>
+          <label
+            >vibrate (blank = default, false = off, or ms) <input type="text" id="fVibrate"
+          /></label>
+          <label><input type="checkbox" id="fVisible" /> visible on the phone</label>
+          <button id="rmRect">remove rect (back to the strip)</button>
+        </div>
+      </aside>
+    </main>
+    <ul id="problems"></ul>
+
+    <script type="module">
+      // DOM glue only — the logic lives in editor.js (unit-tested, like
+      // math.js/transport.js). This page is served by the PC server itself,
+      // so /buttons.json and POST /buttons are same-origin; the session key
+      // (needed when the page is opened via a LAN URL) rides in the fragment,
+      // same as the phone page.
+      import { parseFragment } from "./transport.js";
+      import { parseAction, normalizeButtonRect } from "./math.js";
+      import {
+        clampRectMove,
+        resizeRect,
+        pointerToPct,
+        hitTest,
+        updateButton,
+        configProblems,
+        parseVibrateField,
+      } from "./editor.js";
+
+      const $ = (id) => document.getElementById(id);
+      const { key } = parseFragment(location.hash);
+      let cfg = null; // the WHOLE parsed buttons.json — unknown keys ride along
+      let selected = null;
+      let drag = null;
+
+      const buttons = () => cfg?.buttons ?? [];
+      const byId = (id) => buttons().find((b) => b.id === id);
+      const rectButtons = () =>
+        buttons()
+          .filter((b) => b.visible)
+          .map((b) => ({ id: b.id, rect: normalizeButtonRect(b.rect) }));
+
+      function renderFrame() {
+        const frame = $("frame");
+        frame.replaceChildren();
+        for (const b of buttons().filter((x) => x.visible)) {
+          const rect = normalizeButtonRect(b.rect);
+          if (!rect) continue;
+          const el = document.createElement("div");
+          el.className = "btn" + (b.id === selected ? " sel" : "");
+          el.style.left = rect.x + "%";
+          el.style.top = rect.y + "%";
+          el.style.width = rect.w + "%";
+          el.style.height = rect.h + "%";
+          el.textContent = b.label || b.id;
+          frame.appendChild(el);
+          if (b.id === selected)
+            for (const [hx, hy] of [
+              [rect.x, rect.y],
+              [rect.x + rect.w, rect.y],
+              [rect.x, rect.y + rect.h],
+              [rect.x + rect.w, rect.y + rect.h],
+            ]) {
+              const h = document.createElement("div");
+              h.className = "handle";
+              h.style.left = hx + "%";
+              h.style.top = hy + "%";
+              frame.appendChild(h);
+            }
+        }
+      }
+
+      function renderChips() {
+        const chips = $("chips");
+        chips.replaceChildren();
+        const loose = buttons().filter((b) => b.visible && !normalizeButtonRect(b.rect));
+        $("chipLabel").hidden = loose.length === 0;
+        for (const b of loose) {
+          const c = document.createElement("button");
+          c.className = "chip";
+          c.textContent = b.label || b.id;
+          c.onclick = () => {
+            cfg = updateButton(cfg, b.id, { rect: { x: 40, y: 40, w: 20, h: 16 } });
+            selected = b.id;
+            renderAll();
+          };
+          chips.appendChild(c);
+        }
+      }
+
+      function renderList() {
+        const list = $("list");
+        list.replaceChildren();
+        for (const b of buttons()) {
+          const row = document.createElement("div");
+          row.className = "row" + (b.id === selected ? " sel" : "");
+          const idEl = document.createElement("b");
+          idEl.textContent = b.id;
+          const act = document.createElement("span");
+          act.className = "act";
+          act.textContent = `${b.label ?? ""} ${b.action ? "· " + b.action : ""}`;
+          const vis = document.createElement("span");
+          vis.textContent = b.visible ? "👁" : "";
+          row.append(idEl, act, vis);
+          row.onclick = () => {
+            selected = b.id;
+            renderAll();
+          };
+          list.appendChild(row);
+        }
+      }
+
+      function renderInspector() {
+        const b = selected ? byId(selected) : null;
+        $("inspector").hidden = !b;
+        if (!b) return;
+        $("fLabel").value = b.label ?? "";
+        $("fAction").value = b.action ?? "";
+        $("fAction").classList.toggle("bad", Boolean(b.action) && !parseAction(b.action));
+        $("fVibrate").value = b.vibrate === undefined ? "" : String(b.vibrate);
+        $("fVisible").checked = Boolean(b.visible);
+        $("rmRect").hidden = !normalizeButtonRect(b.rect);
+      }
+
+      function renderProblems() {
+        const problems = cfg ? configProblems(cfg) : [];
+        const ul = $("problems");
+        ul.replaceChildren();
+        for (const p of problems) {
+          const li = document.createElement("li");
+          li.textContent = p;
+          ul.appendChild(li);
+        }
+        $("save").disabled = !cfg || problems.length > 0;
+      }
+
+      // Light pass while typing in the inspector: everything EXCEPT the
+      // inspector re-renders, so the focused input keeps its caret.
+      function renderLight() {
+        renderFrame();
+        renderChips();
+        renderList();
+        renderProblems();
+      }
+      function renderAll() {
+        renderLight();
+        renderInspector();
+      }
+
+      // ---------- drag / resize ----------
+      const frame = $("frame");
+      frame.addEventListener("pointerdown", (e) => {
+        if (!cfg) return;
+        const p = pointerToPct(e.clientX, e.clientY, frame.getBoundingClientRect());
+        const hit = hitTest(rectButtons(), p.x, p.y, 2.5);
+        selected = hit?.id ?? null;
+        drag = hit ? { ...hit, start: p, rect: normalizeButtonRect(byId(hit.id).rect) } : null;
+        if (drag) frame.setPointerCapture(e.pointerId);
+        renderAll();
+      });
+      frame.addEventListener("pointermove", (e) => {
+        if (!drag) return;
+        const p = pointerToPct(e.clientX, e.clientY, frame.getBoundingClientRect());
+        const dx = p.x - drag.start.x;
+        const dy = p.y - drag.start.y;
+        const next =
+          drag.part === "body"
+            ? clampRectMove(drag.rect, dx, dy)
+            : resizeRect(drag.rect, drag.part, dx, dy);
+        cfg = updateButton(cfg, drag.id, { rect: next });
+        renderAll();
+      });
+      const endDrag = () => (drag = null);
+      frame.addEventListener("pointerup", endDrag);
+      frame.addEventListener("pointercancel", endDrag);
+
+      $("portrait").onchange = (e) => frame.classList.toggle("portrait", e.target.checked);
+
+      // ---------- inspector ----------
+      const patchSelected = (patch) => {
+        if (!selected) return;
+        cfg = updateButton(cfg, selected, patch);
+        renderLight();
+      };
+      $("fLabel").oninput = (e) => patchSelected({ label: e.target.value });
+      $("fAction").oninput = (e) => {
+        patchSelected({ action: e.target.value });
+        e.target.classList.toggle("bad", Boolean(e.target.value) && !parseAction(e.target.value));
+      };
+      $("fVibrate").oninput = (e) => {
+        const parsed = parseVibrateField(e.target.value);
+        e.target.classList.toggle("bad", parsed === null);
+        if (parsed) patchSelected(parsed);
+      };
+      $("fVisible").onchange = (e) => {
+        patchSelected({ visible: e.target.checked });
+        renderInspector();
+      };
+      $("rmRect").onclick = () => {
+        patchSelected({ rect: undefined });
+        renderInspector();
+      };
+
+      // ---------- save ----------
+      $("save").onclick = async () => {
+        $("status").textContent = "saving…";
+        try {
+          const res = await fetch("/buttons", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(key ? { key, config: cfg } : { config: cfg }),
+          });
+          const body = await res.json().catch(() => null);
+          if (res.ok) {
+            $("status").textContent =
+              `saved (rev ${body?.rev ?? "?"}) — PC remapped, phone updated live`;
+          } else {
+            $("status").textContent =
+              `save refused (HTTP ${res.status}): ` +
+              (body?.problems?.join("; ") ?? "see server log");
+          }
+        } catch (e) {
+          $("status").textContent = "save failed: " + e;
+        }
+      };
+
+      // ---------- boot ----------
+      try {
+        const res = await fetch("./buttons.json");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        cfg = await res.json();
+        $("status").textContent = "editing the live config — Save applies without a restart";
+        renderAll();
+      } catch (e) {
+        $("status").textContent = "could not load buttons.json: " + e;
+      }
+    </script>
+  </body>
+</html>

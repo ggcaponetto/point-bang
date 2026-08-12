@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import { normalizeButtonRect, normalizeKey, parseAction } from "../public/math.js";
 import type { MouseButton, MouseLike } from "./cursor.ts";
 
@@ -55,35 +53,6 @@ const usableVibrate = (v: unknown): boolean =>
 export interface ButtonConfig {
   actions: Map<string, ButtonAction>;
   problems: string[];
-}
-
-/**
- * Loads and validates `buttons.json` from disk. Unreadable files or bad
- * actions are reported in `problems`, never thrown — buttons degrade, the gun
- * keeps working.
- *
- * `filePath` comes from the CLI (`--buttons`), so before the read the
- * canonical path must be a `.json` file that still lives in its stated
- * directory — a symlink pointing elsewhere is refused (path-injection guard).
- */
-export function loadButtonConfig(filePath: string): ButtonConfig {
-  try {
-    const dir = fs.realpathSync(path.dirname(filePath));
-    const prefix = dir.endsWith(path.sep) ? dir : dir + path.sep;
-    const resolved = fs.realpathSync(filePath);
-    if (!resolved.startsWith(prefix) || path.extname(resolved).toLowerCase() !== ".json") {
-      return {
-        actions: new Map(),
-        problems: [`buttons config must be a plain .json file, got ${filePath} — buttons disabled`],
-      };
-    }
-    return parseButtonConfig(fs.readFileSync(resolved, "utf8"));
-  } catch (e) {
-    return {
-      actions: new Map(),
-      problems: [`buttons.json unreadable (${(e as Error).message}) — buttons disabled`],
-    };
-  }
 }
 
 /**
