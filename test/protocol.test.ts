@@ -11,6 +11,27 @@ describe("parseMessage", () => {
       q: 1,
     });
   });
+  it("keeps a valid aim monitor index and drops a malformed one, not the sample", () => {
+    expect(parseMessage('{"type":"aim","u":0.5,"v":0.3,"m":2}')).toEqual({
+      type: "aim",
+      u: 0.5,
+      v: 0.3,
+      m: 2,
+    });
+    for (const bad of ["0", "-1", "1.5", '"two"']) {
+      expect(parseMessage(`{"type":"aim","u":0.5,"v":0.3,"m":${bad}}`)).toEqual({
+        type: "aim",
+        u: 0.5,
+        v: 0.3,
+      });
+    }
+  });
+  it("passes the calib monitor index through", () => {
+    expect(parseMessage('{"type":"calib","stage":"corner","i":1,"m":2}')).toMatchObject({
+      i: 1,
+      m: 2,
+    });
+  });
   it("parses fire", () => {
     expect(parseMessage('{"type":"fire"}')).toEqual({ type: "fire" });
   });

@@ -418,6 +418,64 @@ describe("startServer monitor selection", () => {
     running = null;
   });
 
+  it("routes per-monitor aim (aim.m) into that monitor's rect", async () => {
+    const { srv, moves } = await bootWith({
+      monitor: { kind: "all" },
+      monitorProbe: async () => TWO,
+    });
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5, m: 2 }));
+    await until(() => moves.length > 0);
+    expect(moves[0]).toEqual([-1920 + 960, 540]); // center of the second monitor
+    ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5, m: 1 }));
+    await until(() => moves.length > 1);
+    expect(moves[1]).toEqual([960, 540]); // center of the first
+    // no m (or out of range) falls back to the spanning rect
+    ws.send(JSON.stringify({ type: "aim", u: 0, v: 0 }));
+    await until(() => moves.length > 2);
+    expect(moves[2]).toEqual([-1920, 0]);
+    ws.close();
+  });
+
+  it("ignores aim.m outside all-mode — the selected rect stays authoritative", async () => {
+    const { srv, moves } = await bootWith({
+      monitor: { kind: "index", index: 1 },
+      monitorProbe: async () => TWO,
+    });
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5, m: 2 }));
+    await until(() => moves.length > 0);
+    expect(moves[0]).toEqual([960, 540]); // monitor 1, not 2
+    ws.close();
+  });
+
+  it("serves /monitors with the aim targets and CORS for the hosted page", async () => {
+    const { srv } = await bootWith({
+      monitor: { kind: "all" },
+      monitorProbe: async () => TWO,
+    });
+    const res = await fetch(`http://127.0.0.1:${srv.httpPort}/monitors`, {
+      headers: { origin: "https://ggcaponetto.github.io" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/json");
+    expect(res.headers.get("access-control-allow-origin")).toBe("https://ggcaponetto.github.io");
+    const body = (await res.json()) as { monitors: { i: number; w: number; label: string }[] };
+    expect(body.monitors).toHaveLength(2);
+    expect(body.monitors[0]).toMatchObject({ i: 1, w: 1920, label: "\\\\.\\DISPLAY1" });
+    expect(body.monitors[1]).toMatchObject({ i: 2, label: "\\\\.\\DISPLAY2" });
+    // no layout coordinates leak — the phone only needs count + aspect
+    expect(body.monitors[0]).not.toHaveProperty("x");
+  });
+
+  it("serves a single aim target in single-rect modes", async () => {
+    const { srv } = await bootWith({});
+    const res = await fetch(`http://127.0.0.1:${srv.httpPort}/monitors`);
+    const body = (await res.json()) as { monitors: unknown[] };
+    expect(body.monitors).toHaveLength(1);
+    expect(body.monitors[0]).toMatchObject({ i: 1, w: 1920, h: 1080 });
+  });
+
   it("virtual input is one synthetic monitor: index 1 works, index 2 refuses", async () => {
     const { logs } = await bootWith({
       input: "none",
