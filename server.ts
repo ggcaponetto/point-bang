@@ -23,7 +23,7 @@ import { normalizeUrlPath, contentTypeFor } from "./lib/static.ts";
 import { diskAssets, type AssetSource } from "./lib/assets.ts";
 import { loadTls } from "./lib/certs.ts";
 import { lanIPv4 } from "./lib/net.ts";
-import { parseMessage } from "./lib/protocol.ts";
+import { parseMessage, type ClientMsg } from "./lib/protocol.ts";
 import { createCursorLoop, type MouseLike } from "./lib/cursor.ts";
 import { AimPredictor } from "./lib/predict.ts";
 import { JitterWindow, formatJitter } from "./lib/jitter.ts";
@@ -237,52 +237,56 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     if (s) log(formatJitter(s, statsMs / 1000));
   }, statsMs);
 
+  // ---------- protocol intake (shared by every transport) ----------
+  const handleMessage = async (d: ClientMsg): Promise<void> => {
+    switch (d.type) {
+      case "aim": {
+        if (paused) break;
+        const arrived = Date.now();
+        predictor.add(d.u, d.v, arrived);
+        if (typeof d.t === "number") jitter.add(arrived - d.t);
+        break;
+      }
+      case "fire":
+        if (paused) break;
+        try {
+          await mouse.click();
+        } catch (e) {
+          console.error((e as Error).message);
+        }
+        break;
+      case "calib":
+        log(
+          `calib ${d.stage} #${d.i ?? ""}: ` +
+            (d.x !== undefined
+              ? `(${d.x.toFixed(3)}, ${d.y!.toFixed(3)}, ${d.z!.toFixed(3)})`
+              : ""),
+        );
+        break;
+      case "state":
+        log(`tracking: ${d.tracking}`);
+        // stale velocity must not keep extrapolating while tracking is lost
+        if (d.tracking === "lost") predictor.reset();
+        break;
+      case "button":
+        // while paused, presses are dropped but releases go through — a
+        // button held across the pause must not stay stuck down
+        if (paused && d.down) break;
+        try {
+          if (!(await pressButton(d.id, d.down))) log(`button ${d.id}: no action mapped`);
+        } catch (e) {
+          console.error((e as Error).message);
+        }
+        break;
+    }
+  };
+
   // ---------- websocket ----------
   const onConnection = (ws: WebSocket, req: http.IncomingMessage): void => {
     log(`phone connected: ${req.socket.remoteAddress}`);
-    ws.on("message", async (raw: Buffer) => {
+    ws.on("message", (raw: Buffer) => {
       const d = parseMessage(raw);
-      if (!d) return;
-      switch (d.type) {
-        case "aim": {
-          if (paused) break;
-          const arrived = Date.now();
-          predictor.add(d.u, d.v, arrived);
-          if (typeof d.t === "number") jitter.add(arrived - d.t);
-          break;
-        }
-        case "fire":
-          if (paused) break;
-          try {
-            await mouse.click();
-          } catch (e) {
-            console.error((e as Error).message);
-          }
-          break;
-        case "calib":
-          log(
-            `calib ${d.stage} #${d.i ?? ""}: ` +
-              (d.x !== undefined
-                ? `(${d.x.toFixed(3)}, ${d.y!.toFixed(3)}, ${d.z!.toFixed(3)})`
-                : ""),
-          );
-          break;
-        case "state":
-          log(`tracking: ${d.tracking}`);
-          // stale velocity must not keep extrapolating while tracking is lost
-          if (d.tracking === "lost") predictor.reset();
-          break;
-        case "button":
-          // while paused, presses are dropped but releases go through — a
-          // button held across the pause must not stay stuck down
-          if (paused && d.down) break;
-          try {
-            if (!(await pressButton(d.id, d.down))) log(`button ${d.id}: no action mapped`);
-          } catch (e) {
-            console.error((e as Error).message);
-          }
-          break;
-      }
+      if (d) void handleMessage(d);
     });
     ws.on("close", () => log("phone disconnected"));
   };
