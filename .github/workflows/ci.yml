@@ -27,6 +27,9 @@ jobs:
         if: runner.os == 'Linux'
       - run: npm run knip
         if: runner.os == 'Linux'
+      # the Pages phone-page publish must not break silently on push to main
+      - run: npm run docs:build
+        if: runner.os == 'Linux'
       - run: npm run typecheck
       - run: npm test
 

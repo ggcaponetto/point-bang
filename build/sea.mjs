@@ -17,6 +17,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import esbuild from "esbuild";
+// Node ≥23.6 strips types natively, so an .mjs build script can import the
+// one authoritative asset list instead of duplicating it.
+import { PUBLIC_ASSETS } from "../lib/assets.ts";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -93,8 +96,7 @@ function bundle() {
 function collectAssets() {
   const dir = nativeDir();
   const assets = {};
-  for (const name of ["index.html", "math.js", "buttons.json", "transport.js"])
-    assets[name] = path.join(ROOT, "public", name);
+  for (const name of PUBLIC_ASSETS) assets[name] = path.join(ROOT, "public", name);
 
   assets["libnut.node"] = path.join(dir, "libnut.node");
   assets["koffi.node"] = koffiNode();
