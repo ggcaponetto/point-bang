@@ -1,0 +1,61 @@
+name: Release
+
+# Triggered by a version tag pushed to the repo (see build/release.mjs, which
+# creates the tag after bumping versions and passing the validate gate):
+#
+#   npm run release -- patch && git push origin main vX.Y.Z
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            binary: dist/point-bang
+            suffix: linux-x64
+          - os: windows-latest
+            binary: dist/point-bang.exe
+            suffix: win-x64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:sea
+      - name: Smoke-test the executable
+        run: node build/smoke.mjs
+      - name: Name the binary after the tag
+        run: node -e "require('fs').renameSync(process.env.SRC, 'dist/point-bang-' + process.env.TAG + '-' + process.env.SUFFIX)"
+        env:
+          SRC: ${{ matrix.binary }}
+          TAG: ${{ github.ref_name }}
+          SUFFIX: ${{ matrix.suffix }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: dist/point-bang-v*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/point-bang-v*
+          generate_release_notes: true

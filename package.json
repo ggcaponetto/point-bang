@@ -30,6 +30,7 @@
     "docs:build": "npm run docs:assets && npm run docs:site && npm run docs:api && vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "prepare": "husky",
+    "release": "node build/release.mjs",
     "start:tunnel": "node cli.ts serve --tunnel ngrok",
     "tunnel": "node cli.ts tunnel"
   },
