@@ -90,7 +90,10 @@ export function parseNmcli(output: string): WifiReport {
 export function parseIwDev(output: string): WifiReport {
   // [ \t] instead of \s: \s matches newlines, and with the m flag that lets
   // the engine backtrack across lines — super-linear on adversarial input.
-  const ssid = /^[ \t]*ssid[ \t]+(.+)$/m.exec(output)?.[1].trim();
+  // \S pins the capture start: with (.+) the dot also matches blanks, so
+  // [ \t]+ and the capture overlap and trailing whitespace backtracks
+  // quadratically. The capture is trimmed either way, so behavior is equal.
+  const ssid = /^[ \t]*ssid[ \t]+(\S.*)$/m.exec(output)?.[1].trim();
   if (!ssid) return { connected: false };
   // iw prints exactly "channel %d (%d MHz)" — single spaces, bounded digits.
   // Anything looser (e.g. \d+ then optional space) backtracks super-linearly.
