@@ -86,13 +86,15 @@ export function createButtonStore(opts: {
     },
     async write(text) {
       if (!opts.file) throw new Error("no writable buttons.json location");
-      // Validate the target path BEFORE touching the filesystem, mirroring
-      // the read guard: resolve the real parent directory, re-join the bare
-      // basename (kills traversal segments), and require a .json extension —
-      // a `--buttons` value can never write outside its stated directory.
+      // Validate the target path BEFORE touching the filesystem, the same
+      // shape as the read guard: resolve the real parent directory, re-join
+      // the bare basename (kills traversal segments), require the result to
+      // stay inside that directory and to be a .json file — a `--buttons`
+      // value can never write outside its stated directory.
       const dir = await fs.realpath(path.dirname(opts.file));
+      const prefix = dir.endsWith(path.sep) ? dir : dir + path.sep;
       const target = path.join(dir, path.basename(opts.file));
-      if (path.extname(target).toLowerCase() !== ".json")
+      if (!target.startsWith(prefix) || path.extname(target).toLowerCase() !== ".json")
         throw new Error(`buttons config must be a plain .json file, got ${opts.file}`);
       // Same-dir temp + rename: a crash mid-write can never leave a torn
       // config, and rename on the same volume is atomic on Windows and Linux.

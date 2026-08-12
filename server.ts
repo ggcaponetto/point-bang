@@ -481,6 +481,28 @@ async function handleButtonsSave(
   res.end(out);
 }
 
+// A browser context posting to a state-changing route must be the hosted
+// page or same-origin (cors non-null); everything else is refused here.
+function guardedPost(
+  d: HttpDeps,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string> | null,
+  handler: (
+    d: HttpDeps,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    cors: Record<string, string>,
+  ) => Promise<void>,
+): void {
+  if (!cors) {
+    res.writeHead(403);
+    res.end("origin not allowed");
+    return;
+  }
+  void handler(d, req, res, cors);
+}
+
 // Through the store, not the raw assets: a live-editor save (or a
 // buttons.json next to the executable) wins over the baked copy.
 function serveButtonsJson(
@@ -518,25 +540,15 @@ function createHttpHandler(d: HttpDeps): http.RequestListener {
       return;
     }
     if (req.method === "POST" && normalized === "/rtc/offer") {
-      // The one state-changing route: a browser context must be the hosted
+      // The state-changing routes: a browser context must be the hosted
       // page or same-origin — this socket ends at the mouse and keyboard.
-      if (!cors) {
-        res.writeHead(403);
-        res.end("origin not allowed");
-        return;
-      }
-      void handleRtcOffer(d, req, res, cors);
+      guardedPost(d, req, res, cors, handleRtcOffer);
       return;
     }
     if (req.method === "POST" && normalized === "/buttons") {
-      // State-changing like /rtc/offer: browser contexts must be the hosted
-      // page or same-origin, and the body must present the session key.
-      if (!cors) {
-        res.writeHead(403);
-        res.end("origin not allowed");
-        return;
-      }
-      void handleButtonsSave(d, req, res, cors);
+      // State-changing like /rtc/offer: same origin rule, and the body must
+      // present the session key (checked inside handleButtonsSave).
+      guardedPost(d, req, res, cors, handleButtonsSave);
       return;
     }
     if (req.method === "GET" && normalized === "/monitors") {
