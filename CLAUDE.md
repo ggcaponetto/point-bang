@@ -30,6 +30,9 @@ npm start -- --pause-combo alt+p # tracking-pause hotkey (default shift+space; o
 npm start -- --no-qr             # skip the setup QR in the banner
 npm start -- --page-url https://you.example/phone/   # QR targets a self-hosted page
 npm run docs:build               # ALSO publishes public/ -> Pages /phone/ (build/pages.mjs)
+                                 # AND builds site/ -> Pages /start/ (build/site.mjs)
+npm run release -- patch         # bump package.json+lib/version.ts, validate, commit, tag
+                                 # then: git push origin main vX.Y.Z -> release.yml ships binaries
 npm run start:tunnel             # serve + ngrok in ONE process (needs a free authtoken)
 npm run tunnel                   # ngrok ONLY, to run beside a plain `npm start`
 npm start -- --tunnel ngrok --tunnel-url https://you.ngrok-free.app   # reserved domain
@@ -93,9 +96,16 @@ use this approach; the only prior art is a hobbyist native app
 │   ├── net.ts         #   lanIPv4 + report formatting
 │   └── wifi.ts        #   band detection: netsh / nmcli / iw, all locale-tolerant
 ├── build/
-│   ├── sea.mjs        # esbuild -> sea-config -> postject. The ONLY build step.
-│   ├── pages.mjs      # copies PUBLIC_ASSETS -> docs/public/phone/ (docs:build step)
+│   ├── sea.mjs        # esbuild -> sea-config -> postject. The ONLY core build step.
+│   ├── pages.mjs      # copies PUBLIC_ASSETS + logo -> docs/public/ (docs:build step)
+│   ├── site.mjs       # builds site/ -> docs/public/start/ (docs:build step)
+│   ├── release.mjs    # semver bump (package.json + lib/version.ts) + validate + tag
 │   └── smoke.mjs      # runs the built binary: --version/--help/ip/check
+├── site/              # hosted start page: React + MUI + i18next (EN/DE/IT) — its own
+│                      #   npm package ON PURPOSE (user request 2026-08-12): the only
+│                      #   place a bundler exists; core stays buildless. WebXR check +
+│                      #   player onboarding, published at /point-bang/start/.
+├── assets/logo.svg    # crosshair-in-phone mark: docs favicon/brand, README, site hero
 ├── public/
 │   ├── index.html     # phone page: XR/DOM glue only (script type=module)
 │   ├── transport.js   # PC link: RTC-first ladder, WS fallback, LNA fetches (JSDoc,
@@ -337,8 +347,11 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
    where the game supports it), config persistence (last calibration method,
    smoothing, aspect), phone haptics on fire (`navigator.vibrate`).
    Distribution is done: `npm run build:sea` ships a single executable for
-   Windows and Linux, built and smoke-tested per-OS in CI. What's left here
-   is publishing them as release artifacts.
+   Windows and Linux, built and smoke-tested per-OS in CI, and
+   `npm run release` + a tag push publishes them as GitHub Release
+   artifacts (release.yml, 2026-08-12). Quality tracking: Codecov +
+   SonarQube Cloud run in CI once the CODECOV_TOKEN/SONAR_TOKEN secrets
+   exist; badges live in README and on /start/.
 
 ## Key algorithms (reference — implementations live in public/math.js, tested in test/math.test.ts)
 
