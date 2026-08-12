@@ -105,6 +105,27 @@ describe("serve flags", () => {
     expect(seen()).toBeNull();
   });
 
+  it("parses --monitor and defaults it to primary", async () => {
+    const dflt = spyDeps();
+    await runCli([], dflt.deps);
+    expect(dflt.seen()!.monitor).toEqual({ kind: "primary" });
+
+    const idx = spyDeps();
+    await runCli(["--monitor", "2"], idx.deps);
+    expect(idx.seen()!.monitor).toEqual({ kind: "index", index: 2 });
+
+    const all = spyDeps();
+    await runCli(["--monitor", "all"], all.deps);
+    expect(all.seen()!.monitor).toEqual({ kind: "all" });
+  });
+
+  it("refuses an unparsable --monitor instead of booting with a guess", async () => {
+    const { deps, errors, seen } = spyDeps();
+    expect(await runCli(["--monitor", "leftmost"], deps)).toBe(1);
+    expect(errors.join("\n")).toContain("--monitor");
+    expect(seen()).toBeNull();
+  });
+
   it("supports the -m/-p short flags", async () => {
     const { deps, seen } = spyDeps();
     await runCli(["-m", "adb", "-p", "1234"], deps);
@@ -402,10 +423,34 @@ describe("default dependencies", () => {
   });
 });
 
+describe("monitors command", () => {
+  it("lists monitors through the injected seams and exits 0", async () => {
+    const { deps, logs } = spyDeps({
+      platform: "linux",
+      exec: () => "eDP-1 connected primary 1920x1080+0+0 (normal)",
+    });
+    expect(await runCli(["monitors"], deps)).toBe(0);
+    expect(logs[0]).toContain("eDP-1");
+    expect(logs.join("\n")).toContain("--monitor all");
+  });
+
+  it("exits 1 with the reason when nothing is detected", async () => {
+    const { deps, logs } = spyDeps({
+      platform: "linux",
+      exec: () => {
+        throw new Error("xrandr: not found");
+      },
+    });
+    expect(await runCli(["monitors"], deps)).toBe(1);
+    expect(logs.join("\n")).toContain("xrandr unavailable");
+  });
+});
+
 describe("buildParser", () => {
   it("documents every command in --help", async () => {
     const help = await buildParser([], {}).getHelp();
-    for (const cmd of ["serve", "tunnel", "ip", "wifi", "check"]) expect(help).toContain(cmd);
+    for (const cmd of ["serve", "tunnel", "ip", "wifi", "monitors", "check"])
+      expect(help).toContain(cmd);
   });
 });
 

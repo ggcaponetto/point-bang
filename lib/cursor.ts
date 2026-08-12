@@ -21,16 +21,23 @@ export interface MouseLike {
   screenSize(): Promise<{ w: number; h: number }>;
 }
 
-/** Maps normalized aim (u,v) to clamped pixel coordinates for a w×h screen. */
-export function scaleToScreen(
-  u: number,
-  v: number,
-  w: number,
-  h: number,
-): { x: number; y: number } {
+/**
+ * The pixel rectangle aim maps into: one monitor, the spanning virtual
+ * desktop, or the whole primary screen. `x`/`y` may be negative — on Windows
+ * a monitor left of or above the primary has a negative origin.
+ */
+export interface TargetRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Maps normalized aim (u,v) to clamped pixel coordinates inside `rect`. */
+export function scaleToRect(u: number, v: number, rect: TargetRect): { x: number; y: number } {
   return {
-    x: Math.round(Math.min(Math.max(u, 0), 1) * (w - 1)),
-    y: Math.round(Math.min(Math.max(v, 0), 1) * (h - 1)),
+    x: rect.x + Math.round(Math.min(Math.max(u, 0), 1) * (rect.w - 1)),
+    y: rect.y + Math.round(Math.min(Math.max(v, 0), 1) * (rect.h - 1)),
   };
 }
 
@@ -46,26 +53,25 @@ export interface CursorLoop {
  */
 export function createCursorLoop(
   mouse: MouseLike,
-  getSize: () => { w: number; h: number },
+  getRect: () => TargetRect,
   getTarget: () => { u: number; v: number } | null,
   onError: (e: Error) => void = () => {},
   tickMs = 2,
 ): CursorLoop {
   let applying = false;
-  let lastX = -1;
-  let lastY = -1;
+  // null, not (-1,-1): a monitor left of the primary makes (-1,-1) a REAL
+  // pixel, and a sentinel that collides with it would silently drop the move.
+  let last: { x: number; y: number } | null = null;
   const timer = setInterval(async () => {
     if (applying) return;
     const target = getTarget();
     if (!target) return;
-    const { w, h } = getSize();
-    const { x, y } = scaleToScreen(target.u, target.v, w, h);
-    if (x === lastX && y === lastY) return;
+    const { x, y } = scaleToRect(target.u, target.v, getRect());
+    if (last && x === last.x && y === last.y) return;
     applying = true;
     try {
       await mouse.setPosition(x, y);
-      lastX = x;
-      lastY = y;
+      last = { x, y };
     } catch (e) {
       onError(e as Error);
     }

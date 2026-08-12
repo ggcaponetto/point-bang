@@ -344,6 +344,103 @@ describe("startServer (with TLS certs)", () => {
   });
 });
 
+describe("startServer monitor selection", () => {
+  // real box this feature was verified on: primary at (0,0), second at (-1920,0)
+  const TWO = {
+    monitors: [
+      { x: 0, y: 0, w: 1920, h: 1080, primary: true, label: "\\\\.\\DISPLAY1" },
+      { x: -1920, y: 0, w: 1920, h: 1080, primary: false, label: "\\\\.\\DISPLAY2" },
+    ],
+    reason: null,
+  };
+
+  async function bootWith(opts: Parameters<typeof startServer>[0]) {
+    const f = fakeMouse();
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      publicDir: PUBLIC,
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: (l) => logs.push(l),
+      pauseCombo: "off",
+      // Pin a display-ful platform: on Linux CI `auto` input would resolve
+      // to virtual and bypass the injected probe. Devices are fakes anyway.
+      platform: "win32",
+      ...opts,
+    });
+    return { ...f, logs, srv: running };
+  }
+
+  it("maps aim into a selected negative-origin monitor", async () => {
+    const { srv, moves, logs } = await bootWith({
+      monitor: { kind: "index", index: 2 },
+      monitorProbe: async () => TWO,
+    });
+    expect(logs).toContain("Screen: 1920x1080 at (-1920,0) — \\\\.\\DISPLAY2");
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5 }));
+    await until(() => moves.length > 0);
+    expect(moves[0]).toEqual([-1920 + 960, 540]);
+    ws.close();
+  });
+
+  it("spans all monitors with --monitor all", async () => {
+    const { srv, moves, logs } = await bootWith({
+      monitor: { kind: "all" },
+      monitorProbe: async () => TWO,
+    });
+    expect(logs).toContain("Screen: 3840x1080 at (-1920,0) — all (2 monitors)");
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0, v: 0 }));
+    await until(() => moves.length > 0);
+    expect(moves[0]).toEqual([-1920, 0]);
+    ws.close();
+  });
+
+  it("default primary degrades to the screen when detection fails", async () => {
+    const { logs } = await bootWith({
+      monitor: { kind: "primary" },
+      monitorProbe: async () => ({ monitors: [], reason: "no probe here" }),
+    });
+    expect(logs.join("\n")).toContain("no probe here");
+    expect(logs).toContain("Screen: 1920x1080 at (0,0) — screen");
+  });
+
+  it("refuses to start when an explicit monitor cannot be honored", async () => {
+    await expect(
+      bootWith({
+        monitor: { kind: "index", index: 3 },
+        monitorProbe: async () => TWO,
+      }),
+    ).rejects.toThrow(/--monitor 3/);
+    running = null;
+  });
+
+  it("virtual input is one synthetic monitor: index 1 works, index 2 refuses", async () => {
+    const { logs } = await bootWith({
+      input: "none",
+      screen: { w: 800, h: 600 },
+      monitor: { kind: "index", index: 1 },
+      mouse: undefined,
+      keyboard: undefined,
+    });
+    expect(logs).toContain("Screen: 800x600 at (0,0) — virtual");
+    await running?.close();
+    running = null;
+    await expect(
+      bootWith({
+        input: "none",
+        monitor: { kind: "index", index: 2 },
+        mouse: undefined,
+        keyboard: undefined,
+      }),
+    ).rejects.toThrow(/--monitor 2/);
+    running = null;
+  });
+});
+
 describe("startServer input modes", () => {
   /** Boots with no injected devices — the only path that would load libnut. */
   async function bootVirtual(opts: Parameters<typeof startServer>[0]) {

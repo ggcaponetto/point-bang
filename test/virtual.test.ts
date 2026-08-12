@@ -118,7 +118,7 @@ describe("createVirtualMouse", () => {
     const mouse = createVirtualMouse({ log, size: { w: 101, h: 101 }, throttleMs: 0 });
     const loop = createCursorLoop(
       mouse,
-      () => ({ w: 101, h: 101 }),
+      () => ({ x: 0, y: 0, w: 101, h: 101 }),
       () => ({ u: 0.25, v: 0.75 }),
       () => {},
       1,

@@ -3,6 +3,8 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { startServer, type ServerMode, type InputMode } from "../server.ts";
 import { parseScreenSize } from "./virtual.ts";
+import { parseMonitorArg, monitorsMain } from "./monitors.ts";
+import type { Ffi } from "./native.ts";
 import { startNgrok, formatTunnelReport } from "./tunnel.ts";
 import { diskAssets, seaAssets, type AssetSource } from "./assets.ts";
 import { adbReverse } from "./adb.ts";
@@ -44,6 +46,8 @@ export interface CliDeps {
   appDir?: string;
   /** Native addon loader for `check`; tests inject one so no real device is touched. */
   loadNative?: () => Promise<LibNut>;
+  /** FFI loader for `monitors`; tests inject one so no real user32 is called. */
+  loadFfi?: () => Promise<Ffi>;
   /** Public-tunnel starter; tests inject one so no agent is ever spawned. */
   tunnel?: typeof startNgrok;
   /** Registers teardown; tests inject one to avoid real signal handlers. */
@@ -76,6 +80,7 @@ interface ServeArgs {
   pauseCombo: string;
   input: InputMode;
   screen?: string;
+  monitor: string;
   tunnel: "off" | "ngrok";
   tunnelUrl?: string;
   /** `tunnel` command only — its own spelling of `--tunnel-url`. */
@@ -158,6 +163,13 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
             type: "string",
             describe: "screen size assumed with --input none, e.g. 1920x1080",
           })
+          .option("monitor", {
+            type: "string",
+            default: "primary",
+            describe:
+              "monitor aim maps onto: 'primary', 'all' (span every monitor), " +
+              "or an index from `point-bang monitors`",
+          })
           .option("tunnel", {
             choices: ["off", "ngrok"] as const,
             default: "off" as const,
@@ -208,6 +220,7 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
       )
       .command("ip", "List this PC's LAN IPv4 addresses, marking the WiFi one")
       .command("wifi", "Report the WiFi band (5 GHz is what you want)")
+      .command("monitors", "List connected monitors (pick one with serve --monitor)")
       .command("check", "Verify the phone page files and the native input addon", (y) =>
         y.option("public", publicOption),
       )
@@ -287,6 +300,11 @@ async function runServeCommand(
     error(`--screen: expected WxH (e.g. 1920x1080), got "${a.screen}"`);
     return 1;
   }
+  const monitor = parseMonitorArg(a.monitor);
+  if (monitor === null) {
+    error(`--monitor: expected 'primary', 'all' or a monitor number, got "${a.monitor}"`);
+    return 1;
+  }
   const resolvedKey = resolveKey(a.key);
   if (resolvedKey.problem) {
     error(resolvedKey.problem);
@@ -302,6 +320,7 @@ async function runServeCommand(
       pauseCombo: a.pauseCombo,
       input: a.input,
       screen,
+      monitor,
       platform: deps.platform,
       env: deps.env,
       certsDir: a.certs ?? path.join(appDir, "certs"),
@@ -344,6 +363,14 @@ export async function runCli(
   }
   if (command === "wifi") {
     return wifiMain(deps.exec, log, deps.platform ?? process.platform);
+  }
+  if (command === "monitors") {
+    return monitorsMain({
+      platform: deps.platform,
+      exec: deps.exec,
+      loadFfi: deps.loadFfi,
+      log,
+    });
   }
 
   const a = parsed as unknown as ServeArgs;
