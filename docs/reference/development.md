@@ -49,6 +49,40 @@ Windows and Linux binaries and uploads them as artifacts.
 This is the project's **only** build step. `node cli.ts` still runs straight
 from source, and the phone page stays buildless.
 
+## Testing the QR/remote flow without the hosted page
+
+The published start/phone pages come from `main` — useless while you are
+_changing_ the phone page. An ngrok tunnel gives your **working copy** a
+real HTTPS origin, so you can exercise the exact remote code path (URL
+fragment → Local Network Access fetch → `/rtc/offer` → DataChannel) with
+zero deploys:
+
+```sh
+# terminal 2 — a stable public URL for your local server
+npm run tunnel                    # prints e.g. https://xyz.ngrok-free.app
+
+# terminal 1 — allowlist that origin and point the QR at it
+npm start -- --page-url https://xyz.ngrok-free.app/
+```
+
+Scan the printed QR. The phone loads **your local page over the tunnel**,
+sees the `#pc=<lan-ip>:8443` fragment, and goes remote-mode: LNA permission
+prompt, cross-origin signaling (allowed because `--page-url` seeds the CORS
+allowlist), DataChannel across the LAN. Everything the GitHub-Pages flow
+does, but against uncommitted code.
+
+Notes:
+
+- With a reserved ngrok domain (`--tunnel-url`), `npm run start:tunnel --
+--page-url https://you.ngrok-free.app/` does it in one process and the
+  URL survives restarts.
+- Without `--page-url`, the tunnel flow is **same-origin** mode instead:
+  signaling rides the tunnel, ICE usually can't cross networks, and the
+  page falls back to WS over the tunnel — that's the right recipe for
+  testing the page UI itself, and the wrong one for testing LNA/CORS.
+- The `#pc=` fragment works from any origin serving the page — you can also
+  hand-type it onto a mkcert HTTPS URL.
+
 ## Quality gates
 
 - **Husky**: pre-commit runs prettier check + typecheck; pre-push runs the
