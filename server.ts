@@ -51,11 +51,9 @@ import { loadKoffi } from "./lib/native.ts";
 import { VERSION } from "./lib/version.ts";
 import { createRtcHub, type PeerLike } from "./lib/rtc.ts";
 import { corsHeaders } from "./lib/cors.ts";
+import { phonePageUrl, qrLines, DEFAULT_PAGE_URL } from "./lib/qr.ts";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-
-/** Where the QR sends the phone: the GitHub-Pages-hosted copy of `public/`. */
-export const DEFAULT_PAGE_URL = "https://ggcaponetto.github.io/point-bang/phone/";
 
 /** SDP offers are a few KB; anything bigger is not a phone calibrating. */
 const MAX_OFFER_BYTES = 64 * 1024;
@@ -128,6 +126,8 @@ export interface ServerOptions {
   env?: Record<string, string | undefined>;
   /** Page the setup QR points at; also seeds the CORS allowlist. */
   pageUrl?: string;
+  /** Print the setup QR on startup (non-adb modes). Default true. */
+  qr?: boolean;
   /** Origins allowed to signal cross-origin. Default: the `pageUrl` origin. */
   pageOrigins?: string[];
   /** Injected WebRTC peer factory for tests — replaces real werift. */
@@ -425,6 +425,18 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       log(`WiFi:   http://${ip.address}:${httpPort}${ip.wifi ? "   <-- your WiFi" : ""}`);
   } else if (mode === "all") {
     log(`WiFi: no certs/cert.pem+key.pem found — HTTPS off (see README "Run it over WiFi")`);
+  }
+
+  // ---------- setup QR (the consumer journey: run, scan, tap Allow) ----------
+  if (mode !== "adb" && opts.qr !== false) {
+    const pageUrl = opts.pageUrl ?? DEFAULT_PAGE_URL;
+    const qrUrl = phonePageUrl(pageUrl, lanIPv4(), httpPort);
+    if (qrUrl) {
+      log(`Phone: scan to play (page loads from ${pageUrl}):`);
+      for (const line of await qrLines(qrUrl)) log(line);
+      log(`Phone: or type  ${qrUrl}`);
+      log("Phone: Chrome asks once to allow local network access — tap Allow.");
+    }
   }
 
   const close = (): Promise<void> => {

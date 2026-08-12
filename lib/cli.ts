@@ -9,6 +9,7 @@ import { adbReverse } from "./adb.ts";
 import { runCheck } from "./check.ts";
 import type { LibNut } from "./native.ts";
 import { lanIPv4, formatIpReport } from "./net.ts";
+import { DEFAULT_PAGE_URL } from "./qr.ts";
 import { wifiMain } from "./wifi.ts";
 import { VERSION } from "./version.ts";
 
@@ -81,6 +82,8 @@ interface ServeArgs {
   certs?: string;
   public?: string;
   buttons?: string;
+  pageUrl: string;
+  qr: boolean;
 }
 
 const numFromEnv = (raw: string | undefined): number | undefined => {
@@ -166,6 +169,16 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
           .option("buttons", {
             type: "string",
             describe: "buttons.json to load instead of the built-in one",
+          })
+          .option("page-url", {
+            type: "string",
+            default: DEFAULT_PAGE_URL,
+            describe: "hosted phone page the setup QR points at (or a self-hosted URL)",
+          })
+          .option("qr", {
+            type: "boolean",
+            default: true,
+            describe: "print the setup QR on startup; --no-qr disables it",
           }),
       )
       // Standalone counterpart to `serve --tunnel ngrok`: run it in a second
@@ -273,6 +286,8 @@ export async function runCli(
       certsDir: a.certs ?? path.join(appDir, "certs"),
       assets: resolveAssets(deps, a.public, appDir),
       buttonsFile: a.buttons,
+      pageUrl: a.pageUrl,
+      qr: a.qr,
       log,
     });
     if (a.tunnel === "ngrok") {

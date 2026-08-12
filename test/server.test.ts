@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { startServer, type RunningServer } from "../server.ts";
 import type { MouseLike } from "../lib/cursor.ts";
+import { lanIPv4 } from "../lib/net.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, "fixtures");
@@ -660,5 +661,43 @@ describe("startServer rtc signaling", () => {
     });
     expect(body.status).toBe(200);
     expect(JSON.parse(body.text)).toEqual({ sdp: "v=0 answer" });
+  });
+});
+
+describe("startServer setup QR", () => {
+  async function bootMode(mode: "all" | "adb", qr?: boolean) {
+    const logs: string[] = [];
+    running = await startServer({
+      mode,
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      publicDir: PUBLIC,
+      mouse: fakeMouse().mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: (l) => logs.push(l),
+      pauseCombo: "off",
+      ...(qr === undefined ? {} : { qr }),
+    });
+    return logs;
+  }
+
+  it("prints the QR banner outside adb mode when a LAN address exists", async () => {
+    if (lanIPv4().length === 0) return; // machine without a LAN: nothing to encode
+    const logs = await bootMode("all");
+    const joined = logs.join("\n");
+    expect(joined).toContain("Phone: scan to play");
+    expect(joined).toContain("#pc=");
+    expect(joined).toContain("local network access");
+    expect(logs.length).toBeGreaterThan(15); // the QR block itself
+  });
+
+  it("prints no QR in adb mode — USB needs no pairing", async () => {
+    const logs = await bootMode("adb");
+    expect(logs.join("\n")).not.toContain("scan to play");
+  });
+
+  it("qr: false silences the banner", async () => {
+    const logs = await bootMode("all", false);
+    expect(logs.join("\n")).not.toContain("scan to play");
   });
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { DEFAULT_PAGE_URL } from "../lib/qr.ts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCli, buildParser, resolveAssets, type CliDeps } from "../lib/cli.ts";
@@ -373,5 +374,21 @@ describe("resolveAssets", () => {
   it("falls back to public/ next to the program", async () => {
     const src = resolveAssets({}, undefined, path.join(HERE, ".."));
     expect((await src.read("index.html"))?.toString()).toContain("Lightgun");
+  });
+});
+
+describe("setup QR flags", () => {
+  it("defaults to the hosted page with the QR on", async () => {
+    const { deps, seen } = spyDeps();
+    await runCli([], deps);
+    expect(seen()!.pageUrl).toBe(DEFAULT_PAGE_URL);
+    expect(seen()!.qr).toBe(true);
+  });
+
+  it("--no-qr and --page-url pass through", async () => {
+    const { deps, seen } = spyDeps();
+    await runCli(["--no-qr", "--page-url", "https://my.site/phone/"], deps);
+    expect(seen()!.qr).toBe(false);
+    expect(seen()!.pageUrl).toBe("https://my.site/phone/");
   });
 });
