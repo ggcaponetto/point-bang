@@ -116,6 +116,33 @@ export async function fetchButtons(hosts, fetchFn, connectedHost) {
   return await (await fetchFn("./buttons.json", {})).json();
 }
 
+/** @typedef {{ i: number, label: string, w: number, h: number, primary: boolean }} AimTarget */
+
+/**
+ * Loads the aim-target list (`GET /monitors`) — how many planes the page
+ * calibrates, one per monitor. Remote mode asks the PC with the same LNA
+ * fetch shape as {@link fetchButtons}; local mode asks its own origin.
+ * Returns null on ANY failure — an old server 404s this route, and the page
+ * must fall back to the classic single-plane flow, silently.
+ * @param {string[]} hosts
+ * @param {FetchLike} fetchFn
+ * @param {string | null} [connectedHost]
+ * @returns {Promise<AimTarget[] | null>}
+ */
+export async function fetchMonitors(hosts, fetchFn, connectedHost) {
+  const host = connectedHost ?? hosts[0];
+  const url = host ? `http://${host}/monitors` : "./monitors";
+  try {
+    const res = await fetchFn(url, host ? { targetAddressSpace: "local" } : {});
+    if (!res.ok) return null;
+    const body = /** @type {{ monitors?: unknown }} */ (await res.json());
+    if (!Array.isArray(body?.monitors) || body.monitors.length === 0) return null;
+    return /** @type {AimTarget[]} */ (body.monitors);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * One signaling round-trip: offer out, answer back. The session key goes in
  * the body (never a custom header — that would add CORS preflight surface).

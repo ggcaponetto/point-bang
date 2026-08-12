@@ -3,6 +3,7 @@ import {
   parseFragment,
   buttonsUrl,
   fetchButtons,
+  fetchMonitors,
   exchangeOffer,
   createTransport,
 } from "../public/transport.js";
@@ -205,6 +206,43 @@ describe("buttonsUrl / fetchButtons", () => {
     const f = fakeFetch();
     await fetchButtons([], f.fn as never);
     expect(f.calls.map((c) => c.url)).toEqual(["./buttons.json"]);
+  });
+});
+
+describe("fetchMonitors", () => {
+  const TARGETS = { monitors: [{ i: 1, label: "D1", w: 1920, h: 1080, primary: true }] };
+  const monitorsFetch = (body: unknown = TARGETS, status = 200) => {
+    const calls: { url: string; init: Record<string, unknown> }[] = [];
+    const fn = async (url: string, init: Record<string, unknown>) => {
+      calls.push({ url, init });
+      return { ok: status === 200, status, json: async () => body };
+    };
+    return { fn, calls };
+  };
+
+  it("remote: asks the PC with the LNA marker and returns the target list", async () => {
+    const f = monitorsFetch();
+    const targets = await fetchMonitors(["a:1"], f.fn as never, "a:1");
+    expect(f.calls[0].url).toBe("http://a:1/monitors");
+    expect(f.calls[0].init.targetAddressSpace).toBe("local");
+    expect(targets).toEqual(TARGETS.monitors);
+  });
+
+  it("local: asks the page origin without the LNA marker", async () => {
+    const f = monitorsFetch();
+    await fetchMonitors([], f.fn as never);
+    expect(f.calls[0].url).toBe("./monitors");
+    expect(f.calls[0].init).toEqual({});
+  });
+
+  it("returns null on 404 (old server), garbage body, empty list, or network error", async () => {
+    expect(await fetchMonitors(["a:1"], monitorsFetch(TARGETS, 404).fn as never)).toBeNull();
+    expect(await fetchMonitors(["a:1"], monitorsFetch({ nope: 1 }).fn as never)).toBeNull();
+    expect(await fetchMonitors(["a:1"], monitorsFetch({ monitors: [] }).fn as never)).toBeNull();
+    const dead = async () => {
+      throw new Error("unreachable");
+    };
+    expect(await fetchMonitors(["a:1"], dead as never)).toBeNull();
   });
 });
 
