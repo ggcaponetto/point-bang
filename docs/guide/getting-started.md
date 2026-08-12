@@ -3,6 +3,13 @@
 The USB flow is the lowest-latency way to play: the "network" is the cable
 (steady ~3ms, zero WiFi jitter) and the phone charges while you shoot.
 
+::: tip No cable? Scan the QR
+Running `point-bang` prints a QR code — scan it with the phone, tap
+**Allow** on Chrome's one-time local-network prompt, and you're connected
+over WiFi with no certificates or flags. See
+[Playing over WiFi](/guide/wifi) for how it works.
+:::
+
 ## Requirements
 
 - **PC** — Windows or Linux. Either grab the

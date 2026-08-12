@@ -1,8 +1,29 @@
 # Protocol
 
-One WebSocket, JSON messages, phone → PC. **v1 is frozen** — fields are
-extended, never changed; v2 additions are strictly additive, so old clients
-stay valid forever.
+JSON messages, phone → PC. **v1 is frozen** — fields are extended, never
+changed; v2 additions are strictly additive, so old clients stay valid
+forever.
+
+Two transports carry the very same messages, byte for byte:
+
+- **WebSocket** — same-origin flows (USB/localhost, mkcert HTTPS, tunnel).
+- **WebRTC DataChannel** (`ordered: false, maxRetransmits: 0`) — the QR
+  flow, and preferred everywhere; the server feeds both into one handler.
+
+## Signaling: `POST /rtc/offer`
+
+The DataChannel is negotiated with a single HTTP round trip (the phone page
+is the offerer, vanilla ICE, host candidates only — no STUN):
+
+```json
+→ POST /rtc/offer            {"sdp": "<offer>"}
+← 200 application/json       {"sdp": "<answer>"}
+```
+
+Errors: `400` malformed body or rejected offer, `413` body over 64 KB,
+`403` browser Origin neither the hosted page nor same-origin. Cross-origin
+callers get CORS headers only from the `--page-url` allowlist — the socket
+ends at the mouse and keyboard, so it is never `*`.
 
 ## v1 (frozen)
 

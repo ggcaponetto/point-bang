@@ -55,11 +55,17 @@ npm run start:adb    # USB flow: sets up the adb tunnel for you
 Open **http://localhost:8443** in Chrome on the phone, tap **START AR**,
 capture the three corners — the PC cursor follows your aim.
 
-No cable? `npm run start:wifi` prints the URLs for same-network play, and
-`npm run start:tunnel` exposes a public HTTPS URL through ngrok — a secure
-context, so WebXR works from any network with no certificates and no Chrome
-flags (setup convenience, not a low-latency play transport).
-Full setup, calibration and WiFi/HTTPS details:
+### No cable? Scan the QR
+
+`npm start` (or the executable) prints a QR code: scan it, tap **Allow** on
+Chrome's one-time local-network prompt, play. The page loads from this
+repo's GitHub Pages (a secure context, so WebXR just works) and the aim
+streams over a WebRTC DataChannel **directly across your WiFi** — no
+certificates, no Chrome flags, no accounts, and nothing touches the
+internet after the page load. Needs Chrome 142+ on the phone.
+
+`npm run start:tunnel` still exposes a public ngrok URL for playing from
+another network entirely. Full setup, calibration and WiFi details:
 **[Getting Started →](https://ggcaponetto.github.io/point-bang/guide/getting-started)**
 
 ### Or skip Node entirely
@@ -93,6 +99,10 @@ point-bang --help
   the real mouse works, and resumes it right where you left off. Configurable
   (`--pause-combo ctrl+f9`, `--pause-combo off`), works in the single
   executable, never swallows the combo from the focused game.
+- 📷 **Scan-to-play wireless setup** — the startup QR loads the hosted page
+  over HTTPS and connects a WebRTC DataChannel straight across the LAN via
+  Chrome's Local Network Access permission: zero certificates, zero flags,
+  zero accounts (Chrome 142+).
 - 🌍 **Play-anywhere setup path** — `--tunnel ngrok` publishes an HTTPS URL the
   phone can open from any network, WebXR secure context and `wss://` aim
   stream included, with no certificates to install.
@@ -112,10 +122,10 @@ point-bang --help
 ## Project status
 
 Working proof of concept — calibrate, aim, shoot works end-to-end over USB
-and WiFi. On the [roadmap](https://ggcaponetto.github.io/point-bang/reference/architecture):
-a measurement harness (accuracy/drift reports), WebRTC DataChannel for
-unordered low-latency WiFi, MAME/RetroArch integration testing, and
-multi-gun support.
+and WiFi, including the QR → WebRTC consumer flow. On the
+[roadmap](https://ggcaponetto.github.io/point-bang/reference/architecture):
+a measurement harness (accuracy/drift reports), MAME/RetroArch integration
+testing, and multi-gun support.
 
 ## Contributing
 

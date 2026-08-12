@@ -27,6 +27,9 @@ node cli.ts --help               # every option is a flag; npm start -- --port 9
 npm start -- --input none        # headless: print the aim, never touch the cursor
 npm start -- --screen 2560x1440  # screen assumed when there is none to measure
 npm start -- --pause-combo alt+p # tracking-pause hotkey (default shift+space; off = none)
+npm start -- --no-qr             # skip the setup QR in the banner
+npm start -- --page-url https://you.example/phone/   # QR targets a self-hosted page
+npm run docs:build               # ALSO publishes public/ -> Pages /phone/ (build/pages.mjs)
 npm run start:tunnel             # serve + ngrok in ONE process (needs a free authtoken)
 npm run tunnel                   # ngrok ONLY, to run beside a plain `npm start`
 npm start -- --tunnel ngrok --tunnel-url https://you.ngrok-free.app   # reserved domain
@@ -82,15 +85,21 @@ use this approach; the only prior art is a hobbyist native app
 │   ├── hotkey.ts      #   pause combo: parser + GetAsyncKeyState/XQueryKeymap probes + poller
 │   ├── virtual.ts     #   same interfaces, but PRINT the aim — headless/no-DISPLAY mode
 │   ├── tunnel.ts      #   optional public HTTPS URL via the ngrok agent (opt-in)
+│   ├── rtc.ts         #   WebRTC intake: offer→answer via werift behind PeerLike; DC→handleMessage
+│   ├── cors.ts        #   allowlist CORS (hosted page + same-origin; NEVER *)
+│   ├── qr.ts          #   setup QR: DEFAULT_PAGE_URL + LAN addrs in the fragment
 │   ├── check.ts       #   `point-bang check` self-diagnosis
 │   ├── version.ts     #   VERSION literal (no package.json inside an executable)
 │   ├── net.ts         #   lanIPv4 + report formatting
 │   └── wifi.ts        #   band detection: netsh / nmcli / iw, all locale-tolerant
 ├── build/
 │   ├── sea.mjs        # esbuild -> sea-config -> postject. The ONLY build step.
+│   ├── pages.mjs      # copies PUBLIC_ASSETS -> docs/public/phone/ (docs:build step)
 │   └── smoke.mjs      # runs the built binary: --version/--help/ip/check
 ├── public/
-│   ├── index.html     # phone page: XR/DOM/WS glue only (script type=module)
+│   ├── index.html     # phone page: XR/DOM glue only (script type=module)
+│   ├── transport.js   # PC link: RTC-first ladder, WS fallback, LNA fetches (JSDoc,
+│   │                  #   injectable Peer/Socket/fetch — tested like math.js)
 │   ├── buttons.json   # 20 assignable buttons: label/action/visible/rect (phone + PC read it)
 │   └── math.js        # phone math: V, OneEuro, intersectUV… (plain JS + JSDoc,
 │                      #   imported by BOTH Chrome and vitest — keep it dependency-free)
@@ -181,6 +190,11 @@ says, PC maps ids to key combos or mouse press/release via lib/buttons.ts and
 reports malformed rects). down/up as separate events so holds work; keys
 release in reverse order.
 
+Transports (2026-08-12): the SAME JSON rides either the WS or a WebRTC
+DataChannel — `server.ts` feeds both into one `handleMessage`. Signaling is
+`POST /rtc/offer {"sdp"}` → `{"sdp"}` (400 bad/413 big/403 foreign-Origin);
+phone offers, PC answers via lib/rtc.ts.
+
 Still planned (additive): `{"type":"ping","t":...}` / `{"type":"pong",...}`
 for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 
@@ -248,9 +262,33 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   WebRTC plan is unaffected.
 - **Transport:** WebSocket over the adb/USB tunnel is the dev default and a
   legitimate final mode (steady ~3ms, zero WiFi jitter, phone charges; wired
-  guns are period-accurate). Wireless play mode = mkcert HTTPS + WebRTC
-  DataChannel (`ordered:false, maxRetransmits:0`) to avoid TCP head-of-line
-  stalls on WiFi. Keep WS as automatic fallback when RTC negotiation fails.
+  guns are period-accurate). Wireless play mode (IMPLEMENTED 2026-08-12) =
+  WebRTC DataChannel (`ordered:false, maxRetransmits:0`) to avoid TCP
+  head-of-line stalls on WiFi; WS stays the automatic fallback when RTC
+  negotiation fails on same-origin flows.
+- **Consumer wireless setup: QR → GitHub Pages → Local Network Access →
+  WebRTC** (user decision 2026-08-12; supersedes "mkcert HTTPS" as the
+  wireless story — mkcert and the Chrome flag are demoted to fallbacks).
+  Customers must never generate certificates. The industry patterns were
+  native companion app (out: abandons the browser premise), Plex-style
+  per-device certs (out: needs a domain + DNS + CA automation), and
+  hosted-page + P2P — chosen. Mechanics: `docs:build` copies `public/` into
+  `docs/public/phone/`, so the existing Pages workflow serves the page at
+  https://ggcaponetto.github.io/point-bang/phone/ (real HTTPS ⇒ WebXR secure
+  context, zero workflow changes, one source of truth). The startup QR
+  encodes that URL plus up to 3 LAN addresses (WiFi first) in the FRAGMENT
+  (never the query — it must not reach GitHub). Signaling is ONE
+  `fetch(http://<pc>:8443/rtc/offer, {targetAddressSpace:"local"})` — Chrome
+  142+ LNA exempts it from mixed content behind a one-tap permission prompt;
+  **LNA covers fetch only, never WebSockets**, so from the Pages origin
+  there is no WS and no fallback, and the failure message says what to
+  check. The PC answers via `werift` (0.24.4 EXACT pin, pure TS — a native
+  WebRTC addon cannot live in the SEA), vanilla ICE, `iceServers: []`
+  (werift's default is a Google STUN — never dial out to talk across the
+  room). CORS is an allowlist of the `--page-url` origin + same-origin, 403
+  otherwise, `Access-Control-Allow-Private-Network: true` on preflight for
+  pre-142 Chromes. buttons.json is fetched FROM THE PC in remote mode so the
+  customer's local config beats the published copy.
 - **Filtering split:** One Euro filter phone-side (kills ARCore micro-jumps;
   adaptive: smooth when slow, responsive when flicking). Extrapolation
   PC-side (fit velocity over last samples, project to now; hides network
@@ -285,10 +323,11 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
    resets on tracking lost. `--predict-ms N` opts in; 0 (default) is a strict
    newest-sample passthrough. Exit criterion still open: the Phase-2 harness
    must show a measured motion-to-cursor win before it can ever default on.
-4. **Wireless mode.** mkcert cert flow documented; WebRTC DataChannel with
-   perfect-negotiation pattern; auto-fallback to WS. Exit: cable-free play
-   with p95 jitter < 15ms on 5GHz, and honest numbers printed comparing
-   USB vs WiFi.
+4. **Wireless mode.** IMPLEMENTED 2026-08-12 (see the QR tech decision):
+   scan-to-play QR, Pages-hosted page, LNA signaling, WebRTC DataChannel
+   over the LAN, WS auto-fallback on same-origin flows. Exit criterion
+   STILL OPEN: cable-free play with p95 jitter < 15ms on 5GHz, and honest
+   numbers printed comparing USB vs WiFi — needs a phone-in-hand session.
 5. **Game integration.** Absolute input verified in MAME (`-lowlatency`,
    lightgun device settings), RetroArch cores, and one Sinden-compatible PC
    title. Windowed-game support: PC reads foreground window rect, maps u,v
@@ -365,6 +404,27 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   records too, so only `eror`/`crit` levels may be reported as a failure — and
   its real errors are multi-line with CRLF, so flatten before logging.
 - Static files must be in `public/`; path traversal guard exists in server.
+- **LNA covers `fetch()` only — never WebSockets.** From the Pages origin,
+  `ws://<lan-ip>` is mixed content with no exemption; the only data path is
+  the DataChannel, and transport.js deliberately never constructs a WS in
+  remote mode. Do not "add the WS fallback" there — it cannot work.
+- `qrcode-terminal`'s `generate` reads its error-correction level off `this`:
+  a detached reference (`const g = qrcode.generate`) throws
+  "bad rs block @ … errorCorrectLevel:undefined". lib/qr.ts wraps it in an
+  arrow for exactly this reason.
+- CORS on the server is an allowlist (the `--page-url` origin + same-origin
+  via the Host header) — never loosen it to `*`: `/rtc/offer` ends at the
+  mouse and keyboard. Same-origin browser POSTs DO send an Origin header,
+  which is why the Host comparison exists; removing it breaks the localhost
+  and tunnel flows.
+- Chrome obfuscates its host ICE candidates as mDNS `.local` names; werift
+  connects anyway because the phone reaches the PC's real-IP candidate and
+  the PC learns the phone peer-reflexively from its STUN checks. WiFi
+  **client isolation** (hotel/guest networks) blocks exactly this — the
+  signaling fetch succeeds but the DataChannel never opens.
+- The Pages copy of the phone page is GENERATED (`docs/public/` is
+  gitignored; `build/pages.mjs` fills it during `docs:build`). Never commit
+  files there and never edit them — edit `public/` and rebuild.
 - **No `FOO=bar cmd` in scripts or docs** — cmd.exe and PowerShell both reject
   it. Add a CLI flag instead. Likewise no `cp`/`rm`/`mkdir` in npm scripts:
   `build/*.mjs` are Node programs precisely so they run on both shells.
@@ -407,8 +467,9 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   code, run/extend the Phase-2 harness and report before/after p50/p95.
 - Ask before adding dependencies beyond: ws, yargs, @nut-tree-fork/libnut-*,
   esbuild + postject (SEA build only), koffi (IN USE since 2026-08-12: pause
-  hotkey key-state; also the future SendInput path), mkcert (dev tooling, not
-  a dep).
+  hotkey key-state; also the future SendInput path), werift (IN USE since
+  2026-08-12: WebRTC PC-side — pinned EXACT, pure TS on purpose), qrcode-terminal
+  (setup QR), mkcert (dev tooling, not a dep).
 - knip ignores the `@nut-tree-fork/libnut-*` packages: they are resolved by a
   computed specifier at runtime, so static analysis can't see them.
 - Commit style: small commits per phase step, message prefix `P<phase>:`.

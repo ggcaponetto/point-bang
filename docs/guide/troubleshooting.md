@@ -7,8 +7,38 @@ injection is available — which covers most of what follows.
 ## The phone can't reach the PC over WiFi (Windows)
 
 The first run raises a Windows Defender Firewall prompt. If it was dismissed,
-Node is blocked and the page never loads. Re-allow it for **private**
-networks, or use the USB flow, which needs no firewall rule.
+Node is blocked and the page never loads — and in the QR flow the phone's
+local-network fetch fails the same way, so the page shows the "Couldn't reach
+the PC" message. Re-allow it for **private** networks, or use the USB flow,
+which needs no firewall rule.
+
+## QR flow: "Couldn't reach the PC at …"
+
+The hosted page could not complete its one signaling fetch to your PC. In
+rough order of likelihood:
+
+1. **Different networks** — phone on mobile data or a guest SSID, PC on
+   ethernet in another subnet. Both must share the LAN.
+2. **Firewall** — see the Windows entry above.
+3. **Permission denied** — you dismissed Chrome's local-network prompt. Fix:
+   Chrome → ⋮ → Settings → Site settings → find the page's site → allow
+   **Local network access**, then reload.
+4. **Chrome older than 142** — the Local Network Access exemption doesn't
+   exist yet, so the fetch dies as mixed content. Update Chrome.
+5. **Wrong IP first in the QR** — VPN or virtual adapters can outrank the
+   real WLAN. The QR carries up to three addresses and the page tries each,
+   but `point-bang ip` shows what's being offered; `--page-url` plus a fresh
+   scan after disabling the VPN adapter helps.
+
+The page retries by itself (3s → 6s → 12s backoff) — once the cause is
+fixed, it connects without a reload.
+
+## QR flow: page loads but the HUD `link` stays `…`
+
+Signaling worked but the DataChannel never opened — usually client isolation
+(hotel/office WiFi that blocks phone↔PC traffic). The same network policy
+also breaks Options A and B; USB or the [tunnel](/guide/wifi) are the ways
+through.
 
 ## Linux: "libXtst.so.6: cannot open shared object file"
 

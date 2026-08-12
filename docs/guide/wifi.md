@@ -3,13 +3,41 @@
 No cable, same network. Start with:
 
 ```sh
-npm run start:wifi
+npm start            # or: point-bang / npm run start:wifi
 ```
 
-It prints exactly the URLs to open on the phone, and which option they need.
+## The QR flow (recommended — no certificates, no flags)
 
-WebXR only runs in a secure context, so plain `http://<PC-IP>:8443` exposes
-no `navigator.xr`. Two ways around it:
+The server prints a QR code on startup. That's the whole setup:
+
+1. **Run** `point-bang` (or `npm start`) on the PC. Accept the Windows
+   firewall prompt for **private networks** if it appears.
+2. **Scan** the QR with the phone camera. The phone page loads from
+   `https://ggcaponetto.github.io/point-bang/phone/` — a real HTTPS origin,
+   so WebXR gets its secure context with nothing to install.
+3. **Tap Allow** when Chrome asks to _"look for and connect to devices on
+   your local network"_ — asked once per site. Aim data then flows over a
+   WebRTC DataChannel **directly across your WiFi** (unordered,
+   no-retransmit — a lost sample is stale anyway); nothing detours through
+   the internet after the page load.
+
+Requirements: Chrome 142+ on the phone (October 2025 — Chrome self-updates,
+and WebXR AR needs a current Chrome anyway). The HUD's `link` field shows
+`rtc` when connected.
+
+How it dodges the certificate problem: the page's _origin_ is HTTPS (GitHub
+Pages), signaling is a single `fetch()` to the PC that Chrome's
+**Local Network Access** permission exempts from mixed-content blocking, and
+WebRTC brings its own encryption — so the PC never needs a TLS certificate.
+The QR encodes your PC's LAN addresses in the URL _fragment_, which never
+leaves the phone.
+
+Self-hosting the page? `--page-url https://your.site/phone/` points the QR
+(and the CORS allowlist) elsewhere; `--no-qr` silences the banner.
+
+The options below predate the QR flow and remain as fallbacks — useful on a
+de-Googled phone, a pinned old Chrome, or a network where the phone cannot
+reach the internet even once to load the page.
 
 ## Option A — Chrome flag (zero setup)
 

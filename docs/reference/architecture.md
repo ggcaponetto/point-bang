@@ -52,12 +52,17 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
 │   ├── check.ts       #   `point-bang check` self-diagnosis
 │   ├── net.ts         #   LAN address discovery
 │   ├── wifi.ts        #   band detection: netsh / nmcli / iw
-│   └── adb.ts         #   USB tunnel setup
+│   ├── adb.ts         #   USB tunnel setup
+│   ├── rtc.ts         #   WebRTC intake: offer→answer via werift, DataChannel→handler
+│   ├── cors.ts        #   allowlist CORS for the hosted page's cross-origin fetches
+│   └── qr.ts          #   setup QR: page URL + LAN addresses in the fragment
 ├── build/
 │   ├── sea.mjs        # esbuild -> sea blob -> postject: the single executable
+│   ├── pages.mjs      # copies public/ into the docs artifact -> GitHub Pages /phone/
 │   └── smoke.mjs      # exercises the built binary
 ├── public/
-│   ├── index.html     # phone page: XR/DOM/WS glue (buildless, ES module)
+│   ├── index.html     # phone page: XR/DOM glue (buildless, ES module)
+│   ├── transport.js   # PC link: RTC-first ladder + WS fallback (JSDoc-typed, tested)
 │   ├── math.js        # pure math shared by Chrome AND vitest (JSDoc-typed)
 │   └── buttons.json   # 20 assignable buttons, read by both sides
 └── test/              # vitest suites, 90% coverage enforced
@@ -80,6 +85,16 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
   jitter) but is **off by default** — the projected lead was visible as the
   cursor running ahead of aim, so `--predict-ms` is opt-in. They compose;
   they never double-smooth.
+- **Page origin ≠ server origin.** The phone page is published to GitHub
+  Pages (`/phone/`, copied from `public/` at docs-build time) so the QR flow
+  gets an HTTPS origin without the customer touching certificates. The same
+  files served by the PC keep every same-origin flow working — one source,
+  two origins. Cross-origin, the page may only fetch `buttons.json` and
+  `POST /rtc/offer`, gated by an Origin allowlist (`--page-url`); the
+  WebSocket deliberately has **no** origin check for now — tunnel origins
+  are dynamic and the Chrome-flag flow uses raw-IP origins — which matches
+  the documented trust model of the tunnel itself. A pairing token is
+  Phase 6 work.
 - **Everything injectable.** The server takes mouse/keyboard/ports/config as
   options — integration tests drive a real server with fake devices, and a
   future Windows SendInput path can replace libnut behind the same
