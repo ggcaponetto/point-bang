@@ -120,6 +120,25 @@ describe("parseButtonConfig", () => {
       "button b3: bad rect ignored (need {x,y,w,h} in % of the screen)",
     ]);
   });
+  it("accepts vibrate on/off/ms and reports unusable values", () => {
+    const cfg = parseButtonConfig(
+      JSON.stringify({
+        buttons: [
+          { id: "b1", action: "mouse:left", vibrate: true },
+          { id: "b2", action: "key:a", vibrate: false },
+          { id: "b3", action: "key:b", vibrate: 5 },
+          { id: "b4", action: "key:c", vibrate: "loud" },
+          { id: "b5", action: "key:d", vibrate: -3 },
+        ],
+      }),
+    );
+    // like rects, vibrate is phone-cosmetic: actions still map, typos are logged
+    expect([...cfg.actions.keys()]).toEqual(["b1", "b2", "b3", "b4", "b5"]);
+    expect(cfg.problems).toEqual([
+      "button b4: bad vibrate ignored (need true/false or a pulse in ms)",
+      "button b5: bad vibrate ignored (need true/false or a pulse in ms)",
+    ]);
+  });
   it("disables buttons on malformed JSON rather than throwing", () => {
     const cfg = parseButtonConfig("{{{ not json");
     expect(cfg.actions.size).toBe(0);

@@ -125,7 +125,13 @@ interface ButtonDef {
   action: string;
   visible: boolean;
   rect?: unknown;
+  /** Phone-side haptics: absent/true = default tick, false/0 = off, number = ms. */
+  vibrate?: unknown;
 }
+
+/** Whether a `vibrate` config value is one of the shapes the phone accepts. */
+const usableVibrate = (v: unknown): boolean =>
+  typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v) && v >= 0);
 
 /** Result of loading buttons.json: the id→action map plus any config problems. */
 export interface ButtonConfig {
@@ -185,6 +191,10 @@ export function parseButtonConfig(text: string): ButtonConfig {
     }
     if (d.rect !== undefined && !normalizeButtonRect(d.rect))
       problems.push(`button ${d.id}: bad rect ignored (need {x,y,w,h} in % of the screen)`);
+    // Like rects, vibrate is phone-side config — validated here so a typo
+    // shows up at server start instead of silently changing the feel.
+    if (d.vibrate !== undefined && !usableVibrate(d.vibrate))
+      problems.push(`button ${d.id}: bad vibrate ignored (need true/false or a pulse in ms)`);
     if (!d.action) continue; // unassigned on purpose
     const action = parseAction(d.action);
     if (!action) {

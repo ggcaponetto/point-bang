@@ -115,8 +115,9 @@ node cli.ts --help   # every option is a flag
   cursor loop, zeroed input-driver delays, optional aim extrapolation
   (`--predict-ms`, off by default), and live p50/p95 jitter stats to prove it.
 - **20 assignable buttons** — one JSON file maps on-screen buttons to any
-  key combo or mouse button, press-and-hold included, and places each one
-  anywhere on the screen. FIRE itself is just a remappable button.
+  key combo or mouse button, press-and-hold included, places each one
+  anywhere on the screen, and gives each a tunable haptic tick on press.
+  FIRE itself is just a remappable button.
 - **Multi-monitor aware** — `point-bang monitors` lists your displays;
   `--monitor 2` aims at one of them, `--monitor all` spans the whole
   desktop with each monitor calibrated as its own plane (bezels and

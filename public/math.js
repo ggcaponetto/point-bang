@@ -170,6 +170,22 @@ export function normalizeButtonRect(rect) {
 }
 
 /**
+ * Haptic pulse length for a button's `vibrate` config value, in ms.
+ * Absent/`true` → the default tick; `false`/`0` → 0 (off); a number → that
+ * many ms, clamped to 100 (this is a trigger click, not a phone call).
+ * Anything else is unusable → 0, and the SERVER reports it (lib/buttons) so
+ * a typo is a log line, not a mystery — same contract as button rects.
+ * @param {unknown} v @param {number} [defaultMs]
+ * @returns {number} pulse length in ms; 0 = no vibration
+ */
+export function normalizeVibrate(v, defaultMs = 10) {
+  if (v === undefined || v === true) return defaultMs;
+  if (v === false) return 0;
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0) return 0;
+  return Math.min(Math.round(v), 100);
+}
+
+/**
  * One Euro filter: adaptive low-pass — smooth when slow, responsive when
  * flicking. At-rest lag ≈ 1/(2π·minCutoff) seconds.
  */
