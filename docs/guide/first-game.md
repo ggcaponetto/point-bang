@@ -57,9 +57,9 @@ is exactly what point-bang injects.
    - **Trigger** → Left Mouse Button — that's the phone's FIRE button.
    - **A** and **B** → two keyboard keys (say `Q` and `E`).
 3. In point-bang's `buttons.json`, the phone's `A`/`B` buttons default to
-   keyboard keys — align them with what you bound in DuckStation (`--buttons
-<file>` loads a custom config; see [Buttons](/guide/buttons)). Time
-   Crisis's pedal (duck/reload) is the important one: put it on a big
+   keyboard keys — align them with what you bound in DuckStation (the
+   `--buttons` flag loads a custom config; see [Buttons](/guide/buttons)).
+   Time Crisis's pedal (duck/reload) is the important one: put it on a big
    easy-to-hit phone button.
 4. Run the game **fullscreen on the calibrated monitor**. Windowed play is
    not supported yet (the PC maps aim to the whole screen; per-window
