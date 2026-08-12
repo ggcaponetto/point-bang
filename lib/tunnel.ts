@@ -27,22 +27,16 @@ const MISSING =
   "and run `ngrok config add-authtoken <token>` once (a free account is enough)";
 
 /**
- * A reserved ngrok endpoint is always https on a plain hostname. `--tunnel-url`
- * arrives from the CLI, so it is validated and REBUILT from the parsed parts
- * before it may become an agent argument — never passed through verbatim
- * (argument-injection guard).
+ * The hostname of a `--tunnel-url` value (scheme optional), `""` when it does
+ * not parse. The caller regex-checks and REBUILDS the argument from this —
+ * the raw CLI string never reaches the agent (argument-injection guard).
  */
-const validateTunnelUrl = (raw: string): string => {
-  let host = "";
+const tunnelHost = (raw: string): string => {
   try {
-    host = new URL(raw.includes("://") ? raw : `https://${raw}`).hostname;
+    return new URL(raw.includes("://") ? raw : `https://${raw}`).hostname;
   } catch {
-    /* fall through to the rejection below */
+    return "";
   }
-  if (!/^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(host)) {
-    throw new Error(`--tunnel-url must be a plain https hostname, got "${raw}"`);
-  }
-  return `https://${host}`;
 };
 
 /** A live public endpoint pointed at the local server. */
@@ -204,7 +198,9 @@ const defaultFetchJson = async (url: string): Promise<unknown> => {
  * a convenience, and the USB and LAN flows are unaffected by its absence.
  */
 export async function startNgrok(port: number, d: NgrokDeps = {}): Promise<Tunnel> {
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  // Regex is the injection guard (digits only), the range check sanity.
+  const portArg = String(port);
+  if (!/^\d{1,5}$/.test(portArg) || port < 1 || port > 65535) {
     throw new Error(`invalid port ${port}`);
   }
   const fetchJson = d.fetchJson ?? defaultFetchJson;
@@ -218,8 +214,14 @@ export async function startNgrok(port: number, d: NgrokDeps = {}): Promise<Tunne
 
   // --log=stdout is not optional: without it the agent takes over the terminal
   // with its full-screen TUI and the server's own output becomes unreadable.
-  const args = ["http", String(port), "--log=stdout", "--log-format=json"];
-  if (d.url) args.push(`--url=${validateTunnelUrl(d.url)}`);
+  const args = ["http", portArg, "--log=stdout", "--log-format=json"];
+  if (d.url) {
+    const host = tunnelHost(d.url);
+    if (!/^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(host)) {
+      throw new Error(`--tunnel-url must be a plain https hostname, got "${d.url}"`);
+    }
+    args.push(`--url=https://${host}`);
+  }
   const child = (d.spawn ?? nodeSpawn)("ngrok", args, { stdio: ["ignore", "pipe", "pipe"] });
 
   const out: string[] = [];

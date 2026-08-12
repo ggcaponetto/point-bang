@@ -23,10 +23,12 @@ const runAdb: AdbRun = (file, args) => {
  * so nothing that arrives via the CLI can smuggle extra commands in.
  */
 export function adbReverse(port: number, run: AdbRun = runAdb): { ok: boolean; detail: string } {
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  // The regex is the injection guard (digits only — no flags, no separators);
+  // the range check makes it a real TCP port.
+  const mapping = `tcp:${port}`;
+  if (!/^tcp:\d{1,5}$/.test(mapping) || port < 1 || port > 65535) {
     return { ok: false, detail: `adb reverse skipped — invalid port ${port}` };
   }
-  const mapping = `tcp:${port}`;
   try {
     run("adb", ["reverse", mapping, mapping]);
     return {

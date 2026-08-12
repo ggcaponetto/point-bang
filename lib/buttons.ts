@@ -138,16 +138,19 @@ export interface ButtonConfig {
  * actions are reported in `problems`, never thrown — buttons degrade, the gun
  * keeps working.
  *
- * `filePath` comes from the CLI (`--buttons`), so it is canonicalized and
- * pinned to a `.json` file before the read (path-injection guard).
+ * `filePath` comes from the CLI (`--buttons`), so before the read the
+ * canonical path must be a `.json` file that still lives in its stated
+ * directory — a symlink pointing elsewhere is refused (path-injection guard).
  */
 export function loadButtonConfig(filePath: string): ButtonConfig {
   try {
+    const dir = fs.realpathSync(path.dirname(filePath));
+    const prefix = dir.endsWith(path.sep) ? dir : dir + path.sep;
     const resolved = fs.realpathSync(filePath);
-    if (path.extname(resolved).toLowerCase() !== ".json") {
+    if (!resolved.startsWith(prefix) || path.extname(resolved).toLowerCase() !== ".json") {
       return {
         actions: new Map(),
-        problems: [`buttons config must be a .json file, got ${filePath} — buttons disabled`],
+        problems: [`buttons config must be a plain .json file, got ${filePath} — buttons disabled`],
       };
     }
     return parseButtonConfig(fs.readFileSync(resolved, "utf8"));

@@ -86,7 +86,7 @@ describe("loadButtonConfig", () => {
     fs.writeFileSync(p, JSON.stringify({ buttons: [] }));
     const cfg = loadButtonConfig(p);
     expect(cfg.actions.size).toBe(0);
-    expect(cfg.problems[0]).toContain("must be a .json file");
+    expect(cfg.problems[0]).toContain("must be a plain .json file");
   });
 
   it("tolerates a config without a buttons array", () => {
