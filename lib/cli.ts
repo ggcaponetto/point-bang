@@ -3,6 +3,7 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { startServer, type ServerMode, type InputMode } from "../server.ts";
 import { parseScreenSize } from "./virtual.ts";
+import { parseMonitorArg } from "./monitors.ts";
 import { startNgrok, formatTunnelReport } from "./tunnel.ts";
 import { diskAssets, seaAssets, type AssetSource } from "./assets.ts";
 import { adbReverse } from "./adb.ts";
@@ -76,6 +77,7 @@ interface ServeArgs {
   pauseCombo: string;
   input: InputMode;
   screen?: string;
+  monitor: string;
   tunnel: "off" | "ngrok";
   tunnelUrl?: string;
   /** `tunnel` command only — its own spelling of `--tunnel-url`. */
@@ -157,6 +159,13 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
           .option("screen", {
             type: "string",
             describe: "screen size assumed with --input none, e.g. 1920x1080",
+          })
+          .option("monitor", {
+            type: "string",
+            default: "primary",
+            describe:
+              "monitor aim maps onto: 'primary', 'all' (span every monitor), " +
+              "or an index from `point-bang monitors`",
           })
           .option("tunnel", {
             choices: ["off", "ngrok"] as const,
@@ -287,6 +296,11 @@ async function runServeCommand(
     error(`--screen: expected WxH (e.g. 1920x1080), got "${a.screen}"`);
     return 1;
   }
+  const monitor = parseMonitorArg(a.monitor);
+  if (monitor === null) {
+    error(`--monitor: expected 'primary', 'all' or a monitor number, got "${a.monitor}"`);
+    return 1;
+  }
   const resolvedKey = resolveKey(a.key);
   if (resolvedKey.problem) {
     error(resolvedKey.problem);
@@ -302,6 +316,7 @@ async function runServeCommand(
       pauseCombo: a.pauseCombo,
       input: a.input,
       screen,
+      monitor,
       platform: deps.platform,
       env: deps.env,
       certsDir: a.certs ?? path.join(appDir, "certs"),

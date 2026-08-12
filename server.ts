@@ -21,6 +21,12 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { normalizeUrlPath, contentTypeFor } from "./lib/static.ts";
 import { diskAssets, type AssetSource } from "./lib/assets.ts";
+import {
+  detectMonitors,
+  selectMonitor,
+  type MonitorChoice,
+  type MonitorsReport,
+} from "./lib/monitors.ts";
 import { loadTls } from "./lib/certs.ts";
 import { lanIPv4 } from "./lib/net.ts";
 import { parseMessage, type ClientMsg } from "./lib/protocol.ts";
@@ -117,6 +123,10 @@ export interface ServerOptions {
   pauseCombo?: string;
   /** Injected combo probe for tests — replaces the real key-state FFI. */
   pauseProbe?: ComboProbe;
+  /** Where aim lands: one monitor, all of them, or the primary (default). */
+  monitor?: MonitorChoice;
+  /** Injected monitor detection for tests — replaces FFI/xrandr probing. */
+  monitorProbe?: () => Promise<MonitorsReport>;
   log?: (line: string) => void;
   statsIntervalMs?: number;
   predictMs?: number; // extrapolation lookahead; 0 (default) = off, newest sample only
@@ -163,7 +173,7 @@ type Log = (line: string) => void;
 async function setupInput(
   opts: ServerOptions,
   log: Log,
-): Promise<{ mouse: MouseLike; keyboard: KeyboardLike }> {
+): Promise<{ mouse: MouseLike; keyboard: KeyboardLike; virtual: boolean }> {
   const input = opts.input ?? "auto";
   const display = hasDisplay(opts.platform ?? process.platform, opts.env ?? process.env);
   const virtual = input === "none" || (input === "auto" && !display);
@@ -184,7 +194,49 @@ async function setupInput(
   const mouse = opts.mouse ?? (virtual ? createVirtualMouse(virtualDeps) : await createMouse());
   const keyboard =
     opts.keyboard ?? (virtual ? createVirtualKeyboard(virtualDeps) : await createKeyboard());
-  return { mouse, keyboard };
+  return { mouse, keyboard, virtual };
+}
+
+// ---------- monitor selection (where aim lands) ----------
+/**
+ * Resolves the pixel rect aim maps into. No `monitor` option (embedded use,
+ * tests) means the pre-flag behavior: the primary screen at (0,0), no
+ * probing. With a choice, detection runs (or the injected probe); a default
+ * `primary` that cannot be resolved degrades back to the screen, while an
+ * unsatisfiable explicit `all`/index throws out of startup (see
+ * {@link selectMonitor}). Virtual input is one synthetic monitor, so
+ * `primary`, `all` and index 1 work and higher indices fail loudly.
+ */
+async function resolveTargetRect(
+  opts: ServerOptions,
+  mouse: MouseLike,
+  virtual: boolean,
+  log: Log,
+): Promise<{ x: number; y: number; w: number; h: number; label: string }> {
+  const screenRect = async (): Promise<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    label: string;
+  }> => {
+    const s = await mouse.screenSize();
+    return { x: 0, y: 0, w: s.w, h: s.h, label: "screen" };
+  };
+  const choice = opts.monitor;
+  if (!choice) return screenRect();
+  const report: MonitorsReport = virtual
+    ? {
+        monitors: [
+          { x: 0, y: 0, ...(opts.screen ?? DEFAULT_SCREEN), primary: true, label: "virtual" },
+        ],
+        reason: null,
+      }
+    : await (opts.monitorProbe ?? detectMonitors)();
+  const picked = selectMonitor(report, choice);
+  if (picked) return picked;
+  log(`monitor: detection unavailable (${report.reason}) — using the primary screen`);
+  return screenRect();
 }
 
 // ---------- buttons (protocol v2) ----------
@@ -501,7 +553,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const mode = opts.mode ?? "all";
   const assets = opts.assets ?? diskAssets(opts.publicDir ?? path.join(ROOT, "public"));
 
-  const { mouse, keyboard } = await setupInput(opts, log);
+  const { mouse, keyboard, virtual } = await setupInput(opts, log);
 
   // The session key: CORS only constrains browsers — curl and any device on
   // the LAN send no Origin. Both aim intakes end at the mouse and keyboard,
@@ -512,9 +564,12 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   });
 
   // ---------- cursor control ----------
-  const size = await mouse.screenSize();
-  const rect = { x: 0, y: 0, w: size.w, h: size.h };
-  log(`Screen: ${size.w}x${size.h}`);
+  const rect = await resolveTargetRect(opts, mouse, virtual, log);
+  log(
+    opts.monitor
+      ? `Screen: ${rect.w}x${rect.h} at (${rect.x},${rect.y}) — ${rect.label}`
+      : `Screen: ${rect.w}x${rect.h}`,
+  );
   const predictor = new AimPredictor(opts.predictMs ?? 0);
   const cursor = createCursorLoop(
     mouse,

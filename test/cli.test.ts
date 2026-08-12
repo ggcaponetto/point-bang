@@ -105,6 +105,27 @@ describe("serve flags", () => {
     expect(seen()).toBeNull();
   });
 
+  it("parses --monitor and defaults it to primary", async () => {
+    const dflt = spyDeps();
+    await runCli([], dflt.deps);
+    expect(dflt.seen()!.monitor).toEqual({ kind: "primary" });
+
+    const idx = spyDeps();
+    await runCli(["--monitor", "2"], idx.deps);
+    expect(idx.seen()!.monitor).toEqual({ kind: "index", index: 2 });
+
+    const all = spyDeps();
+    await runCli(["--monitor", "all"], all.deps);
+    expect(all.seen()!.monitor).toEqual({ kind: "all" });
+  });
+
+  it("refuses an unparsable --monitor instead of booting with a guess", async () => {
+    const { deps, errors, seen } = spyDeps();
+    expect(await runCli(["--monitor", "leftmost"], deps)).toBe(1);
+    expect(errors.join("\n")).toContain("--monitor");
+    expect(seen()).toBeNull();
+  });
+
   it("supports the -m/-p short flags", async () => {
     const { deps, seen } = spyDeps();
     await runCli(["-m", "adb", "-p", "1234"], deps);
