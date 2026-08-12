@@ -17,6 +17,8 @@ npm run test:watch
 npm run typecheck                # tsc --noEmit (strict; also checks public/math.js JSDoc)
 npm run ip                       # LAN IPs, WiFi interface marked
 npm run wifi                     # 2.4 vs 5 GHz check (netsh / nmcli / iw)
+npm run monitors                 # list monitors + the indices --monitor takes
+npm start -- --monitor 2         # aim at monitor 2; 'all' spans every monitor
 npm run format / format:check    # prettier (printWidth 100)
 npm run knip                     # unused files/exports/deps — keep it clean
 npm run validate                 # format:check + typecheck + knip + test
@@ -95,6 +97,7 @@ use this approach; the only prior art is a hobbyist native app
 │   ├── check.ts       #   `point-bang check` self-diagnosis
 │   ├── version.ts     #   VERSION literal (no package.json inside an executable)
 │   ├── net.ts         #   lanIPv4 + report formatting
+│   ├── monitors.ts    #   monitor rects: EnumDisplayDevices (koffi) / xrandr; --monitor + `monitors`
 │   └── wifi.ts        #   band detection: netsh / nmcli / iw, all locale-tolerant
 ├── build/
 │   ├── sea.mjs        # esbuild -> sea-config -> postject. The ONLY core build step.
@@ -314,6 +317,18 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   adb flow stays typeable; `serve --tunnel ngrok` drops the exemption (agent
   forwards the internet to loopback). The standalone `tunnel` command cannot
   enforce it and says so. Timing-safe compare; `--key off|auto|<value>`.
+- **Multi-monitor: enumerate via EnumDisplayDevicesW/EnumDisplaySettingsExW
+  (koffi) on Windows, `xrandr --query` on Linux** (2026-08-12). libnut only
+  knows the primary screen; `EnumDisplayMonitors` was rejected because it
+  needs a C callback and the minimal `Ffi` type (load+func only) deliberately
+  has none — the chosen pair works with Buffer out-params, the same trick as
+  `XQueryKeymap`. Struct offsets in lib/monitors.ts were verified live on a
+  real negative-origin dual-monitor box, and the fake-Ffi tests write buffers
+  at those exact offsets. Selection semantics: default `primary` degrades to
+  the old whole-screen behavior when detection fails (never regress, headless
+  CI included); explicit `--monitor all|N` that can't be honored refuses to
+  start. `--monitor` maps aim only — cursor injection already spans the
+  virtual desktop.
 - **Filtering split:** One Euro filter phone-side (kills ARCore micro-jumps;
   adaptive: smooth when slow, responsive when flicking). Extrapolation
   PC-side (fit velocity over last samples, project to now; hides network
@@ -471,6 +486,14 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   makes `prettier --check` fail on a fresh clone. It is pinned to `eol=lf`.
 - Anything parsing external command output must split on `/\r?\n/` — Windows
   tools emit CRLF and a bare `"\n"` split leaves a `\r` that eats the line.
+- Multi-monitor traps: a monitor left of/above the primary has a NEGATIVE
+  origin (dmPosition is signed — `readInt32LE`, and no pixel-coordinate
+  sentinel like (-1,-1) is safe); node.exe is DPI-unaware, so DEVMODE's
+  physical pixels disagree with a virtualized SetCursorPos above 100% scaling
+  — `lib/monitors.makeDpiAware` opts the process in before enumerating; in
+  xrandr output `disconnected` CONTAINS `connected`, so match the token,
+  never the substring; a connected-but-off output has no geometry and is not
+  part of the desktop.
 - Linux WiFi interfaces are `wlp2s0`/`wlx…`, matching neither "wifi" nor
   "wlan" — `lib/net.ts` matches `^wl` for that reason.
 - Overlay controls (FIRE, slider) start hidden via **inline** style, and JS
@@ -510,4 +533,10 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   (setup QR), mkcert (dev tooling, not a dep).
 - knip ignores the `@nut-tree-fork/libnut-*` packages: they are resolved by a
   computed specifier at runtime, so static analysis can't see them.
-- Commit style: small commits per phase step, message prefix `P<phase>:`.
+- Commit style: small commits per phase step, message prefix `P<phase>:`
+  (`feat:`/`fix:`/`docs:` for work outside a numbered phase).
+- **Trunk-based development (2026-08-12):** `main` is protected by the
+  "trunk" GitHub ruleset — changes land through a short-lived branch and a
+  PR with the four CI checks green (`validate`/`sea` × ubuntu/windows);
+  squash-merge, delete the branch. The repo-admin role bypasses the ruleset
+  so `npm run release` (direct commit+tag on main) keeps working.

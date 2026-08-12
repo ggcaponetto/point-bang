@@ -117,6 +117,11 @@ node cli.ts --help   # every option is a flag
 - **20 assignable buttons** — one JSON file maps on-screen buttons to any
   key combo or mouse button, press-and-hold included, and places each one
   anywhere on the screen. FIRE itself is just a remappable button.
+- **Multi-monitor aware** — `point-bang monitors` lists your displays;
+  `--monitor 2` aims at one of them, `--monitor all` spans the whole
+  desktop, and the default stays the primary screen. (X11 multi-monitor
+  setups that relied on the old implicit span: that is `--monitor all`
+  now.)
 - **Pause hotkey** — `shift+space` pauses tracking so the real mouse
   works, and resumes right where you left off; configurable, and never
   swallows the combo from the focused game.
