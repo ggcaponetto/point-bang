@@ -16,12 +16,21 @@ interface AimMsg {
   q?: number;
   /** v2 additive: 1-based monitor index (per-monitor calibration). */
   m?: number;
+  /**
+   * v2 additive: 1 while the phone's multi-monitor calibration is still
+   * incomplete — the server must NOT apply this sample (the cursor is parked
+   * on the calibration target monitor). Resuming is the absence of the tag,
+   * so a lost message can never wedge aim (the DataChannel is unreliable).
+   */
+  cal?: 1;
 }
 interface FireMsg {
   type: "fire";
 }
 interface CalibMsg {
   type: "calib";
+  /** `"corner"` = a captured corner; `"target"` (v2 additive) = "about to
+   *  capture corners of monitor `m`" — the server parks the cursor there. */
   stage: string;
   i?: number;
   x?: number;
@@ -64,11 +73,14 @@ export function parseMessage(raw: string | Buffer): ClientMsg | null {
       if (typeof m.u !== "number" || typeof m.v !== "number") return null;
       // a malformed monitor index is dropped, not the whole sample
       if (m.m !== undefined && (!Number.isInteger(m.m) || (m.m as number) < 1)) delete m.m;
+      // same treatment for the calibration tag: only the literal 1 counts
+      if (m.cal !== undefined && m.cal !== 1) delete m.cal;
       return m as unknown as AimMsg;
     case "fire":
       return { type: "fire" };
     case "calib":
       if (typeof m.stage !== "string") return null;
+      if (m.m !== undefined && (!Number.isInteger(m.m) || (m.m as number) < 1)) delete m.m;
       return m as unknown as CalibMsg;
     case "state":
       if (m.tracking !== "good" && m.tracking !== "limited" && m.tracking !== "lost") return null;

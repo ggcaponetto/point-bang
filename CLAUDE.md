@@ -167,7 +167,9 @@ What index.html already contains (reuse, don't reinvent):
   buttons + A/B); without one it falls into the scrollable strip, "fire" into
   the big red slot — and the aim-adjust panel (nudge pad shifting sent u,v by
   0.5%/tap — applied AFTER the filter, zeroed on recalibrate — plus the
-  smoothing slider).
+  smoothing slider, plus — multi-monitor only — the SWAP button that reassigns
+  the aimed plane to the next monitor if calibration was done in the wrong
+  order; see Protocol v2).
 
 What server.ts already contains:
 
@@ -228,6 +230,20 @@ secret in the QR/URL fragment — WS presents it as `?key=`, signaling in the
 body; loopback is exempt unless `serve --tunnel ngrok` (which forwards the
 internet to loopback); `--key off` disables, `--key <v>` pins. Keys never ride
 the query/path of the page URL — fragments don't reach the page host.
+
+v2 (IMPLEMENTED 2026-08-12, additive): calibration indicator + monitor swap.
+`{"type":"calib","stage":"target","m":k}` = "about to capture corners of
+monitor k" — the PC parks the cursor at that monitor's center so the user aims
+at the right panel (wrong-order calibration was how aim ended on the wrong
+monitor). Sent before EVERY corner prompt on purpose: sends are fire-and-forget
+and the DataChannel is lossy, so the idempotent re-send is the loss recovery —
+no sticky server state anywhere. While multi-monitor calibration is incomplete
+the phone tags aim with `cal:1` and the PC drops those samples (the parked
+cursor must not be fought by aim from already-done planes); resume is the
+absence of the tag. Plane→monitor assignment is PHONE state only — `m` is just
+the slot index + 1 — so the post-calibration SWAP button in the aim panel
+permutes the per-monitor arrays (`swapMonitorSlots` in math.js) and the server
+needs no swap awareness; its predictor resets on the `m` change it sees anyway.
 
 Still planned (additive): `{"type":"ping","t":...}` / `{"type":"pong",...}`
 for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.

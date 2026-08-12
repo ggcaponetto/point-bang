@@ -31,7 +31,7 @@ import {
 import { loadTls } from "./lib/certs.ts";
 import { lanIPv4 } from "./lib/net.ts";
 import { parseMessage, type ClientMsg } from "./lib/protocol.ts";
-import { createCursorLoop, type MouseLike } from "./lib/cursor.ts";
+import { createCursorLoop, scaleToRect, type MouseLike } from "./lib/cursor.ts";
 import { AimPredictor } from "./lib/predict.ts";
 import { JitterWindow, formatJitter } from "./lib/jitter.ts";
 import { createMouse, createKeyboard } from "./lib/input.ts";
@@ -311,12 +311,17 @@ interface IntakeDeps {
   pressButton(id: string, down: boolean): Promise<boolean>;
   /** Routes a per-monitor aim sample (`aim.m`); no-op in single-rect modes. */
   setMonitor(m: number | undefined): void;
+  /** Parks the cursor on the monitor being calibrated; no-op in single-rect modes. */
+  parkOnMonitor(m: number | undefined): void;
   log: Log;
 }
 
 function createMessageHandler(d: IntakeDeps): (m: ClientMsg) => Promise<void> {
   const onAim = (m: Extract<ClientMsg, { type: "aim" }>): void => {
     if (d.isPaused()) return;
+    // Calibration-tagged samples must not move the cursor: it is parked on
+    // the monitor the phone is calibrating (see calib stage "target").
+    if (m.cal) return;
     // BEFORE the predictor sees the sample: a monitor switch resets it, and
     // this sample belongs to the new monitor's u,v space.
     d.setMonitor(m.m);
@@ -333,6 +338,13 @@ function createMessageHandler(d: IntakeDeps): (m: ClientMsg) => Promise<void> {
     }
   };
   const onCalib = (m: Extract<ClientMsg, { type: "calib" }>): void => {
+    // "about to capture corners of monitor m" — park the cursor there so the
+    // user aims at the right panel. Re-sent per corner prompt (idempotent):
+    // that is the loss recovery on the unreliable DataChannel.
+    if (m.stage === "target") {
+      d.parkOnMonitor(m.m);
+      return;
+    }
     const coords =
       m.x !== undefined ? `(${m.x.toFixed(3)}, ${m.y!.toFixed(3)}, ${m.z!.toFixed(3)})` : "";
     const mon = m.m !== undefined ? ` (monitor ${m.m})` : "";
@@ -629,6 +641,25 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   };
   const hotkey = await setupPauseHotkey(pauseCombo, opts, log, togglePause);
 
+  // Calibration target indicator: while the phone calibrates monitor m, the
+  // cursor is parked at that monitor's center so the user aims at the right
+  // panel (wrong-order calibration is what makes aim land on the wrong
+  // monitor). Tagged (`cal`) aim is dropped in onAim, so nothing fights the
+  // park; the predictor reset keeps the idle cursor loop from re-applying a
+  // stale projection over it.
+  let parkedMonitor: number | null = null;
+  const parkOnMonitor = (m: number | undefined): void => {
+    if (!rects || m === undefined || m < 1 || m > rects.length) return;
+    predictor.reset();
+    if (paused) return; // the user paused to own the mouse — do not yank it
+    const r = rects[m - 1];
+    const p = scaleToRect(0.5, 0.5, r);
+    void mouse.setPosition(p.x, p.y).catch((e: Error) => console.error("mouse:", e.message));
+    if (parkedMonitor !== m)
+      log(`calib: phone is calibrating monitor ${m} (${r.label}) — cursor parked there`);
+    parkedMonitor = m;
+  };
+
   // ---------- latency / jitter stats ----------
   const statsMs = opts.statsIntervalMs ?? 2000;
   const jitter = new JitterWindow();
@@ -644,6 +675,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     mouse,
     pressButton,
     setMonitor,
+    parkOnMonitor,
     log,
   });
   const intake = (raw: Buffer | string): void => {

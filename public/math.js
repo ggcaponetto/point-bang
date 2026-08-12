@@ -142,6 +142,31 @@ export function pickPlaneUV(planes, pos, dir) {
 }
 
 /**
+ * Reassigns which monitor a calibrated plane belongs to by swapping slots
+ * `a`,`b` (0-based) IN PLACE across every parallel per-monitor array the
+ * caller keeps (calibs, planes, filters, offsets — the aim `m` tag is just
+ * index+1, so swapping the entries swaps the mapping; the server needs no
+ * awareness). `calibs` must be among the swapped arrays: planes are rebuilt
+ * from it every frame, so permuting `planes` alone would be undone next frame.
+ * Returns the remapped 1-based active monitor. No-op (arrays untouched,
+ * `active` returned verbatim) when `a === b` or either index is unusable.
+ * @param {unknown[][]} arrays @param {number} a @param {number} b
+ * @param {number | null} active
+ * @returns {number | null}
+ */
+export function swapMonitorSlots(arrays, a, b, active) {
+  const len = arrays[0]?.length ?? 0;
+  const bad = (/** @type {number} */ i) => !Number.isInteger(i) || i < 0 || i >= len;
+  if (a === b || bad(a) || bad(b)) return active;
+  for (const arr of arrays) {
+    const tmp = arr[a];
+    arr[a] = arr[b];
+    arr[b] = tmp;
+  }
+  return active === a + 1 ? b + 1 : active === b + 1 ? a + 1 : active;
+}
+
+/**
  * Button placement from buttons.json: `rect` is `{x,y,w,h}` in percent of the
  * screen, origin top-left. Returns a copy clamped to stay on screen, or null
  * when the value is not a usable rect (the button falls back to the strip).
