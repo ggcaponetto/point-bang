@@ -16,16 +16,27 @@ the USB flow, which needs no firewall rule.
 about `point-bang.exe`: the npm flow runs under `node.exe`, which has its
 own rule. Worse, denying the prompt once creates a permanent **Block** rule
 for that binary — after that, no prompt ever reappears and every connection
-attempt fails silently. Check and fix in an **admin** PowerShell:
+attempt fails silently. Check in an **admin** PowerShell:
 
 ```powershell
 # is the exe blocked?
 Get-NetFirewallApplicationFilter |
   Where-Object Program -match 'point-bang' |
   Get-NetFirewallRule | Select-Object DisplayName, Action, Enabled
+```
 
-# replace a Block with an Allow (adjust the path to where your exe lives)
-Remove-NetFirewallRule -DisplayName "point-bang.exe"
+The simplest fix is to wipe every rule bound to the exe so Windows asks
+again — start point-bang afterwards and this time allow it on **private**
+networks (adjust the path to where your exe lives):
+
+```powershell
+Get-NetFirewallApplicationFilter -Program "C:\path\to\point-bang.exe" |
+  Get-NetFirewallRule | Remove-NetFirewallRule
+```
+
+Or skip the prompt entirely and create the Allow rule yourself:
+
+```powershell
 New-NetFirewallRule -DisplayName "point-bang" -Direction Inbound `
   -Program "C:\path\to\point-bang.exe" -Action Allow -Profile Private,Public
 ```
@@ -57,9 +68,8 @@ fixed, it connects without a reload.
 ## QR flow: page loads but the HUD `link` stays `…`
 
 Signaling worked but the DataChannel never opened — usually client isolation
-(hotel/office WiFi that blocks phone↔PC traffic). The same network policy
-also breaks Options A and B; USB or the [tunnel](/guide/wifi) are the ways
-through.
+(hotel/office WiFi that blocks phone↔PC traffic). No WiFi setup can cross
+that policy; [USB](/guide/getting-started) is the way through.
 
 ## Linux: "libXtst.so.6: cannot open shared object file"
 
@@ -94,34 +104,26 @@ handy for watching what the phone sends without your cursor running away.
 that still ends in the crash above, which is why `auto` is the default. A
 machine with no display cannot drive a real cursor at any price.
 
-## TUNNEL: failed — ERR_NGROK_4018 / authtoken required
+## "session key required" / the server logs "connection refused (missing/wrong session key)"
 
-The ngrok agent is installed but has no credential. Sign up (free) and run
-`ngrok config add-authtoken <token>` once. Other common ones: **ERR_NGROK_108**
-means another agent session is already running — stop it, or let point-bang
-adopt it by pointing that agent at this same port. The server keeps serving
-either way; only the public URL is missing.
-
-## The tunnel URL shows a warning page instead of the phone page
-
-That's ngrok's free-plan interstitial (ERR_NGROK_6024). Tap **Visit Site** —
-it appears once per URL. A reserved domain (`--tunnel-url`) means you meet it
-once ever instead of once per session.
+The phone tried to connect without this run's session key. The key is minted
+fresh on every server start and travels inside the QR — so this usually
+means the phone is holding yesterday's URL (a bookmark, an old tab, a
+reopened Chrome session). **Scan the QR again** (or retype the printed URL,
+`#key=…` included) and it connects. Restarting the server invalidates the
+old key on purpose; `--key <your-own>` keeps a stable key across restarts if
+you want bookmarks to survive, and `--key off` disables the check entirely
+on a network you trust.
 
 ## "navigator.xr missing"
 
-You opened the page via plain HTTP over the network. Use the adb tunnel
-(`localhost` is a secure context) or one of the [WiFi options](/guide/wifi).
+You opened the page via plain HTTP over the network. Use the
+[QR flow](/guide/wifi) — the hosted page is HTTPS — or the adb tunnel
+(`localhost` is a secure context).
 
 ## immersive-ar not supported
 
 Install or update **Google Play Services for AR** on the phone.
-
-## HTTPS page loads but the WebSocket stays closed
-
-The phone doesn't trust the mkcert CA yet (Option B step 2), or the cert
-doesn't include the IP you're browsing to — re-run mkcert with the current
-LAN IP.
 
 ## Hit-test never finds the screen corners
 
@@ -174,9 +176,3 @@ navigation keys all work.
 `npm run start:adb` / `point-bang serve --mode adb` (either re-establishes the
 tunnel on every start). If it reports a failure, check `adb` is on your PATH
 and USB debugging is authorized on the phone.
-
-## HTTPS is off even though certs exist
-
-`certs/` is resolved next to the program — the repo root for a checkout,
-beside the executable for the single-file build — not relative to the
-directory you happened to run from. Pass `--certs <dir>` to be explicit.

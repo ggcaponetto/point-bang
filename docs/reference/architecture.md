@@ -90,11 +90,17 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
   gets an HTTPS origin without the customer touching certificates. The same
   files served by the PC keep every same-origin flow working — one source,
   two origins. Cross-origin, the page may only fetch `buttons.json` and
-  `POST /rtc/offer`, gated by an Origin allowlist (`--page-url`); the
-  WebSocket deliberately has **no** origin check for now — tunnel origins
-  are dynamic and the Chrome-flag flow uses raw-IP origins — which matches
-  the documented trust model of the tunnel itself. A pairing token is
-  Phase 6 work.
+  `POST /rtc/offer`, gated by an Origin allowlist (`--page-url`).
+- **Session key (`lib/auth.ts`).** CORS only constrains browsers — curl and
+  any device on the LAN send no Origin — so both aim intakes are gated by a
+  per-run key: the WebSocket upgrade takes it as `?key=`, `/rtc/offer` in
+  the JSON body. The key travels in the URL **fragment** of the QR and every
+  printed URL, so it reaches the phone without ever reaching the page host.
+  Comparison is timing-safe. Loopback connections are exempt by default (the
+  adb/USB flow; a local process could move the mouse directly anyway) —
+  except under `serve --tunnel ngrok`, where the exemption is dropped
+  because the agent forwards the public internet to loopback. `--key off`
+  restores the old open-LAN behaviour; `--key <value>` pins a stable key.
 - **Everything injectable.** The server takes mouse/keyboard/ports/config as
   options — integration tests drive a real server with fake devices, and a
   future Windows SendInput path can replace libnut behind the same

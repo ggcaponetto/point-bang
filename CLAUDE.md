@@ -28,6 +28,7 @@ npm start -- --input none        # headless: print the aim, never touch the curs
 npm start -- --screen 2560x1440  # screen assumed when there is none to measure
 npm start -- --pause-combo alt+p # tracking-pause hotkey (default shift+space; off = none)
 npm start -- --no-qr             # skip the setup QR in the banner
+npm start -- --key off           # disable the session key (trusted LAN); --key <v> pins one
 npm start -- --page-url https://you.example/phone/   # QR targets a self-hosted page
 npm run docs:build               # ALSO publishes public/ -> Pages /phone/ (build/pages.mjs)
                                  # AND builds site/ -> Pages /start/ (build/site.mjs)
@@ -202,8 +203,13 @@ release in reverse order.
 
 Transports (2026-08-12): the SAME JSON rides either the WS or a WebRTC
 DataChannel — `server.ts` feeds both into one `handleMessage`. Signaling is
-`POST /rtc/offer {"sdp"}` → `{"sdp"}` (400 bad/413 big/403 foreign-Origin);
-phone offers, PC answers via lib/rtc.ts.
+`POST /rtc/offer {"sdp","key"}` → `{"sdp"}` (400 bad/413 big/403
+foreign-Origin or missing/wrong key); phone offers, PC answers via lib/rtc.ts.
+Both intakes are gated by the session key (lib/auth.ts, 2026-08-12): a per-run
+secret in the QR/URL fragment — WS presents it as `?key=`, signaling in the
+body; loopback is exempt unless `serve --tunnel ngrok` (which forwards the
+internet to loopback); `--key off` disables, `--key <v>` pins. Keys never ride
+the query/path of the page URL — fragments don't reach the page host.
 
 Still planned (additive): `{"type":"ping","t":...}` / `{"type":"pong",...}`
 for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
@@ -299,6 +305,15 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   otherwise, `Access-Control-Allow-Private-Network: true` on preflight for
   pre-142 Chromes. buttons.json is fetched FROM THE PC in remote mode so the
   customer's local config beats the published copy.
+- **Session key on every network intake** (user request 2026-08-12: "somebody
+  else on the LAN might control my pc — we don't want that"). CORS never
+  protected against non-browser clients (no Origin header ⇒ allowed), so a
+  per-run secret gates the WS upgrade (`?key=`) and `/rtc/offer` (body field).
+  It travels ONLY in URL fragments (QR, printed URLs, tunnel URL) — never the
+  query, which would reach the page host. Loopback exempt by default so the
+  adb flow stays typeable; `serve --tunnel ngrok` drops the exemption (agent
+  forwards the internet to loopback). The standalone `tunnel` command cannot
+  enforce it and says so. Timing-safe compare; `--key off|auto|<value>`.
 - **Filtering split:** One Euro filter phone-side (kills ARCore micro-jumps;
   adaptive: smooth when slow, responsive when flicking). Extrapolation
   PC-side (fit velocity over last samples, project to now; hides network
@@ -412,9 +427,14 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   not), and DENYING the prompt writes a permanent Block rule that
   suppresses future prompts for that binary. Troubleshooting documents the
   admin-PowerShell check/fix.
-- `--tunnel ngrok` publishes an **unauthenticated** socket that moves the mouse
-  and presses keys to the public internet. The startup banner says so; do not
-  quiet it. Other tunnel facts, all confirmed against agent 3.39: the free plan
+- `--tunnel ngrok` publishes a socket that moves the mouse and presses keys to
+  the public internet. Since the session key (2026-08-12) it is authenticated —
+  `serve --tunnel ngrok` drops the loopback exemption so tunnel traffic must
+  present the key — but the full printed URL (`#key=…`) is still the
+  credential, and the banner says so; do not quiet it. The standalone `tunnel`
+  command CANNOT enforce the key (a separately-started server sees its traffic
+  as exempt loopback) and warns accordingly.
+  Other tunnel facts, all confirmed against agent 3.39: the free plan
   shows a one-time ERR_NGROK_6024 interstitial to browsers (tap "Visit Site" —
   the `ngrok-skip-browser-warning` header cannot help a phone that is simply
   navigating), allows one agent session at a time, and gives a random URL

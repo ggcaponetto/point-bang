@@ -10,20 +10,29 @@ Two transports carry the very same messages, byte for byte:
 - **WebRTC DataChannel** (`ordered: false, maxRetransmits: 0`) — the QR
   flow, and preferred everywhere; the server feeds both into one handler.
 
+## Authentication: the session key
+
+Network clients must present the server's per-run session key (from the URL
+fragment the QR encodes): the WebSocket upgrade carries it as `?key=…`, the
+signaling body as an additive `"key"` field. Loopback connections are exempt
+unless the in-process tunnel is up; `--key off` disables the gate. Refusals
+are WS close `1008` and HTTP `403` respectively.
+
 ## Signaling: `POST /rtc/offer`
 
 The DataChannel is negotiated with a single HTTP round trip (the phone page
 is the offerer, vanilla ICE, host candidates only — no STUN):
 
 ```json
-→ POST /rtc/offer            {"sdp": "<offer>"}
+→ POST /rtc/offer            {"sdp": "<offer>", "key": "<session key>"}
 ← 200 application/json       {"sdp": "<answer>"}
 ```
 
 Errors: `400` malformed body or rejected offer, `413` body over 64 KB,
-`403` browser Origin neither the hosted page nor same-origin. Cross-origin
-callers get CORS headers only from the `--page-url` allowlist — the socket
-ends at the mouse and keyboard, so it is never `*`.
+`403` browser Origin neither the hosted page nor same-origin, or a missing/
+wrong session key. Cross-origin callers get CORS headers only from the
+`--page-url` allowlist — the socket ends at the mouse and keyboard, so it is
+never `*`.
 
 ## v1 (frozen)
 

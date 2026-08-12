@@ -83,6 +83,112 @@ Notes:
 - The `#pc=` fragment works from any origin serving the page — you can also
   hand-type it onto a mkcert HTTPS URL.
 
+## The ngrok tunnel
+
+`--tunnel ngrok` exposes the local server on a public HTTPS URL. Players
+never need it — the QR flow is secure by default — but as a developer it
+buys you a real secure origin for uncommitted code (above), a demo URL that
+works from any network, and a way to test on a phone that can't reach the
+LAN.
+
+```sh
+npm run start:tunnel        # server + tunnel in ONE process (= serve --tunnel ngrok)
+
+npm start                   # or keep them apart, so either restarts alone:
+npm run tunnel              # terminal 2 (= point-bang tunnel)
+```
+
+One-time setup: install the [ngrok](https://ngrok.com) agent and register a
+free authtoken with `ngrok config add-authtoken <token>`. The server then
+prints:
+
+```
+TUNNEL: https://abc123.ngrok-free.app  <-- open this on the phone, from any network
+```
+
+Because the URL is HTTPS, it is a secure context: WebXR works with no mkcert
+and no Chrome flag, and the aim WebSocket upgrades to `wss://` over the same
+tunnel — the page derives its WebSocket scheme from its own protocol.
+`tunnel` exposes port 8443 by default; pass `--port` for another one.
+
+Things to know:
+
+- ⚠️ **The printed URL ends in `#key=…` — treat the whole thing as a
+  credential.** With the tunnel in-process (`serve --tunnel ngrok`), every
+  connection must present that session key, tunnel traffic included. But
+  anyone you hand the full URL can still move your mouse and press keys;
+  don't share it, and Ctrl+C when done.
+- **The standalone `tunnel` command cannot enforce the key.** A separately
+  started server sees tunnel traffic as loopback and exempts it — the
+  command says so at startup. Use `serve --tunnel ngrok` when the tunnel
+  should be authenticated.
+- **This is tooling, not a play transport.** Every packet detours through
+  ngrok's network — use USB or LAN WiFi to actually shoot things.
+- `TUNNEL: failed — ERR_NGROK_4018` means the agent has no credential: run
+  the `add-authtoken` step. Either way the server **keeps serving**; only
+  the public URL is missing.
+- The free plan shows a one-time **"Visit Site"** interstitial
+  (ERR_NGROK_6024) to browsers. Tap through it; it won't come back for that
+  URL.
+- Free accounts get one reserved domain — pass it with
+  `--tunnel-url https://you.ngrok-free.app` so the URL survives restarts
+  instead of being random each session.
+- Only one ngrok session may run at a time on the free plan (ERR_NGROK_108).
+  If an agent is already forwarding this port, point-bang adopts it rather
+  than failing.
+- There's no region flag: current agents pick the lowest-latency region
+  themselves.
+
+## Fallback phone transports
+
+These predate the QR flow and are kept for development and odd setups — a
+de-Googled phone, a pinned old Chrome, a network where the phone cannot
+reach the internet even once to load the hosted page. They are deliberately
+absent from the player guide.
+
+Both fallbacks talk to the PC over the network, so both are subject to the
+session key: open the URLs exactly as the server prints them — they carry
+`#key=…` — or start with `--key off` on a network you trust.
+
+### Chrome flag (zero setup)
+
+1. On the phone, open `chrome://flags/#unsafe-treat-insecure-origin-as-secure`.
+2. Enable it and add `http://<PC-IP>:8443` — `npm run ip` prints your
+   addresses with the Wi-Fi interface marked, and `start:wifi` prints them
+   ready-made (with the key appended).
+3. Relaunch Chrome and open the printed URL. No HTTPS involved.
+
+### mkcert HTTPS
+
+1. On the PC, install [mkcert](https://github.com/FiloSottile/mkcert)
+   (`choco install mkcert` / `scoop install mkcert` / `brew install mkcert`),
+   then:
+
+   ```sh
+   mkcert -install
+   mkdir certs
+   mkcert -cert-file certs/cert.pem -key-file certs/key.pem localhost <PC-IP>
+   ```
+
+   Re-run the last command whenever your LAN IP changes — certs are per-IP,
+   and never commit `certs/`.
+
+   The `certs` folder is looked for **next to the program**: the repo root
+   for a checkout, or beside `point-bang.exe` for the single executable.
+   Point somewhere else with `--certs <dir>`. If the files aren't found,
+   HTTPS is silently off.
+
+2. Trust the CA on the phone: copy `rootCA.pem` (find it with
+   `mkcert -CAROOT`) to the phone and install it via Settings → Security →
+   Encryption & credentials → Install a certificate → **CA certificate**.
+
+3. `npm run start:wifi` now also serves **https://\<PC-IP\>:8444** with a
+   WebSocket over TLS. HTTP on :8443 keeps working for the USB flow.
+
+If the HTTPS page loads but the WebSocket stays closed, the phone doesn't
+trust the mkcert CA yet (step 2), or the cert doesn't include the IP you're
+browsing to — re-run mkcert with the current LAN IP.
+
 ## Quality gates
 
 - **Husky**: pre-commit runs prettier check + typecheck; pre-push runs the

@@ -72,9 +72,7 @@ point-bang serve --mode adb
 point-bang check              # is this install working?
 ```
 
-The build targets the OS it runs on; there is no cross-compiling. If you want
-HTTPS for the [WiFi flow](/guide/wifi), put `certs/cert.pem` and
-`certs/key.pem` in a `certs` folder **next to the executable**.
+The build targets the OS it runs on; there is no cross-compiling.
 
 ::: tip Windows
 The first run pops a Windows Defender Firewall prompt — allow it on private

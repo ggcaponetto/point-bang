@@ -2,8 +2,8 @@
 
 point-bang injects mouse and keyboard input on the machine that runs it —
 treat anything that can reach its socket as able to control that machine.
-The threat model and mitigations (CORS allowlist on `/rtc/offer`, the
-unauthenticated-tunnel warning, LAN-only signaling) are documented in the
+The threat model and mitigations (a per-run session key on both aim intakes,
+the CORS allowlist on `/rtc/offer`, LAN-only signaling) are documented in the
 [architecture reference](https://ggcaponetto.github.io/point-bang/reference/architecture).
 
 ## Supported versions
