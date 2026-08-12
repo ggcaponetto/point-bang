@@ -81,6 +81,14 @@ describe("loadButtonConfig", () => {
     expect(cfg.problems[0]).toContain("buttons disabled");
   });
 
+  it("refuses a config that is not a .json file — --buttons is CLI-controlled", () => {
+    const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "btn-")), "buttons.txt");
+    fs.writeFileSync(p, JSON.stringify({ buttons: [] }));
+    const cfg = loadButtonConfig(p);
+    expect(cfg.actions.size).toBe(0);
+    expect(cfg.problems[0]).toContain("must be a .json file");
+  });
+
   it("tolerates a config without a buttons array", () => {
     const cfg = loadButtonConfig(write({}));
     expect(cfg.actions.size).toBe(0);

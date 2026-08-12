@@ -26,6 +26,25 @@ const MISSING =
   "ngrok is not installed or not on PATH — install it from https://ngrok.com/download " +
   "and run `ngrok config add-authtoken <token>` once (a free account is enough)";
 
+/**
+ * A reserved ngrok endpoint is always https on a plain hostname. `--tunnel-url`
+ * arrives from the CLI, so it is validated and REBUILT from the parsed parts
+ * before it may become an agent argument — never passed through verbatim
+ * (argument-injection guard).
+ */
+const validateTunnelUrl = (raw: string): string => {
+  let host = "";
+  try {
+    host = new URL(raw.includes("://") ? raw : `https://${raw}`).hostname;
+  } catch {
+    /* fall through to the rejection below */
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(host)) {
+    throw new Error(`--tunnel-url must be a plain https hostname, got "${raw}"`);
+  }
+  return `https://${host}`;
+};
+
 /** A live public endpoint pointed at the local server. */
 export interface Tunnel {
   url: string;
@@ -185,6 +204,9 @@ const defaultFetchJson = async (url: string): Promise<unknown> => {
  * a convenience, and the USB and LAN flows are unaffected by its absence.
  */
 export async function startNgrok(port: number, d: NgrokDeps = {}): Promise<Tunnel> {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`invalid port ${port}`);
+  }
   const fetchJson = d.fetchJson ?? defaultFetchJson;
   const sleep = d.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const api = `http://127.0.0.1:${d.apiPort ?? 4040}/api/tunnels`;
@@ -197,7 +219,7 @@ export async function startNgrok(port: number, d: NgrokDeps = {}): Promise<Tunne
   // --log=stdout is not optional: without it the agent takes over the terminal
   // with its full-screen TUI and the server's own output becomes unreadable.
   const args = ["http", String(port), "--log=stdout", "--log-format=json"];
-  if (d.url) args.push(`--url=${d.url}`);
+  if (d.url) args.push(`--url=${validateTunnelUrl(d.url)}`);
   const child = (d.spawn ?? nodeSpawn)("ngrok", args, { stdio: ["ignore", "pipe", "pipe"] });
 
   const out: string[] = [];

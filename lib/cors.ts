@@ -20,23 +20,33 @@ export interface OriginInfo {
   host: string | undefined;
 }
 
-/** Whether the request may hit state-changing endpoints at all. */
-export function originAllowed(r: OriginInfo, allowed: string[]): boolean {
-  if (!r.origin) return true;
-  if (allowed.includes(r.origin)) return true;
+/**
+ * Same-origin fetches still carry Origin on POST; scheme is irrelevant
+ * here (http :8443 and https :8444 are both ours).
+ */
+const sameOrigin = (r: OriginInfo): boolean => {
   try {
-    // Same-origin fetches still carry Origin on POST; scheme is irrelevant
-    // here (http :8443 and https :8444 are both ours).
-    return new URL(r.origin).host === r.host;
+    return new URL(r.origin ?? "").host === r.host;
   } catch {
     return false;
   }
+};
+
+/** Whether the request may hit state-changing endpoints at all. */
+export function originAllowed(r: OriginInfo, allowed: string[]): boolean {
+  if (!r.origin) return true;
+  return allowed.includes(r.origin) || sameOrigin(r);
 }
 
 /**
- * Headers to attach: `{}` when no Origin is present (nothing needed), the
- * CORS set when the Origin is allowed, `null` when it is not — the caller
- * turns `null` into a 403 on anything state-changing.
+ * Headers to attach: `{}` when no Origin is present (nothing needed) or the
+ * request is same-origin (the browser only enforces CORS cross-origin), the
+ * CORS set when the Origin is on the allowlist, `null` when it is neither —
+ * the caller turns `null` into a 403 on anything state-changing.
+ *
+ * The `Access-Control-Allow-Origin` value is taken out of OUR allowlist, never
+ * echoed from the request header — reflecting a request's Origin, even a
+ * validated one, is the classic CORS-injection shape.
  *
  * `Access-Control-Allow-Private-Network` answers the Private-Network-Access
  * preflight of pre-LNA Chromes (130–141); Chrome 142+ relies on the LNA
@@ -47,10 +57,11 @@ export function corsHeaders(
   allowed: string[],
   preflight: boolean,
 ): Record<string, string> | null {
-  if (!originAllowed(r, allowed)) return null;
   if (!r.origin) return {};
+  const match = allowed.indexOf(r.origin);
+  if (match < 0) return sameOrigin(r) ? {} : null;
   const h: Record<string, string> = {
-    "Access-Control-Allow-Origin": r.origin,
+    "Access-Control-Allow-Origin": allowed[match],
     Vary: "Origin",
   };
   if (preflight) {

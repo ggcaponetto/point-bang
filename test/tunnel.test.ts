@@ -208,6 +208,38 @@ describe("startNgrok", () => {
     expect(child.killed).toBe(true);
   });
 
+  it("normalizes a bare reserved domain to an https URL", async () => {
+    const { spawn, calls } = fakeAgent();
+    let up = false;
+    await startNgrok(8443, {
+      spawn,
+      url: "mine.ngrok-free.app",
+      sleep: async () => {
+        up = true;
+      },
+      fetchJson: async () => (up ? api("https://new.ngrok-free.app", 8443) : null),
+    });
+    expect(calls[0].args).toContain("--url=https://mine.ngrok-free.app");
+  });
+
+  it("rejects a --tunnel-url that is not a plain https hostname — argument injection", async () => {
+    for (const bad of ["https://x.app --evil-flag", "not a url at all", "https://"]) {
+      const { spawn, calls } = fakeAgent();
+      await expect(
+        startNgrok(8443, { spawn, url: bad, sleep: noSleep, fetchJson: async () => null }),
+      ).rejects.toThrow(/tunnel-url/);
+      expect(calls).toHaveLength(0);
+    }
+  });
+
+  it("rejects a port that is not a sane TCP port", async () => {
+    for (const bad of [NaN, 0, 70000, 8443.5]) {
+      await expect(startNgrok(bad, { fetchJson: async () => null })).rejects.toThrow(
+        /invalid port/,
+      );
+    }
+  });
+
   it("explains how to install ngrok when the binary is missing", async () => {
     const { spawn, child } = fakeAgent();
     await expect(

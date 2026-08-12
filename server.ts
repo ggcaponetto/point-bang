@@ -417,7 +417,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const onConnection = (ws: WebSocket, req: http.IncomingMessage): void => {
     // The upgrade URL carries `?key=` (the page copies it out of the
     // fragment). 1008 = policy violation; the page shows the close reason.
-    const presented = new URL(req.url ?? "/", "http://x").searchParams.get("key");
+    // The base is a dummy for parsing only — nothing is fetched from it.
+    const presented = new URL(req.url ?? "/", "https://x").searchParams.get("key");
     if (!gate.allow(req.socket.remoteAddress, presented)) {
       log(`ws: connection refused (missing/wrong session key) from ${req.socket.remoteAddress}`);
       ws.close(1008, "session key required — scan the QR the server prints");

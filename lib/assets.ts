@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { safeResolve } from "./static.ts";
 
 /**
@@ -21,8 +22,12 @@ export interface AssetSource {
 }
 
 /**
- * Serves files from a directory, refusing anything that escapes it
- * (see {@link safeResolve}).
+ * Serves files from a directory, refusing anything that escapes it.
+ *
+ * Two layers: {@link safeResolve} rejects traversal in the requested name, and
+ * because `dir` itself can come from the CLI (`--public`), the canonical path
+ * of the file is then required to stay inside the canonical directory before
+ * it is read (path-injection guard; also refuses symlinks pointing elsewhere).
  */
 export function diskAssets(dir: string): AssetSource {
   return {
@@ -30,8 +35,13 @@ export function diskAssets(dir: string): AssetSource {
       const file = safeResolve(dir, name);
       if (!file) return null;
       try {
-        return await fs.readFile(file);
+        const base = await fs.realpath(dir);
+        const real = await fs.realpath(file);
+        const prefix = base.endsWith(path.sep) ? base : base + path.sep;
+        if (!real.startsWith(prefix)) return null;
+        return await fs.readFile(real);
       } catch {
+        // missing directory or file — a 404, exactly as before
         return null;
       }
     },

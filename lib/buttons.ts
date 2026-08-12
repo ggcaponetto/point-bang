@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { normalizeButtonRect } from "../public/math.js";
 import type { MouseButton, MouseLike } from "./cursor.ts";
 
@@ -136,10 +137,20 @@ export interface ButtonConfig {
  * Loads and validates `buttons.json` from disk. Unreadable files or bad
  * actions are reported in `problems`, never thrown — buttons degrade, the gun
  * keeps working.
+ *
+ * `filePath` comes from the CLI (`--buttons`), so it is canonicalized and
+ * pinned to a `.json` file before the read (path-injection guard).
  */
 export function loadButtonConfig(filePath: string): ButtonConfig {
   try {
-    return parseButtonConfig(fs.readFileSync(filePath, "utf8"));
+    const resolved = fs.realpathSync(filePath);
+    if (path.extname(resolved).toLowerCase() !== ".json") {
+      return {
+        actions: new Map(),
+        problems: [`buttons config must be a .json file, got ${filePath} — buttons disabled`],
+      };
+    }
+    return parseButtonConfig(fs.readFileSync(resolved, "utf8"));
   } catch (e) {
     return {
       actions: new Map(),

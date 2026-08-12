@@ -39,12 +39,25 @@ describe("corsHeaders", () => {
     expect(corsHeaders({ origin: undefined, host: "h" }, PAGES, false)).toEqual({});
   });
 
-  it("echoes the allowed Origin with Vary", () => {
+  it("answers an allowlisted Origin with the allowlist value and Vary", () => {
     const h = corsHeaders({ origin: "https://ggcaponetto.github.io", host: "h" }, PAGES, false);
     expect(h).toEqual({
       "Access-Control-Allow-Origin": "https://ggcaponetto.github.io",
       Vary: "Origin",
     });
+  });
+
+  it("returns {} for same-origin requests — CORS is only enforced cross-origin", () => {
+    expect(
+      corsHeaders({ origin: "http://localhost:8443", host: "localhost:8443" }, PAGES, false),
+    ).toEqual({});
+    expect(
+      corsHeaders(
+        { origin: "https://abc.ngrok-free.app", host: "abc.ngrok-free.app" },
+        PAGES,
+        true,
+      ),
+    ).toEqual({});
   });
 
   it("adds preflight headers including the private-network opt-in", () => {
