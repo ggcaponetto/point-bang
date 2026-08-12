@@ -26,6 +26,7 @@ npm run smoke                    # exercise the built executable
 node cli.ts --help               # every option is a flag; npm start -- --port 9000
 npm start -- --input none        # headless: print the aim, never touch the cursor
 npm start -- --screen 2560x1440  # screen assumed when there is none to measure
+npm start -- --pause-combo alt+p # tracking-pause hotkey (default shift+space; off = none)
 npm run start:tunnel             # serve + ngrok in ONE process (needs a free authtoken)
 npm run tunnel                   # ngrok ONLY, to run beside a plain `npm start`
 npm start -- --tunnel ngrok --tunnel-url https://you.ngrok-free.app   # reserved domain
@@ -76,8 +77,9 @@ use this approach; the only prior art is a hobbyist native app
 │   ├── static.ts      #   normalizeUrlPath + safeResolve (traversal) + content types
 │   ├── assets.ts      #   AssetSource: public/ on disk OR embedded SEA assets
 │   ├── certs.ts       #   optional mkcert TLS loading
-│   ├── native.ts      #   loads libnut.node: require in dev, extract+dlopen in a SEA
-│   ├── input.ts       #   MouseLike/KeyboardLike over raw libnut (koffi slots in later)
+│   ├── native.ts      #   loads libnut.node AND koffi: require in dev, extract+dlopen in a SEA
+│   ├── input.ts       #   MouseLike/KeyboardLike over raw libnut
+│   ├── hotkey.ts      #   pause combo: parser + GetAsyncKeyState/XQueryKeymap probes + poller
 │   ├── virtual.ts     #   same interfaces, but PRINT the aim — headless/no-DISPLAY mode
 │   ├── tunnel.ts      #   optional public HTTPS URL via the ngrok agent (opt-in)
 │   ├── check.ts       #   `point-bang check` self-diagnosis
@@ -153,6 +155,12 @@ What server.ts already contains:
 - Jitter stats: prints p50/p95/max of (arrival − t) minus window-min every 2s.
   (Clock offset unknown → only jitter is meaningful, not absolute latency.)
 - `fire` → left click via libnut.
+- Pause hotkey (`--pause-combo`, default shift+space, `off` disables): a PC
+  key combo toggles a gate that drops aim/fire/button-downs at the socket
+  while paused (button-UPs still pass — nothing stays stuck down), so the
+  real mouse can be used mid-session. Predictor resets on pause. Injectable
+  as `pauseProbe` — server tests pass `pauseCombo: "off"` or a fake probe,
+  never the real keyboard.
 
 ## Protocol v1 (FROZEN — extend, never change existing fields)
 
@@ -211,6 +219,18 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   it** — `node cli.ts` must always run straight from source. Constraints it
   imposes: no top-level await in `cli.ts` (CJS), `import.meta.url` is rewritten
   by a define, and no cross-compiling (build on the OS you ship for).
+- **Pause hotkey: poll global key state via koffi FFI** (user request
+  2026-08-12). `--pause-combo` (default `shift+space`) toggles tracking so
+  the real mouse works mid-session; resume without reconnecting. Reading is
+  passive polling every 25ms — `GetAsyncKeyState` on Windows, one
+  `XQueryKeymap` snapshot on X11 — NOT a hook or grab: nothing is swallowed,
+  the focused game still receives the combo, and no admin rights are needed.
+  koffi was already the sanctioned FFI dep; the raw `koffi.node` exposes the
+  same `load`/`func` API as its npm wrapper, so the SEA extracts and dlopens
+  it exactly like libnut (see the CRT pitfall below). Combos use the
+  buttons.json key vocabulary (`lib/buttons.normalizeKey`); layout-dependent
+  punctuation is rejected as unwatchable. Headless boxes and macOS degrade to
+  a logged "pause hotkey: unavailable — reason", never a crash.
 - **Public tunnel: drive the `ngrok` CLI, never its SDK** (user request
   2026-08-11). `--tunnel ngrok` gives the phone an HTTPS origin from any
   network — a secure context, so WebXR needs neither mkcert nor a Chrome flag,
@@ -312,6 +332,19 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 - Corner capture order is TL, TR, BL exactly; wrong order ⇒ mirrored/rotated
   cursor. Aspect check catches sloppy taps; predicted 4th corner is a
   further check worth adding.
+- **koffi.node must NEVER be extracted next to libnut's bundled VC++ runtime
+  DLLs.** `process.dlopen` uses LOAD_WITH_ALTERED_SEARCH_PATH, so siblings
+  satisfy CRT imports first — and koffi, built against a newer MSVC than
+  libnut's shipped msvcp140/vcruntime140, access-violates (0xC0000005) on its
+  first call under the old ones. That is why `loadKoffi` extracts into a
+  `koffi/` SUBdirectory of the cache dir. Verified: side-by-side crashes,
+  separate dirs work in either load order.
+- Pause-hotkey limits: polling sees synthetic keys too (our own injected
+  combos would trigger it — don't map a phone button to the pause combo). On
+  Wayland the X11 keymap only updates while an X11/Xwayland window has focus
+  (Proton/X11 games: fine; native Wayland apps: keys invisible). Headless =
+  hotkey off with a logged reason. The combo is NOT swallowed — the focused
+  game still receives it, so pick one the game ignores.
 - libnut on Linux needs X11 + the XTEST extension (`libx11`, `libxtst`);
   Wayland needs Xwayland and a headless box cannot inject at all. Worse, with
   the libs present but no `DISPLAY`, libnut prints "Could not open main
@@ -373,8 +406,9 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 - Prefer measured numbers over assumptions: when touching latency-relevant
   code, run/extend the Phase-2 harness and report before/after p50/p95.
 - Ask before adding dependencies beyond: ws, yargs, @nut-tree-fork/libnut-*,
-  esbuild + postject (SEA build only), koffi (Windows input path), mkcert
-  (dev tooling, not a dep).
+  esbuild + postject (SEA build only), koffi (IN USE since 2026-08-12: pause
+  hotkey key-state; also the future SendInput path), mkcert (dev tooling, not
+  a dep).
 - knip ignores the `@nut-tree-fork/libnut-*` packages: they are resolved by a
   computed specifier at runtime, so static analysis can't see them.
 - Commit style: small commits per phase step, message prefix `P<phase>:`.

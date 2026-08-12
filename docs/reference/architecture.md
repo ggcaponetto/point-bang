@@ -43,8 +43,9 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
 │   ├── cursor.ts      #   MouseLike interface + the 2ms pull loop
 │   ├── predict.ts     #   AimPredictor: velocity fit, capped lookahead (opt-in)
 │   ├── jitter.ts      #   p50/p95/max transport jitter stats
-│   ├── native.ts      #   loads libnut.node (from disk, or out of the SEA blob)
+│   ├── native.ts      #   loads libnut.node + koffi (from disk, or out of the SEA blob)
 │   ├── input.ts       #   MouseLike/KeyboardLike over libnut (delays zeroed!)
+│   ├── hotkey.ts      #   pause combo: key-state polling via koffi FFI
 │   ├── assets.ts      #   phone page from disk or from embedded SEA assets
 │   ├── static.ts      #   URL normalization + traversal guard + content types
 │   ├── certs.ts       #   optional mkcert TLS

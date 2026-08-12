@@ -1,6 +1,7 @@
 import type { MouseButton, MouseLike } from "./cursor.ts";
 import type { KeyboardLike } from "./buttons.ts";
 import { loadLibNut, type LibNut } from "./native.ts";
+import { VERSION } from "./version.ts";
 
 /**
  * Device adapters over the raw libnut addon, behind the MouseLike/KeyboardLike
@@ -30,7 +31,7 @@ const BUTTONS: Record<MouseButton, string> = {
  * @param lib Injected addon; loaded from disk (or the SEA blob) when omitted.
  */
 export async function createMouse(lib?: LibNut): Promise<MouseLike> {
-  const n = lib ?? (await loadLibNut());
+  const n = lib ?? (await loadLibNut(VERSION));
   n.setMouseDelay(0);
   return {
     async setPosition(x, y) {
@@ -59,7 +60,7 @@ export async function createMouse(lib?: LibNut): Promise<MouseLike> {
  * @param lib Injected addon; loaded from disk (or the SEA blob) when omitted.
  */
 export async function createKeyboard(lib?: LibNut): Promise<KeyboardLike> {
-  const n = lib ?? (await loadLibNut());
+  const n = lib ?? (await loadLibNut(VERSION));
   n.setKeyboardDelay(0);
   return {
     async pressKeys(names) {

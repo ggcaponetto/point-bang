@@ -24,7 +24,12 @@ const DIST = path.join(ROOT, "dist");
 const isWin = process.platform === "win32";
 
 /** Native packages stay out of the bundle — they are loaded via dlopen. */
-const EXTERNAL = ["@nut-tree-fork/libnut-linux", "@nut-tree-fork/libnut-win32", "bindings"];
+const EXTERNAL = [
+  "@nut-tree-fork/libnut-linux",
+  "@nut-tree-fork/libnut-win32",
+  "bindings",
+  "koffi",
+];
 
 /** Runtime DLLs libnut links against on Windows; they ship beside the addon. */
 const WIN_SIDECARS = [
@@ -48,6 +53,19 @@ function nativeDir() {
     throw new Error(`${pkg} is not installed — no libnut build for ${process.platform}`);
   }
   return path.join(path.dirname(entry), "build", "Release");
+}
+
+/** Locates the prebuilt koffi FFI addon (pause hotkey) for this platform. */
+function koffiNode() {
+  const triplet = `${process.platform}_${process.arch}`;
+  const pkg = `@koromix/koffi-${process.platform}-${process.arch}`;
+  let entry;
+  try {
+    entry = require.resolve(`${pkg}/package.json`);
+  } catch {
+    throw new Error(`${pkg} is not installed — no koffi build for ${triplet}`);
+  }
+  return path.join(path.dirname(entry), triplet, "koffi.node");
 }
 
 function bundle() {
@@ -79,6 +97,7 @@ function collectAssets() {
     assets[name] = path.join(ROOT, "public", name);
 
   assets["libnut.node"] = path.join(dir, "libnut.node");
+  assets["koffi.node"] = koffiNode();
   if (isWin) for (const dll of WIN_SIDECARS) assets[dll] = path.join(dir, dll);
 
   for (const [name, file] of Object.entries(assets))

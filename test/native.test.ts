@@ -4,7 +4,9 @@ import {
   sidecarAssets,
   nativeCacheDir,
   extractNative,
+  loadKoffi,
   ADDON_ASSET,
+  KOFFI_ASSET,
   type FsLike,
 } from "../lib/native.ts";
 
@@ -54,6 +56,15 @@ describe("extractNative", () => {
     expect(out).toBe(path.join("/cache", ADDON_ASSET));
   });
 
+  it("extracts the koffi addon under the name the SEA build embeds", () => {
+    // build/sea.mjs adds the asset as "koffi.node"; the loader must ask for
+    // the same key or the executable's pause hotkey dies at startup.
+    const { fs } = fakeFs();
+    expect(extractNative("/cache", [KOFFI_ASSET], read, fs)).toBe(
+      path.join("/cache", "koffi.node"),
+    );
+  });
+
   it("leaves a same-size file alone so relaunches stay cheap", () => {
     const dest = path.join("/cache", ADDON_ASSET);
     const { fs, writes } = fakeFs({ [dest]: read(ADDON_ASSET).length });
@@ -83,5 +94,15 @@ describe("extractNative", () => {
       throw new Error("ENOSPC");
     });
     expect(() => extractNative("/cache", [ADDON_ASSET], read, fs)).toThrow("ENOSPC");
+  });
+});
+
+describe("loadKoffi", () => {
+  // Loading koffi itself needs no display — only USING it against libX11
+  // does — so the real non-SEA path is safe to exercise even on headless CI.
+  it("loads the real FFI in a checkout and memoizes it", async () => {
+    const ffi = await loadKoffi();
+    expect(typeof ffi.load).toBe("function");
+    expect(await loadKoffi()).toBe(ffi);
   });
 });

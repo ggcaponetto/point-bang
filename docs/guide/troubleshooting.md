@@ -106,6 +106,17 @@ All buttons — placed ones and the strip — only appear **after calibration
 completes**. If they still don't, check the server's startup log for
 `buttons:` lines reporting config problems (a bad `rect` also lands there).
 
+## The pause hotkey does nothing
+
+Check the server's startup log. `pause hotkey: shift+space toggles tracking`
+means it is armed; `pause hotkey: unavailable — <reason>` tells you why it is
+not (headless session, no X display, an unwatchable key in the combo). Run
+`point-bang check` to see the hotkey status for your install. On Wayland the
+key state is only visible while an X11/Xwayland window has focus — Proton and
+X11 games are fine, native Wayland apps are not. Keys with layout-dependent
+codes (punctuation) cannot be watched; letters, digits, F-keys, modifiers and
+navigation keys all work.
+
 ## adb tunnel died
 
 `adb reverse` mappings die on cable replug or adb restart — just re-run

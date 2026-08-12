@@ -89,6 +89,10 @@ point-bang --help
   FIRE itself is just a remappable button.
 - 🎚️ **Tunable feel** — smoothing↔snappy slider (100% = raw aim), aim-offset
   nudge pad, `--predict-ms` lookahead control.
+- ⏸️ **Pause hotkey** — `shift+space` on the PC keyboard pauses tracking so
+  the real mouse works, and resumes it right where you left off. Configurable
+  (`--pause-combo ctrl+f9`, `--pause-combo off`), works in the single
+  executable, never swallows the combo from the focused game.
 - 🌍 **Play-anywhere setup path** — `--tunnel ngrok` publishes an HTTPS URL the
   phone can open from any network, WebXR secure context and `wss://` aim
   stream included, with no certificates to install.

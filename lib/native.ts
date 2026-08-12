@@ -4,17 +4,19 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 /**
- * Loading the libnut N-API addon — the one piece of this project that cannot
- * be pure JavaScript.
+ * Loading the native addons — the two pieces of this project that cannot be
+ * pure JavaScript: the libnut input driver and the koffi FFI (which reads
+ * global key state for the pause hotkey, see `lib/hotkey`).
  *
- * Two very different situations:
- * - **npm checkout**: `@nut-tree-fork/libnut-<platform>` is on disk, so a
- *   plain `require` of the platform package does the work.
+ * Two very different situations for each:
+ * - **npm checkout**: the package is on disk, so a plain `require` does the
+ *   work.
  * - **single executable**: a SEA blob cannot contain a native addon, so the
- *   `.node` (plus the Windows CRT DLLs that sit beside it) travels as a SEA
- *   asset, gets written to a per-version cache dir on first run, and is then
- *   handed to `process.dlopen`. libuv opens with `LOAD_WITH_ALTERED_SEARCH_PATH`
- *   on Windows, so the DLLs are found precisely because they are siblings.
+ *   `.node` (plus the Windows CRT DLLs that sit beside libnut) travels as a
+ *   SEA asset, gets written to a per-version cache dir on first run, and is
+ *   then handed to `process.dlopen`. libuv opens with
+ *   `LOAD_WITH_ALTERED_SEARCH_PATH` on Windows, so the DLLs are found
+ *   precisely because they are siblings.
  *
  * @module
  */
@@ -102,8 +104,8 @@ export function extractNative(
 }
 
 /** Opens an already-extracted `.node` file as a CommonJS module. */
-function dlopen(file: string): LibNut {
-  const m = { exports: {} as LibNut };
+function dlopen<T>(file: string): T {
+  const m = { exports: {} as T };
   process.dlopen(m, file);
   return m.exports;
 }
@@ -125,7 +127,7 @@ export async function loadLibNut(version = "0"): Promise<LibNut> {
     const file = extractNative(nativeCacheDir(version), names, (n) =>
       Buffer.from(sea.getRawAsset(n) as ArrayBuffer),
     );
-    cached = dlopen(file);
+    cached = dlopen<LibNut>(file);
     return cached;
   }
   // Not bundled: esbuild is told to leave these packages external so this
@@ -133,4 +135,49 @@ export async function loadLibNut(version = "0"): Promise<LibNut> {
   const require = createRequire(import.meta.url);
   cached = require(`@nut-tree-fork/libnut-${process.platform}`) as LibNut;
   return cached;
+}
+
+/** Asset key of the koffi FFI addon — used by the pause hotkey. */
+export const KOFFI_ASSET = "koffi.node";
+
+/** A function bound through koffi; argument/return typing happens per call site. */
+type FfiFunc = (...args: unknown[]) => unknown;
+
+/** A shared library opened by koffi (`user32.dll`, `libX11.so.6`, …). */
+interface FfiLib {
+  func(...spec: Array<string | string[]>): FfiFunc;
+}
+
+/** The slice of koffi this project calls (see `lib/hotkey`). */
+export interface Ffi {
+  load(path: string): FfiLib;
+}
+
+let cachedFfi: Ffi | null = null;
+
+/**
+ * Loads the koffi FFI addon, memoized, the same two ways as libnut:
+ * `require("koffi")` in a checkout, extract + dlopen inside the single
+ * executable. The raw `.node` exposes the very `load`/`func` surface the npm
+ * wrapper re-exports, so both paths hand back the same API.
+ */
+export async function loadKoffi(version = "0"): Promise<Ffi> {
+  if (cachedFfi) return cachedFfi;
+  const sea = await import("node:sea");
+  if (sea.isSea()) {
+    // A subdirectory, NOT the shared cache dir: koffi must never sit beside
+    // libnut's bundled VC++ runtime DLLs. LOAD_WITH_ALTERED_SEARCH_PATH would
+    // satisfy koffi's CRT imports from those older siblings, and koffi —
+    // built against a newer MSVC — access-violates on its first call under
+    // them (verified crash: exit 0xC0000005 in `point-bang check`).
+    const dir = path.join(nativeCacheDir(version), "koffi");
+    const file = extractNative(dir, [KOFFI_ASSET], (n) =>
+      Buffer.from(sea.getRawAsset(n) as ArrayBuffer),
+    );
+    cachedFfi = dlopen<Ffi>(file);
+    return cachedFfi;
+  }
+  const require = createRequire(import.meta.url);
+  cachedFfi = require("koffi") as Ffi;
+  return cachedFfi;
 }

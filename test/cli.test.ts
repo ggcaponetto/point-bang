@@ -36,6 +36,7 @@ describe("serve defaults", () => {
     expect(o.port).toBe(8443);
     expect(o.httpsPort).toBe(8444);
     expect(o.predictMs).toBe(0);
+    expect(o.pauseCombo).toBe("shift+space");
     expect(o.certsDir).toBe(path.join("/app", "certs"));
   });
 
@@ -62,6 +63,8 @@ describe("serve flags", () => {
         "9001",
         "--predict-ms",
         "35",
+        "--pause-combo",
+        "ctrl+f9",
         "--certs",
         "/c",
         "--buttons",
@@ -75,6 +78,7 @@ describe("serve flags", () => {
       port: 9000,
       httpsPort: 9001,
       predictMs: 35,
+      pauseCombo: "ctrl+f9",
       certsDir: "/c",
       buttonsFile: "/b.json",
     });
@@ -264,12 +268,17 @@ describe("tunnel command", () => {
 });
 
 describe("environment fallbacks", () => {
-  it("honours PORT/HTTPS_PORT/PREDICT_MS when no flag is given", async () => {
+  it("honours PORT/HTTPS_PORT/PREDICT_MS/PAUSE_COMBO when no flag is given", async () => {
     const { deps, seen } = spyDeps({
-      env: { PORT: "8000", HTTPS_PORT: "8001", PREDICT_MS: "5" },
+      env: { PORT: "8000", HTTPS_PORT: "8001", PREDICT_MS: "5", PAUSE_COMBO: "alt+p" },
     });
     await runCli([], deps);
-    expect(seen()).toMatchObject({ port: 8000, httpsPort: 8001, predictMs: 5 });
+    expect(seen()).toMatchObject({
+      port: 8000,
+      httpsPort: 8001,
+      predictMs: 5,
+      pauseCombo: "alt+p",
+    });
   });
 
   it("lets an explicit flag win over the environment", async () => {

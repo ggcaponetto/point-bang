@@ -79,7 +79,12 @@ const KEY_ALIASES: Record<string, string> = {
 // purpose: it is the combo separator.
 const PUNCTUATION = new Set(["`", "-", "=", "[", "]", "\\", ";", "'", ",", ".", "/"]);
 
-function normalizeKey(raw: string): string | null {
+/**
+ * Resolves one user-typed key name to its canonical (libnut) spelling, or
+ * null for anything unknown. Shared with the pause hotkey (`lib/hotkey`) so
+ * combos everywhere use the same vocabulary.
+ */
+export function normalizeKey(raw: string): string | null {
   const k = raw.trim().toLowerCase();
   if (KEY_ALIASES[k]) return KEY_ALIASES[k];
   if (/^[a-z0-9]$/.test(k)) return k;

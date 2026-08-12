@@ -1,16 +1,18 @@
 import { PUBLIC_ASSETS, type AssetSource } from "./assets.ts";
 import { parseButtonConfig } from "./buttons.ts";
-import { loadLibNut, type LibNut } from "./native.ts";
+import { parseCombo, createComboProbe } from "./hotkey.ts";
+import { loadLibNut, loadKoffi, type LibNut, type Ffi } from "./native.ts";
 import { VERSION } from "./version.ts";
 
 /**
  * `point-bang check` — does this install actually work?
  *
- * It answers the two questions that differ between a checkout and a shipped
- * executable: are the phone-page files reachable, and can the native input
- * addon be opened. Missing assets are a broken build and fail the command;
- * an unopenable addon is reported but does not, because a headless machine
- * (CI, a server over SSH) legitimately has no display to inject input into.
+ * It answers the questions that differ between a checkout and a shipped
+ * executable: are the phone-page files reachable, can the native input addon
+ * be opened, and can the pause-hotkey FFI read key state. Missing assets are
+ * a broken build and fail the command; an unopenable addon or hotkey is
+ * reported but does not, because a headless machine (CI, a server over SSH)
+ * legitimately has no display to inject into or keyboard to watch.
  *
  * @module
  */
@@ -20,6 +22,8 @@ export interface CheckDeps {
   assets: AssetSource;
   log: (line: string) => void;
   loadNative?: () => Promise<LibNut>;
+  /** koffi loader for the pause-hotkey check; tests inject a fake. */
+  loadFfi?: () => Promise<Ffi>;
   platform?: string;
   arch?: string;
   env?: Record<string, string | undefined>;
@@ -52,20 +56,33 @@ export async function runCheck(d: CheckDeps): Promise<number> {
   if (platform === "linux" && !(d.env ?? process.env).DISPLAY) {
     d.log("input: UNAVAILABLE — no DISPLAY set (headless session)");
     d.log("input: cursor injection needs a running X11 (or Xwayland) display.");
-    return missing ? 1 : 0;
+  } else {
+    try {
+      const nut = await (d.loadNative ?? (() => loadLibNut(VERSION)))();
+      const s = nut.getScreenSize();
+      d.log(`input: ready — screen ${s.width}x${s.height}`);
+    } catch (e) {
+      d.log(`input: UNAVAILABLE — ${(e as Error).message}`);
+      d.log(
+        platform === "linux"
+          ? "input: Linux needs an X11 session with XTEST (install libx11 and libxtst; Wayland must run Xwayland)."
+          : "input: the native addon could not be loaded — see the troubleshooting guide.",
+      );
+    }
   }
 
+  // The default combo stands in for whatever `serve --pause-combo` will get:
+  // what is being proven here is that the FFI loads and can watch keys at all.
   try {
-    const nut = await (d.loadNative ?? (() => loadLibNut(VERSION)))();
-    const s = nut.getScreenSize();
-    d.log(`input: ready — screen ${s.width}x${s.height}`);
-  } catch (e) {
-    d.log(`input: UNAVAILABLE — ${(e as Error).message}`);
+    const ffi = await (d.loadFfi ?? (() => loadKoffi(VERSION)))();
+    const r = createComboProbe(parseCombo("shift+space")!, { ffi, platform, env: d.env });
     d.log(
-      platform === "linux"
-        ? "input: Linux needs an X11 session with XTEST (install libx11 and libxtst; Wayland must run Xwayland)."
-        : "input: the native addon could not be loaded — see the troubleshooting guide.",
+      r.probe
+        ? "pause hotkey: ready (default shift+space)"
+        : `pause hotkey: unavailable — ${r.reason}`,
     );
+  } catch (e) {
+    d.log(`pause hotkey: unavailable — ${(e as Error).message}`);
   }
   return missing ? 1 : 0;
 }

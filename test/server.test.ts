@@ -72,6 +72,9 @@ afterEach(async () => {
 });
 
 describe("startServer (http only)", () => {
+  // pauseCombo "off" everywhere a test does not opt in: the real probe reads
+  // the actual keyboard, and a test must never react to keys the developer
+  // happens to be holding.
   async function boot() {
     const f = fakeMouse();
     const k = fakeKeyboard();
@@ -84,6 +87,7 @@ describe("startServer (http only)", () => {
       keyboard: k.keyboard,
       log: (l) => logs.push(l),
       statsIntervalMs: 50,
+      pauseCombo: "off",
     });
     return { ...f, ...k, logs, srv: running };
   }
@@ -117,6 +121,7 @@ describe("startServer (http only)", () => {
     running = await startServer({
       port: 0,
       certsDir: path.join(HERE, "no-such-dir"),
+      pauseCombo: "off",
       assets: {
         async read(name) {
           if (name === "index.html") return Buffer.from("<h1>embedded</h1>");
@@ -209,6 +214,7 @@ describe("startServer (http only)", () => {
       mouse: f.mouse,
       keyboard: fakeKeyboard().keyboard,
       log: (l) => logs.push(l),
+      pauseCombo: "off",
     });
     expect(logs.some((l) => l.includes("buttons disabled"))).toBe(true);
     expect(logs).toContain("buttons: 0 action(s) mapped");
@@ -251,6 +257,7 @@ describe("startServer (http only)", () => {
       mouse: f.mouse,
       keyboard: fakeKeyboard().keyboard,
       log: () => {},
+      pauseCombo: "off",
     });
     const ws = await wsOpen(`ws://127.0.0.1:${running.httpPort}`);
     ws.send(JSON.stringify({ type: "fire" }));
@@ -274,6 +281,7 @@ describe("startServer modes", () => {
       mouse: f.mouse,
       keyboard: fakeKeyboard().keyboard,
       log: (l) => logs.push(l),
+      pauseCombo: "off",
     });
     return { logs, srv: running };
   }
@@ -312,6 +320,7 @@ describe("startServer (with TLS certs)", () => {
       mouse: f.mouse,
       keyboard: fakeKeyboard().keyboard,
       log: (l) => logs.push(l),
+      pauseCombo: "off",
     });
     expect(running.httpsPort).not.toBeNull();
     expect(logs.some((l) => l.startsWith("WiFi: open https://"))).toBe(true);
@@ -343,6 +352,7 @@ describe("startServer input modes", () => {
       certsDir: path.join(HERE, "no-such-dir"),
       publicDir: PUBLIC,
       log: (l) => logs.push(l),
+      pauseCombo: "off",
       ...opts,
     });
     return { logs, srv: running };
@@ -396,5 +406,80 @@ describe("startServer input modes", () => {
     expect(f.moves[0]).toEqual([1919, 1079]);
     expect(logs.some((l) => l.startsWith("aim "))).toBe(false);
     ws.close();
+  });
+});
+
+describe("startServer pause hotkey", () => {
+  async function bootPaused(probe: { down(): boolean }, pauseCombo?: string) {
+    const f = fakeMouse();
+    const k = fakeKeyboard();
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      certsDir: path.join(HERE, "no-such-dir"),
+      publicDir: PUBLIC,
+      mouse: f.mouse,
+      keyboard: k.keyboard,
+      log: (l) => logs.push(l),
+      pauseProbe: probe,
+      pauseCombo,
+    });
+    return { ...f, ...k, logs, srv: running };
+  }
+
+  it("toggles pause: aim/fire/presses drop, releases pass, resume works", async () => {
+    let comboDown = false;
+    const t = await bootPaused({ down: () => comboDown });
+    expect(t.logs.some((l) => l.includes("pause hotkey: shift+space toggles tracking"))).toBe(true);
+
+    const ws = await wsOpen(`ws://127.0.0.1:${t.srv.httpPort}`);
+    // live: aim moves the cursor, b1 (mouse:right) goes down and stays held
+    ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5 }));
+    await until(() => t.moves.length > 0);
+    ws.send(JSON.stringify({ type: "button", id: "b1", down: true }));
+    await until(() => t.buttons.length === 1);
+
+    comboDown = true; // press the combo
+    await until(() => t.logs.some((l) => l.includes("tracking PAUSED")));
+    const movesWhenPaused = t.moves.length;
+
+    // paused: aim, fire and fresh presses are dropped at the socket …
+    ws.send(JSON.stringify({ type: "aim", u: 0.9, v: 0.9 }));
+    ws.send(JSON.stringify({ type: "fire" }));
+    ws.send(JSON.stringify({ type: "button", id: "b2", down: true })); // key:a
+    // … but the release of the button held across the pause still lands
+    ws.send(JSON.stringify({ type: "button", id: "b1", down: false }));
+    await until(() => t.buttons.length === 2);
+    await new Promise((r) => setTimeout(r, 30)); // a dropped aim would move within ~2ms ticks
+    expect(t.buttons).toEqual(["press:right", "release:right"]);
+    expect(t.keys).toEqual([]);
+    expect(t.clicks).toHaveLength(0);
+    expect(t.moves.length).toBe(movesWhenPaused);
+
+    comboDown = false; // release the combo …
+    await new Promise((r) => setTimeout(r, 80)); // let the watcher see the release
+    comboDown = true; // … press again to resume
+    await until(() => t.logs.some((l) => l.includes("tracking resumed")));
+    ws.send(JSON.stringify({ type: "aim", u: 0, v: 0 }));
+    await until(() => t.moves.length > movesWhenPaused);
+    expect(t.moves.at(-1)).toEqual([0, 0]);
+    ws.close();
+  });
+
+  it("disables the hotkey on an unrecognized combo, even with a probe injected", async () => {
+    const { logs } = await bootPaused({ down: () => true }, "sift+space");
+    expect(logs.some((l) => l.includes('unrecognized combo "sift+space"'))).toBe(true);
+    expect(logs.some((l) => l.includes("tracking PAUSED"))).toBe(false);
+  });
+
+  it("stops (not spams) when the probe starts throwing", async () => {
+    const { logs } = await bootPaused({
+      down: () => {
+        throw new Error("ffi died");
+      },
+    });
+    await until(() => logs.some((l) => l.includes("pause hotkey: stopped — ffi died")));
+    await new Promise((r) => setTimeout(r, 80)); // more ticks would have fired by now
+    expect(logs.filter((l) => l.includes("ffi died"))).toHaveLength(1);
   });
 });

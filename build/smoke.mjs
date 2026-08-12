@@ -38,6 +38,8 @@ run("--help", ["--help"], ["serve", "wifi", "check"]);
 run("ip", ["ip"], []);
 // The asset lines prove index.html, math.js and buttons.json travelled inside
 // the executable; without them the phone would get a 404 instead of the page.
-run("check", ["check"], ["asset index.html", "asset math.js", "action(s) mapped"]);
+// "pause hotkey:" proves the koffi FFI addon extracted and loaded from the
+// blob (its status may still be "unavailable" on a headless runner).
+run("check", ["check"], ["asset index.html", "asset math.js", "action(s) mapped", "pause hotkey:"]);
 
 process.exit(failed ? 1 : 0);

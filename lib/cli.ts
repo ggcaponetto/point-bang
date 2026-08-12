@@ -71,6 +71,7 @@ interface ServeArgs {
   port: number;
   httpsPort: number;
   predictMs: number;
+  pauseCombo: string;
   input: InputMode;
   screen?: string;
   tunnel: "off" | "ngrok";
@@ -133,6 +134,11 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
             type: "number",
             default: numFromEnv(env.PREDICT_MS) ?? 0,
             describe: "aim extrapolation lookahead in ms; 0 (default) = off",
+          })
+          .option("pause-combo", {
+            type: "string",
+            default: env.PAUSE_COMBO ?? "shift+space",
+            describe: "PC key combo that pauses/resumes tracking; 'off' disables it",
           })
           .option("certs", {
             type: "string",
@@ -259,6 +265,7 @@ export async function runCli(
       port: a.port,
       httpsPort: a.httpsPort,
       predictMs: a.predictMs,
+      pauseCombo: a.pauseCombo,
       input: a.input,
       screen,
       platform: deps.platform,

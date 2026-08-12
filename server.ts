@@ -40,6 +40,15 @@ import {
   createButtonExecutor,
   type KeyboardLike,
 } from "./lib/buttons.ts";
+import {
+  parseCombo,
+  createComboProbe,
+  watchCombo,
+  type ComboProbe,
+  type HotkeyWatcher,
+} from "./lib/hotkey.ts";
+import { loadKoffi } from "./lib/native.ts";
+import { VERSION } from "./lib/version.ts";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
@@ -74,6 +83,10 @@ export interface ServerOptions {
   mouse?: MouseLike;
   keyboard?: KeyboardLike;
   buttonsFile?: string;
+  /** PC key combo toggling tracking pause; `"off"` disables. Default `shift+space`. */
+  pauseCombo?: string;
+  /** Injected combo probe for tests — replaces the real key-state FFI. */
+  pauseProbe?: ComboProbe;
   log?: (line: string) => void;
   statsIntervalMs?: number;
   predictMs?: number; // extrapolation lookahead; 0 (default) = off, newest sample only
@@ -172,6 +185,50 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   log(`buttons: ${btnCfg.actions.size} action(s) mapped`);
   const pressButton = createButtonExecutor(btnCfg.actions, mouse, keyboard);
 
+  // ---------- pause hotkey (use the real mouse without disconnecting) ----------
+  // While paused, aim and button-downs are dropped at the socket; button-ups
+  // still pass so nothing held on the phone stays stuck down forever.
+  let paused = false;
+  let hotkey: HotkeyWatcher | null = null;
+  const pauseCombo = opts.pauseCombo ?? "shift+space";
+  const togglePause = (): void => {
+    paused = !paused;
+    // aim collected before the pause must not flick the cursor on resume
+    if (paused) predictor.reset();
+    log(
+      paused ? `tracking PAUSED — the mouse is yours (${pauseCombo} resumes)` : "tracking resumed",
+    );
+  };
+  if (pauseCombo !== "off") {
+    const keys = parseCombo(pauseCombo);
+    let probe = opts.pauseProbe ?? null;
+    let reason: string | null = null;
+    if (!keys) {
+      probe = null;
+      reason = `unrecognized combo "${pauseCombo}" (expected e.g. shift+space)`;
+    } else if (!probe) {
+      try {
+        const r = createComboProbe(keys, {
+          ffi: await loadKoffi(VERSION),
+          platform: opts.platform,
+          env: opts.env,
+        });
+        probe = r.probe;
+        reason = r.reason;
+      } catch (e) {
+        reason = (e as Error).message;
+      }
+    }
+    if (probe) {
+      hotkey = watchCombo(probe, togglePause, 25, (e) =>
+        log(`pause hotkey: stopped — ${e.message}`),
+      );
+      log(`pause hotkey: ${pauseCombo} toggles tracking (the game still receives the combo)`);
+    } else {
+      log(`pause hotkey: unavailable — ${reason}`);
+    }
+  }
+
   // ---------- latency / jitter stats ----------
   const statsMs = opts.statsIntervalMs ?? 2000;
   const jitter = new JitterWindow();
@@ -188,12 +245,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       if (!d) return;
       switch (d.type) {
         case "aim": {
+          if (paused) break;
           const arrived = Date.now();
           predictor.add(d.u, d.v, arrived);
           if (typeof d.t === "number") jitter.add(arrived - d.t);
           break;
         }
         case "fire":
+          if (paused) break;
           try {
             await mouse.click();
           } catch (e) {
@@ -214,6 +273,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
           if (d.tracking === "lost") predictor.reset();
           break;
         case "button":
+          // while paused, presses are dropped but releases go through — a
+          // button held across the pause must not stay stuck down
+          if (paused && d.down) break;
           try {
             if (!(await pressButton(d.id, d.down))) log(`button ${d.id}: no action mapped`);
           } catch (e) {
@@ -261,6 +323,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   const close = (): Promise<void> => {
     cursor.stop();
+    hotkey?.stop();
     clearInterval(statsTimer);
     for (const c of wss.clients) c.terminate();
     if (wssTls) for (const c of wssTls.clients) c.terminate();

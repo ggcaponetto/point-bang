@@ -35,6 +35,23 @@ npm start -- --port 9000 --mode adb
 node cli.ts --help
 ```
 
+## Pause to use the real mouse
+
+Press **shift+space** (on the PC keyboard) to pause tracking — the cursor is
+yours again — and press it again to resume aiming, no reconnect or
+recalibration needed. The combo is configurable and works the same in the
+single executable:
+
+```sh
+point-bang serve --pause-combo ctrl+f9   # any buttons.json-style key combo
+point-bang serve --pause-combo off       # disable the hotkey entirely
+```
+
+The keys are read passively (no global hook): the focused game still
+receives the combo, so pick one your game ignores. While paused, aim, FIRE
+and new button presses from the phone are dropped; releases still go through
+so nothing stays held down.
+
 ## No Node? The single executable
 
 `npm run build:sea` produces `dist/point-bang` (or `point-bang.exe` on
