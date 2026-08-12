@@ -412,6 +412,12 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     log(
       `USB:  adb reverse tcp:${httpPort} tcp:${httpPort}  then open http://localhost:${httpPort} on the phone`,
     );
+  if (mode === "adb" && opts.qr !== false) {
+    // localhost resolves ON THE PHONE, through the adb reverse tunnel —
+    // scanning just saves typing the URL.
+    log(`USB:  or scan to open http://localhost:${httpPort} on the phone:`);
+    for (const line of await qrLines(`http://localhost:${httpPort}`)) log(line);
+  }
 
   let httpsPort: number | null = null;
   if (httpsServer) {

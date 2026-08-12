@@ -31,8 +31,10 @@ npm install
 npm run start:adb   # starts the server AND sets up the adb tunnel
 ```
 
-Then open **http://localhost:8443** in Chrome on the phone. `localhost` is a
-secure context, so WebXR works without any HTTPS certificate.
+Then open **http://localhost:8443** in Chrome on the phone — the server
+prints a QR for it, so you can scan instead of typing (`localhost` resolves
+on the phone, through the adb tunnel). It is a secure context, so WebXR
+works without any HTTPS certificate.
 
 Every option is a flag — no environment variables, so the same command works
 in bash, cmd.exe and PowerShell:

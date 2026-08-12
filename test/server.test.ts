@@ -691,13 +691,19 @@ describe("startServer setup QR", () => {
     expect(logs.length).toBeGreaterThan(15); // the QR block itself
   });
 
-  it("prints no QR in adb mode — USB needs no pairing", async () => {
+  it("adb mode: prints a localhost QR instead of the hosted-page one", async () => {
     const logs = await bootMode("adb");
-    expect(logs.join("\n")).not.toContain("scan to play");
+    const joined = logs.join("\n");
+    expect(joined).not.toContain("scan to play"); // no wireless pairing over USB
+    expect(joined).toMatch(/scan to open http:\/\/localhost:\d+ on the phone/);
+    expect(logs.length).toBeGreaterThan(15); // the QR block itself
   });
 
-  it("qr: false silences the banner", async () => {
-    const logs = await bootMode("all", false);
-    expect(logs.join("\n")).not.toContain("scan to play");
+  it("qr: false silences the banner in every mode", async () => {
+    const all = await bootMode("all", false);
+    expect(all.join("\n")).not.toContain("scan to play");
+    await running!.close();
+    const adb = await bootMode("adb", false);
+    expect(adb.join("\n")).not.toContain("scan to open");
   });
 });
