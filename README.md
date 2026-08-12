@@ -18,15 +18,15 @@ No custom hardware. No markers. No sensor bars.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node ≥ 23.6](https://img.shields.io/badge/node-%E2%89%A5%2023.6-brightgreen)](https://nodejs.org)
 
-**[🎯 Start here (players)](https://ggcaponetto.github.io/point-bang/start/)** ·
-[📖 Documentation](https://ggcaponetto.github.io/point-bang/) ·
+**[Start here (players)](https://ggcaponetto.github.io/point-bang/start/)** ·
+[Documentation](https://ggcaponetto.github.io/point-bang/) ·
 [API Reference](https://ggcaponetto.github.io/point-bang/api/)
 
 </div>
 
 ---
 
-## 🎮 Getting started (players)
+## Getting started (players)
 
 No Node, no build tools, no certificates — three steps:
 
@@ -50,19 +50,24 @@ through Time Crisis in DuckStation and MAME lightgun classics. Prefer a
 cable? The [USB flow](https://ggcaponetto.github.io/point-bang/guide/getting-started)
 has the lowest jitter of all and charges the phone while you play.
 
+Alternatively, you can skip setting up a game and just move the PC cursor around with your phone to test the aim.
+
 ## How it works
 
 ```mermaid
 flowchart LR
-    subgraph phone [📱 Phone — Chrome WebXR]
+    subgraph phone [Phone — Chrome WebXR]
         A[ARCore 6DoF pose] --> B[aim ray × calibrated screen plane]
         B --> C[One Euro filter]
+        H[on-screen buttons<br/>from buttons.json]
     end
-    C -- "WebRTC DataChannel (LAN) or WebSocket (USB)" --> D
-    subgraph pc [🖥️ PC — Node]
-        D[newest aim sample<br/>optional prediction] --> E[2ms cursor loop]
-        E --> F[absolute mouse input]
-        D -.-> G[20 configurable buttons<br/>key combos & clicks]
+    C -- "WebRTC DataChannel (LAN)<br/>or WebSocket (USB)" --> D
+    H --> D
+    subgraph pc [PC — Node]
+        D[protocol handler] --> E[newest aim sample<br/>optional prediction, off by default]
+        E --> F[2ms cursor loop]
+        F --> G[absolute mouse input]
+        D --> I[button executor<br/>key combos and clicks]
     end
 ```
 
@@ -74,7 +79,7 @@ self-correcting as ARCore refines its map of your room. The wireless setup
 needs **zero certificates**: the phone page is hosted over HTTPS, signaling
 is one Local-Network-Access fetch, and WebRTC brings its own encryption.
 
-## 🛠️ Getting started (developers)
+## Getting started (developers)
 
 Requires Node ≥ 23.6 (TypeScript runs natively via type stripping — no
 build step anywhere in the dev loop):
@@ -100,28 +105,28 @@ node cli.ts --help   # every option is a flag
 
 ## Highlights
 
-- 🎯 **Absolute aim, no drift** — WebXR `immersive-ar` with anchor-pinned,
+- **Absolute aim, no drift** — WebXR `immersive-ar` with anchor-pinned,
   self-correcting calibration; two-ray fallback for hard-to-track screens.
-- 📷 **Scan-to-play wireless setup** — the startup QR loads the hosted page
+- **Scan-to-play wireless setup** — the startup QR loads the hosted page
   over HTTPS and connects a WebRTC DataChannel straight across the LAN via
   Chrome's Local Network Access permission: zero certificates, zero flags,
   zero accounts (Chrome 142+).
-- ⚡ **Latency-obsessed** — One Euro filtering phone-side, a 2ms newest-wins
+- **Latency-obsessed** — One Euro filtering phone-side, a 2ms newest-wins
   cursor loop, zeroed input-driver delays, optional aim extrapolation
   (`--predict-ms`, off by default), and live p50/p95 jitter stats to prove it.
-- 🕹️ **20 assignable buttons** — one JSON file maps on-screen buttons to any
+- **20 assignable buttons** — one JSON file maps on-screen buttons to any
   key combo or mouse button, press-and-hold included, and places each one
   anywhere on the screen. FIRE itself is just a remappable button.
-- ⏸️ **Pause hotkey** — `shift+space` pauses tracking so the real mouse
+- **Pause hotkey** — `shift+space` pauses tracking so the real mouse
   works, and resumes right where you left off; configurable, and never
   swallows the combo from the focused game.
-- 🌍 **Play-anywhere setup path** — `--tunnel ngrok` publishes an HTTPS URL
+- **Play-anywhere setup path** — `--tunnel ngrok` publishes an HTTPS URL
   the phone can open from any network.
-- 👀 **Runs headless** — no display? `serve` prints the aim instead of
+- **Runs headless** — no display? `serve` prints the aim instead of
   moving a cursor; `--input none` forces it anywhere.
-- 🖥️ **Windows and Linux, equally** — one yargs CLI, no bash-only syntax,
+- **Windows and Linux, equally** — one yargs CLI, no bash-only syntax,
   CI runs the whole suite on both.
-- 🧪 **Seriously tested** — 300+ tests, 90%+ coverage enforced on every
+- **Seriously tested** — 300+ tests, 90%+ coverage enforced on every
   metric, integration tests with fake input devices, prettier/knip/husky
   gates, Codecov + SonarQube quality tracking.
 
