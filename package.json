@@ -13,6 +13,7 @@
     "start:wifi": "node cli.ts serve --mode wifi",
     "ip": "node cli.ts ip",
     "wifi": "node cli.ts wifi",
+    "monitors": "node cli.ts monitors",
     "check": "node cli.ts check",
     "build:sea": "node build/sea.mjs",
     "smoke": "node build/smoke.mjs",

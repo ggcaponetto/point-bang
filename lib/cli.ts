@@ -3,7 +3,8 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { startServer, type ServerMode, type InputMode } from "../server.ts";
 import { parseScreenSize } from "./virtual.ts";
-import { parseMonitorArg } from "./monitors.ts";
+import { parseMonitorArg, monitorsMain } from "./monitors.ts";
+import type { Ffi } from "./native.ts";
 import { startNgrok, formatTunnelReport } from "./tunnel.ts";
 import { diskAssets, seaAssets, type AssetSource } from "./assets.ts";
 import { adbReverse } from "./adb.ts";
@@ -45,6 +46,8 @@ export interface CliDeps {
   appDir?: string;
   /** Native addon loader for `check`; tests inject one so no real device is touched. */
   loadNative?: () => Promise<LibNut>;
+  /** FFI loader for `monitors`; tests inject one so no real user32 is called. */
+  loadFfi?: () => Promise<Ffi>;
   /** Public-tunnel starter; tests inject one so no agent is ever spawned. */
   tunnel?: typeof startNgrok;
   /** Registers teardown; tests inject one to avoid real signal handlers. */
@@ -217,6 +220,7 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
       )
       .command("ip", "List this PC's LAN IPv4 addresses, marking the WiFi one")
       .command("wifi", "Report the WiFi band (5 GHz is what you want)")
+      .command("monitors", "List connected monitors (pick one with serve --monitor)")
       .command("check", "Verify the phone page files and the native input addon", (y) =>
         y.option("public", publicOption),
       )
@@ -359,6 +363,14 @@ export async function runCli(
   }
   if (command === "wifi") {
     return wifiMain(deps.exec, log, deps.platform ?? process.platform);
+  }
+  if (command === "monitors") {
+    return monitorsMain({
+      platform: deps.platform,
+      exec: deps.exec,
+      loadFfi: deps.loadFfi,
+      log,
+    });
   }
 
   const a = parsed as unknown as ServeArgs;

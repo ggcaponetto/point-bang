@@ -423,10 +423,34 @@ describe("default dependencies", () => {
   });
 });
 
+describe("monitors command", () => {
+  it("lists monitors through the injected seams and exits 0", async () => {
+    const { deps, logs } = spyDeps({
+      platform: "linux",
+      exec: () => "eDP-1 connected primary 1920x1080+0+0 (normal)",
+    });
+    expect(await runCli(["monitors"], deps)).toBe(0);
+    expect(logs[0]).toContain("eDP-1");
+    expect(logs.join("\n")).toContain("--monitor all");
+  });
+
+  it("exits 1 with the reason when nothing is detected", async () => {
+    const { deps, logs } = spyDeps({
+      platform: "linux",
+      exec: () => {
+        throw new Error("xrandr: not found");
+      },
+    });
+    expect(await runCli(["monitors"], deps)).toBe(1);
+    expect(logs.join("\n")).toContain("xrandr unavailable");
+  });
+});
+
 describe("buildParser", () => {
   it("documents every command in --help", async () => {
     const help = await buildParser([], {}).getHelp();
-    for (const cmd of ["serve", "tunnel", "ip", "wifi", "check"]) expect(help).toContain(cmd);
+    for (const cmd of ["serve", "tunnel", "ip", "wifi", "monitors", "check"])
+      expect(help).toContain(cmd);
   });
 });
 
