@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { DEFAULT_PAGE_URL } from "../lib/qr.ts";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PHONE_ASSETS } from "../lib/assets.ts";
 import { runCli, buildParser, resolveAssets, type CliDeps } from "../lib/cli.ts";
 import type { ServerOptions, RunningServer } from "../server.ts";
 
@@ -25,6 +28,8 @@ function spyDeps(extra: CliDeps = {}) {
     adb: () => ({ ok: true, detail: "adb ok" }),
     appDir: "/app",
     env: {},
+    // the real one would spawn npm — never in a test
+    buildEditor: () => {},
     ...extra,
   };
   return { deps, logs, errors, seen: () => opts as ServerOptions | null };
@@ -384,12 +389,17 @@ describe("other commands", () => {
   });
 
   it("check validates the real public/ files", async () => {
+    // The real phone files plus a stub for the GENERATED editor.html — the
+    // suite must stay green on a fresh clone where the editor is not built.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pb-check-"));
+    for (const name of PHONE_ASSETS) fs.copyFileSync(path.join(PUBLIC, name), path.join(dir, name));
+    fs.writeFileSync(path.join(dir, "editor.html"), "<!doctype html>");
     // loadNative is injected: the suite must never touch a real input device.
     const { deps, logs } = spyDeps({
       loadNative: async () => ({ getScreenSize: () => ({ width: 800, height: 600 }) }) as never,
       env: { DISPLAY: ":0" },
     });
-    const code = await runCli(["check", "--public", PUBLIC], deps);
+    const code = await runCli(["check", "--public", dir], deps);
     expect(code).toBe(0);
     expect(logs.some((l) => l.startsWith("asset index.html"))).toBe(true);
     expect(logs).toContain("input: ready — screen 800x600");
