@@ -108,14 +108,13 @@ machine with no display cannot drive a real cursor at any price.
 
 The server never fights another program for its port:
 
-- **Default port (8443/8444) busy** → it logs
+- **Default port (8443) busy** → it logs
   `http: port 8443 is busy — using a free port instead` and starts on an
   OS-assigned free port. Nothing else to do: the banner, QR and every printed
   URL carry the port it actually bound, and the phone connects through those
   — in adb mode the `adb reverse` mapping follows the real port too.
-- **Explicit `--port`/`PORT` (or `--https-port`/`HTTPS_PORT`) busy** → it
-  refuses with a one-line error instead of silently moving off the port you
-  pinned. Close the other program (often a second point-bang), pick another
+- **Explicit `--port`/`PORT` busy** → it refuses with a one-line error
+  instead of silently moving off the port you pinned. Close the other program (often a second point-bang), pick another
   port, or use `--port 0` to let the OS choose every run.
 
 One caveat: the standalone `tunnel` command cannot see which port a

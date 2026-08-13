@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
-import https from "node:https";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { startServer, type RunningServer } from "../server.ts";
@@ -12,7 +11,6 @@ import type { MouseLike } from "../lib/cursor.ts";
 import { lanIPv4 } from "../lib/net.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURES = path.join(HERE, "fixtures");
 const PUBLIC = path.join(HERE, "..", "public");
 
 function fakeMouse() {
@@ -85,7 +83,6 @@ describe("startServer (http only)", () => {
     const logs: string[] = [];
     running = await startServer({
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       publicDir: PUBLIC,
       mouse: f.mouse,
       keyboard: k.keyboard,
@@ -98,9 +95,7 @@ describe("startServer (http only)", () => {
   }
 
   it("serves the phone page and math module, 404s the rest", async () => {
-    const { srv, logs } = await boot();
-    expect(srv.httpsPort).toBeNull();
-    expect(logs.join("\n")).toContain("HTTPS off");
+    const { srv } = await boot();
 
     const base = `http://127.0.0.1:${srv.httpPort}`;
     const page = await fetch(base + "/");
@@ -125,7 +120,6 @@ describe("startServer (http only)", () => {
     const f = fakeMouse();
     running = await startServer({
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       pauseCombo: "off",
       assets: {
         async read(name) {
@@ -227,7 +221,6 @@ describe("startServer (http only)", () => {
     const logs: string[] = [];
     running = await startServer({
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       publicDir: PUBLIC,
       buttonsFile: path.join(HERE, "no-such-buttons.json"),
       mouse: f.mouse,
@@ -271,7 +264,6 @@ describe("startServer (http only)", () => {
     };
     running = await startServer({
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       publicDir: PUBLIC,
       mouse: f.mouse,
       keyboard: fakeKeyboard().keyboard,
@@ -288,14 +280,12 @@ describe("startServer (http only)", () => {
 });
 
 describe("startServer modes", () => {
-  async function bootMode(mode: "adb" | "wifi", certsDir: string) {
+  async function bootMode(mode: "adb" | "wifi") {
     const f = fakeMouse();
     const logs: string[] = [];
     running = await startServer({
       mode,
       port: 0,
-      httpsPort: 0,
-      certsDir,
       publicDir: PUBLIC,
       mouse: f.mouse,
       keyboard: fakeKeyboard().keyboard,
@@ -305,60 +295,17 @@ describe("startServer modes", () => {
     return { logs, srv: running };
   }
 
-  it("adb mode: http only, no WiFi noise, even when certs exist", async () => {
-    const { srv, logs } = await bootMode("adb", FIXTURES);
-    expect(srv.httpsPort).toBeNull();
+  it("adb mode: USB instructions, no WiFi noise", async () => {
+    const { logs } = await bootMode("adb");
     expect(logs.some((l) => l.startsWith("USB:"))).toBe(true);
     expect(logs.some((l) => l.startsWith("WiFi:"))).toBe(false);
   });
 
-  it("wifi mode with certs: https URLs, no USB instructions", async () => {
-    const { srv, logs } = await bootMode("wifi", FIXTURES);
-    expect(srv.httpsPort).not.toBeNull();
-    expect(logs.some((l) => l.startsWith("WiFi: open https://"))).toBe(true);
-    expect(logs.some((l) => l.startsWith("USB:"))).toBe(false);
-  });
-
-  it("wifi mode without certs: prints Chrome-flag Option A URLs", async () => {
-    const { srv, logs } = await bootMode("wifi", path.join(HERE, "no-such-dir"));
-    expect(srv.httpsPort).toBeNull();
+  it("wifi mode: Chrome-flag fallback URLs, no USB instructions", async () => {
+    const { srv, logs } = await bootMode("wifi");
     expect(logs.some((l) => l.includes("unsafe-treat-insecure-origin-as-secure"))).toBe(true);
     expect(logs.some((l) => l.includes(`http://`) && l.includes(`:${srv.httpPort}`))).toBe(true);
-  });
-});
-
-describe("startServer (with TLS certs)", () => {
-  it("additionally serves https+wss and prints WiFi URLs", async () => {
-    const f = fakeMouse();
-    const logs: string[] = [];
-    running = await startServer({
-      port: 0,
-      httpsPort: 0,
-      certsDir: FIXTURES,
-      publicDir: PUBLIC,
-      mouse: f.mouse,
-      keyboard: fakeKeyboard().keyboard,
-      log: (l) => logs.push(l),
-      pauseCombo: "off",
-    });
-    expect(running.httpsPort).not.toBeNull();
-    expect(logs.some((l) => l.startsWith("WiFi: open https://"))).toBe(true);
-
-    const status = await new Promise<number>((resolve, reject) => {
-      https
-        .get(
-          { host: "127.0.0.1", port: running!.httpsPort!, path: "/", rejectUnauthorized: false },
-          (res) => resolve(res.statusCode ?? 0),
-        )
-        .on("error", reject);
-    });
-    expect(status).toBe(200);
-
-    const ws = await wsOpen(`wss://127.0.0.1:${running.httpsPort}`);
-    ws.send(JSON.stringify({ type: "aim", u: 0, v: 0 }));
-    await until(() => f.moves.length > 0);
-    expect(f.moves[0]).toEqual([0, 0]);
-    ws.close();
+    expect(logs.some((l) => l.startsWith("USB:"))).toBe(false);
   });
 });
 
@@ -377,7 +324,6 @@ describe("startServer monitor selection", () => {
     const logs: string[] = [];
     running = await startServer({
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       publicDir: PUBLIC,
       mouse: f.mouse,
       keyboard: fakeKeyboard().keyboard,
@@ -603,7 +549,6 @@ describe("startServer input modes", () => {
     const logs: string[] = [];
     running = await startServer({
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       publicDir: PUBLIC,
       log: (l) => logs.push(l),
       pauseCombo: "off",
@@ -670,7 +615,6 @@ describe("startServer pause hotkey", () => {
     const logs: string[] = [];
     running = await startServer({
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       publicDir: PUBLIC,
       mouse: f.mouse,
       keyboard: k.keyboard,
@@ -778,7 +722,6 @@ describe("startServer rtc signaling", () => {
     const logs: string[] = [];
     running = await startServer({
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       publicDir: PUBLIC,
       mouse: f.mouse,
       keyboard: fakeKeyboard().keyboard,
@@ -881,43 +824,6 @@ describe("startServer rtc signaling", () => {
     expect(strange.status).toBe(200); // static read is public; no ACAO = browser blocks it
     expect(strange.headers.get("access-control-allow-origin")).toBeNull();
   });
-
-  it("signals over the https server too when certs exist", async () => {
-    const f = fakeMouse();
-    const rtc = fakeRtcPeer();
-    running = await startServer({
-      port: 0,
-      httpsPort: 0,
-      certsDir: FIXTURES,
-      publicDir: PUBLIC,
-      mouse: f.mouse,
-      keyboard: fakeKeyboard().keyboard,
-      log: () => {},
-      pauseCombo: "off",
-      rtc: { createPeer: () => rtc.peer },
-    });
-    const body = await new Promise<{ status: number; text: string }>((resolve, reject) => {
-      const req = https.request(
-        {
-          host: "127.0.0.1",
-          port: running!.httpsPort!,
-          path: "/rtc/offer",
-          method: "POST",
-          headers: { "content-type": "application/json", origin: PAGE_ORIGIN },
-          rejectUnauthorized: false,
-        },
-        (res) => {
-          let text = "";
-          res.on("data", (c) => (text += c));
-          res.on("end", () => resolve({ status: res.statusCode!, text }));
-        },
-      );
-      req.on("error", reject);
-      req.end(JSON.stringify({ sdp: OFFER }));
-    });
-    expect(body.status).toBe(200);
-    expect(JSON.parse(body.text)).toEqual({ sdp: "v=0 answer" });
-  });
 });
 
 describe("startServer port collisions", () => {
@@ -936,7 +842,6 @@ describe("startServer port collisions", () => {
     });
 
   const base = (logs: string[]) => ({
-    certsDir: path.join(HERE, "no-such-dir"),
     publicDir: PUBLIC,
     mouse: fakeMouse().mouse,
     keyboard: fakeKeyboard().keyboard,
@@ -973,36 +878,15 @@ describe("startServer port collisions", () => {
     }
   });
 
-  it("https port busy + fallback: https binds elsewhere too", async () => {
-    const b = await block();
-    const logs: string[] = [];
-    try {
-      running = await startServer({
-        ...base(logs),
-        certsDir: FIXTURES,
-        port: 0,
-        httpsPort: b.port,
-        httpsPortFallback: true,
-      });
-      expect(running.httpsPort).not.toBeNull();
-      expect(running.httpsPort).not.toBe(b.port);
-      expect(logs.join("\n")).toMatch(/https: port \d+ is busy/);
-    } finally {
-      await b.close();
-    }
-  });
-
-  it("a failed https bind tears the whole half-started server down", async () => {
-    // probe a free port for http (accepted tiny race), then make https fail
+  it("a failed bind tears the half-started server down (rebind proves it)", async () => {
+    // probe a free port (accepted tiny race), block it, then fail to bind it
     const probe = await block();
     const P = probe.port;
     await probe.close();
     const b = await block();
     try {
-      await expect(
-        startServer({ ...base([]), certsDir: FIXTURES, port: P, httpsPort: b.port }),
-      ).rejects.toThrow(/already in use/);
-      // P was released by the failure-path teardown — rebinding it proves it
+      await expect(startServer({ ...base([]), port: b.port })).rejects.toThrow(/already in use/);
+      // the failure-path teardown released everything — a fresh boot works
       running = await startServer({ ...base([]), port: P });
       expect(running.httpPort).toBe(P);
     } finally {
@@ -1010,19 +894,16 @@ describe("startServer port collisions", () => {
     }
   });
 
-  it("no port given: the 8443/8444 defaults apply, fallback-armed either way", async () => {
+  it("no port given: the 8443 default applies, fallback-armed either way", async () => {
     const logs: string[] = [];
-    // Deliberately NO port/httpsPort: binds the real defaults when they are
-    // free, or an OS-assigned port when something (CI neighbor, a dev's own
-    // running server) holds them — deterministic in both worlds.
+    // Deliberately NO port: binds the real default when it is free, or an
+    // OS-assigned port when something (CI neighbor, a dev's own running
+    // server) holds it — deterministic in both worlds.
     running = await startServer({
       ...base(logs),
-      certsDir: FIXTURES,
       portFallback: true,
-      httpsPortFallback: true,
     });
     expect(running.httpPort).toBeGreaterThan(0);
-    expect(running.httpsPort).not.toBeNull();
     expect(logs.join("\n")).toContain(`http+ws on :${running.httpPort}`);
   });
 
@@ -1052,7 +933,6 @@ describe("startServer live button config (editor save + push)", () => {
     const logs: string[] = [];
     running = await startServer({
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       mouse: f.mouse,
       keyboard: k.keyboard,
       log: (l) => logs.push(l),
@@ -1202,18 +1082,16 @@ describe("startServer live button config (editor save + push)", () => {
 });
 
 describe("startServer setup QR", () => {
-  async function bootMode(mode: "all" | "adb", qr?: boolean) {
+  async function bootMode(mode: "all" | "adb") {
     const logs: string[] = [];
     running = await startServer({
       mode,
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       publicDir: PUBLIC,
       mouse: fakeMouse().mouse,
       keyboard: fakeKeyboard().keyboard,
       log: (l) => logs.push(l),
       pauseCombo: "off",
-      ...(qr === undefined ? {} : { qr }),
     });
     return logs;
   }
@@ -1234,14 +1112,6 @@ describe("startServer setup QR", () => {
     expect(joined).not.toContain("scan to play"); // no wireless pairing over USB
     expect(joined).toMatch(/scan to open http:\/\/localhost:\d+ on the phone/);
     expect(logs.length).toBeGreaterThan(15); // the QR block itself
-  });
-
-  it("qr: false silences the banner in every mode", async () => {
-    const all = await bootMode("all", false);
-    expect(all.join("\n")).not.toContain("scan to play");
-    await running!.close();
-    const adb = await bootMode("adb", false);
-    expect(adb.join("\n")).not.toContain("scan to open");
   });
 });
 
@@ -1267,13 +1137,11 @@ describe("startServer session key", () => {
     const logs: string[] = [];
     running = await startServer({
       port: 0,
-      certsDir: path.join(HERE, "no-such-dir"),
       publicDir: PUBLIC,
       mouse: f.mouse,
       keyboard: fakeKeyboard().keyboard,
       log: (l) => logs.push(l),
       pauseCombo: "off",
-      qr: false,
       rtc: { createPeer: fakePeer },
       ...opts,
     });

@@ -20,10 +20,10 @@ import { VERSION } from "./version.ts";
  * (`node cli.ts …`) and in the single executable alike.
  *
  * Everything that used to be an environment variable is a flag here. `PORT=…`
- * and `PREDICT_MS=…` prefixes are POSIX shell syntax that neither `cmd.exe`
- * nor PowerShell accepts, which made the documented latency-tuning commands
- * unusable on the project's primary platform. Both are still honoured as
- * defaults so existing setups keep working.
+ * prefixes are POSIX shell syntax that neither `cmd.exe` nor PowerShell
+ * accepts, which made the documented commands unusable on the project's
+ * primary platform. The env vars are still honoured as defaults so existing
+ * setups keep working.
  *
  * @module
  */
@@ -41,7 +41,7 @@ export interface CliDeps {
   isSea?: boolean;
   /** `sea.getRawAsset`, only consulted when `isSea`. */
   getAsset?: (key: string) => ArrayBuffer;
-  /** Directory holding the running program — where `certs/` is looked for. */
+  /** Directory holding the running program — where the SEA's buttons.json lives. */
   appDir?: string;
   /** Native addon loader for `check`; tests inject one so no real device is touched. */
   loadNative?: () => Promise<LibNut>;
@@ -75,9 +75,6 @@ interface ServeArgs {
   mode: ServerMode;
   /** Undefined = neither --port nor PORT set — the default 8443 may fall back. */
   port?: number;
-  /** Undefined = neither --https-port nor HTTPS_PORT set — 8444 may fall back. */
-  httpsPort?: number;
-  predictMs: number;
   pauseCombo: string;
   input: InputMode;
   screen?: string;
@@ -86,11 +83,9 @@ interface ServeArgs {
   tunnelUrl?: string;
   /** `tunnel` command only — its own spelling of `--tunnel-url`. */
   url?: string;
-  certs?: string;
   public?: string;
   buttons?: string;
   pageUrl: string;
-  qr: boolean;
   key: string;
 }
 
@@ -141,25 +136,10 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
             defaultDescription: "8443 ($PORT); a busy default falls back to a free port",
             describe: "http + ws port",
           })
-          .option("https-port", {
-            type: "number",
-            default: numFromEnv(env.HTTPS_PORT),
-            defaultDescription: "8444 ($HTTPS_PORT); a busy default falls back to a free port",
-            describe: "https + wss port (only used when certs exist)",
-          })
-          .option("predict-ms", {
-            type: "number",
-            default: numFromEnv(env.PREDICT_MS) ?? 0,
-            describe: "aim extrapolation lookahead in ms; 0 (default) = off",
-          })
           .option("pause-combo", {
             type: "string",
             default: env.PAUSE_COMBO ?? "shift+space",
             describe: "PC key combo that pauses/resumes tracking; 'off' disables it",
-          })
-          .option("certs", {
-            type: "string",
-            describe: "directory holding cert.pem + key.pem (default: ./certs next to the program)",
           })
           .option("input", {
             choices: ["auto", "native", "none"] as const,
@@ -195,11 +175,6 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
             type: "string",
             default: DEFAULT_PAGE_URL,
             describe: "hosted phone page the setup QR points at (or a self-hosted URL)",
-          })
-          .option("qr", {
-            type: "boolean",
-            default: true,
-            describe: "print the setup QR on startup; --no-qr disables it",
           })
           .option("key", {
             type: "string",
@@ -334,24 +309,19 @@ async function runServeCommand(
     const server = await (deps.start ?? startServer)({
       mode: a.mode,
       port: a.port ?? 8443,
-      httpsPort: a.httpsPort ?? 8444,
       // Unset --port/PORT = the default may degrade to a free port when
       // busy; a pinned one refuses instead (the --monitor precedent).
       portFallback: a.port === undefined,
-      httpsPortFallback: a.httpsPort === undefined,
-      predictMs: a.predictMs,
       pauseCombo: a.pauseCombo,
       input: a.input,
       screen,
       monitor,
       platform: deps.platform,
       env: deps.env,
-      certsDir: a.certs ?? path.join(appDir, "certs"),
       assets: resolveAssets(deps, a.public, appDir),
       buttonsFile: a.buttons ?? defaultButtonsFile(a, deps, appDir),
       buttonsExplicit: a.buttons !== undefined,
       pageUrl: a.pageUrl,
-      qr: a.qr,
       key: resolvedKey.key,
       // ngrok forwards the public internet to loopback — with the tunnel in
       // this process, loopback connections must present the key too.

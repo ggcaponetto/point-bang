@@ -5,7 +5,7 @@ import { spawn as nodeSpawn } from "node:child_process";
  * any network can load the WebXR page.
  *
  * Why this earns its place: WebXR demands a secure context, and the two
- * existing answers both need setup on the phone (mkcert's root CA installed,
+ * existing answers both need setup on the phone (the Chrome flag toggled,
  * or a Chrome origin flag). A tunnel hands you a real HTTPS URL with neither
  * — and because the phone page derives `wss://` from `location.protocol`,
  * aim data rides the very same tunnel with no client change.
@@ -136,7 +136,7 @@ export function formatTunnelReport(
   const keyedUrl = key ? `${url}#key=${key}` : url;
   return [
     `TUNNEL: ${keyedUrl}  <-- open this on the phone, from any network`,
-    "TUNNEL: it is HTTPS, so WebXR works with no mkcert and no Chrome flag",
+    "TUNNEL: it is HTTPS, so WebXR works with no Chrome flag needed",
     'TUNNEL: the free plan shows a one-time "Visit Site" warning page — tap through it',
     "TUNNEL: expect tens of ms more latency than USB; use it to set up, not to play",
     ...(key

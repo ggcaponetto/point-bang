@@ -15,7 +15,6 @@
  */
 
 import http from "node:http";
-import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -28,12 +27,10 @@ import {
   type MonitorRect,
   type MonitorsReport,
 } from "./lib/monitors.ts";
-import { loadTls } from "./lib/certs.ts";
 import { lanIPv4 } from "./lib/net.ts";
 import { parseMessage, type ClientMsg, type ServerMsg } from "./lib/protocol.ts";
 import { createButtonStore, type ButtonStore } from "./lib/buttonstore.ts";
 import { createCursorLoop, scaleToRect, type MouseLike } from "./lib/cursor.ts";
-import { AimPredictor } from "./lib/predict.ts";
 import { JitterWindow, formatJitter } from "./lib/jitter.ts";
 import { createMouse, createKeyboard } from "./lib/input.ts";
 import {
@@ -93,8 +90,8 @@ const readBody = (
 /**
  * How the server presents itself:
  * - `adb` — USB tunnel dev flow: http only, no WiFi noise in the logs.
- * - `wifi` — same-network flow: https+wss when certs exist, otherwise prints
- *   the Chrome-flag (Option A) URLs. No USB instructions.
+ * - `wifi` — same-network flow: prints the QR/LAN URLs and the Chrome-flag
+ *   (Option A) fallback. No USB instructions.
  * - `all` — both (plain `npm start`, the never-break default).
  */
 export type ServerMode = "adb" | "wifi" | "all";
@@ -113,16 +110,12 @@ export type InputMode = "auto" | "native" | "none";
 export interface ServerOptions {
   mode?: ServerMode;
   port?: number;
-  httpsPort?: number;
   /**
    * Degrade to an OS-assigned free port when `port` is busy (EADDRINUSE).
    * Default false: embedded callers and tests keep exact-port semantics; the
    * CLI sets it when the user did NOT pin --port/PORT themselves.
    */
   portFallback?: boolean;
-  /** Same, for the HTTPS port. */
-  httpsPortFallback?: boolean;
-  certsDir?: string;
   publicDir?: string;
   /** Overrides `publicDir` — how the single executable serves embedded files. */
   assets?: AssetSource;
@@ -146,7 +139,6 @@ export interface ServerOptions {
   monitorProbe?: () => Promise<MonitorsReport>;
   log?: (line: string) => void;
   statsIntervalMs?: number;
-  predictMs?: number; // extrapolation lookahead; 0 (default) = off, newest sample only
   input?: InputMode;
   /** Screen assumed in virtual-input mode, where none can be measured. */
   screen?: { w: number; h: number };
@@ -154,8 +146,6 @@ export interface ServerOptions {
   env?: Record<string, string | undefined>;
   /** Page the setup QR points at; also seeds the CORS allowlist. */
   pageUrl?: string;
-  /** Print the setup QR on startup (non-adb modes). Default true. */
-  qr?: boolean;
   /** Origins allowed to signal cross-origin. Default: the `pageUrl` origin. */
   pageOrigins?: string[];
   /** Injected WebRTC peer factory for tests — replaces real werift. */
@@ -172,10 +162,9 @@ export interface ServerOptions {
   keyLoopbackExempt?: boolean;
 }
 
-/** A started server: bound ports plus a full-teardown `close()`. */
+/** A started server: the bound port plus a full-teardown `close()`. */
 export interface RunningServer {
   httpPort: number;
-  httpsPort: number | null;
   /** The session key in force, for callers printing URLs (tunnel). */
   key: string | null;
   close(): Promise<void>;
@@ -317,7 +306,10 @@ async function setupPauseHotkey(
 // ---------- protocol intake (shared by every transport) ----------
 interface IntakeDeps {
   isPaused(): boolean;
-  predictor: AimPredictor;
+  /** Stores the newest aim sample — the cursor loop pulls it each tick. */
+  setAim(u: number, v: number): void;
+  /** Drops the pending sample so the cursor loop idles (tracking lost). */
+  clearAim(): void;
   jitter: JitterWindow;
   mouse: MouseLike;
   pressButton(id: string, down: boolean): Promise<boolean>;
@@ -334,12 +326,11 @@ function createMessageHandler(d: IntakeDeps): (m: ClientMsg) => Promise<void> {
     // Calibration-tagged samples must not move the cursor: it is parked on
     // the monitor the phone is calibrating (see calib stage "target").
     if (m.cal) return;
-    // BEFORE the predictor sees the sample: a monitor switch resets it, and
-    // this sample belongs to the new monitor's u,v space.
+    // BEFORE the sample is stored: a monitor switch clears the pending one,
+    // and this sample belongs to the new monitor's u,v space.
     d.setMonitor(m.m);
-    const arrived = Date.now();
-    d.predictor.add(m.u, m.v, arrived);
-    if (typeof m.t === "number") d.jitter.add(arrived - m.t);
+    d.setAim(m.u, m.v);
+    if (typeof m.t === "number") d.jitter.add(Date.now() - m.t);
   };
   const onFire = async (): Promise<void> => {
     if (d.isPaused()) return;
@@ -364,8 +355,8 @@ function createMessageHandler(d: IntakeDeps): (m: ClientMsg) => Promise<void> {
   };
   const onState = (m: Extract<ClientMsg, { type: "state" }>): void => {
     d.log(`tracking: ${m.tracking}`);
-    // stale velocity must not keep extrapolating while tracking is lost
-    if (m.tracking === "lost") d.predictor.reset();
+    // a stale sample must not keep re-applying while tracking is lost
+    if (m.tracking === "lost") d.clearAim();
   };
   const onButton = async (m: Extract<ClientMsg, { type: "button" }>): Promise<void> => {
     // while paused, presses are dropped but releases go through — a
@@ -609,7 +600,7 @@ function createWsHandler(
 }
 
 // ---------- listen + startup report ----------
-const listen = (srv: http.Server | https.Server, port: number): Promise<number> =>
+const listen = (srv: http.Server, port: number): Promise<number> =>
   new Promise((resolve, reject) => {
     srv.once("error", reject);
     srv.listen(port, "0.0.0.0", () => {
@@ -626,32 +617,29 @@ const listen = (srv: http.Server | https.Server, port: number): Promise<number> 
  * break their adb mapping or bookmark. Other errors pass through untouched.
  */
 const listenOrFallback = async (
-  srv: http.Server | https.Server,
+  srv: http.Server,
   port: number,
   fallback: boolean,
-  label: "http" | "https",
   log: Log,
 ): Promise<number> => {
   try {
     return await listen(srv, port);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
-    const flag = label === "http" ? "--port" : "--https-port";
     if (!fallback)
       throw Object.assign(
         new Error(
-          `port ${port} (${label}) is already in use — is another point-bang running? (${flag} picks a different one, ${flag} 0 lets the OS choose)`,
+          `port ${port} is already in use — is another point-bang running? (--port picks a different one, --port 0 lets the OS choose)`,
         ),
         { code: "EADDRINUSE" },
       );
-    log(`${label}: port ${port} is busy — using a free port instead (${flag} pins one)`);
+    log(`port ${port} is busy — using a free port instead (--port pins one)`);
     return await listen(srv, 0);
   }
 };
 
 interface ReportCtx {
   mode: ServerMode;
-  qr: boolean;
   httpPort: number;
   /** LAN URL fragment carrying the session key ("" when the gate is off). */
   lanFrag: string;
@@ -676,7 +664,7 @@ async function printKeyAndUsbLines(c: ReportCtx, key: string | null): Promise<vo
     c.log(
       `USB:  adb reverse tcp:${c.httpPort} tcp:${c.httpPort}  then open http://localhost:${c.httpPort}${c.localFrag} on the phone`,
     );
-  if (c.mode === "adb" && c.qr) {
+  if (c.mode === "adb") {
     // localhost resolves ON THE PHONE, through the adb reverse tunnel —
     // scanning just saves typing the URL.
     c.log(`USB:  or scan to open http://localhost:${c.httpPort}${c.localFrag} on the phone:`);
@@ -684,25 +672,21 @@ async function printKeyAndUsbLines(c: ReportCtx, key: string | null): Promise<vo
   }
 }
 
-function printWifiLines(c: ReportCtx, httpsPort: number | null): void {
-  if (httpsPort !== null) {
-    for (const ip of lanIPv4())
-      c.log(`WiFi: open https://${ip.address}:${httpsPort}${c.lanFrag} on the phone`);
-  } else if (c.mode === "wifi") {
-    c.log(`WiFi: no certs/cert.pem+key.pem — https off. Option A (no certs): on the phone`);
-    c.log(`WiFi: enable chrome://flags/#unsafe-treat-insecure-origin-as-secure and add one of:`);
-    for (const ip of lanIPv4()) {
-      const marker = ip.wifi ? "   <-- your WiFi" : "";
-      c.log(`WiFi:   http://${ip.address}:${c.httpPort}${c.lanFrag}${marker}`);
-    }
-  } else if (c.mode === "all") {
-    c.log(`WiFi: no certs/cert.pem+key.pem found — HTTPS off (see README "Run it over WiFi")`);
+// The wireless story is the QR flow (hosted page + Local Network Access);
+// the Chrome flag is the zero-setup fallback for phones that predate LNA.
+function printWifiLines(c: ReportCtx): void {
+  if (c.mode !== "wifi") return;
+  c.log(`WiFi: fallback without the QR flow: on the phone enable`);
+  c.log(`WiFi: chrome://flags/#unsafe-treat-insecure-origin-as-secure and add one of:`);
+  for (const ip of lanIPv4()) {
+    const marker = ip.wifi ? "   <-- your WiFi" : "";
+    c.log(`WiFi:   http://${ip.address}:${c.httpPort}${c.lanFrag}${marker}`);
   }
 }
 
 // ---------- setup QR (the consumer journey: run, scan, tap Allow) ----------
 async function printSetupQr(c: ReportCtx, pageUrl: string, key: string | null): Promise<void> {
-  if (c.mode === "adb" || !c.qr) return;
+  if (c.mode === "adb") return;
   const qrUrl = phonePageUrl(pageUrl, lanIPv4(), c.httpPort, key);
   if (!qrUrl) return;
   c.log(`Phone: scan to play (page loads from ${pageUrl}):`);
@@ -713,7 +697,7 @@ async function printSetupQr(c: ReportCtx, pageUrl: string, key: string | null): 
 
 /**
  * Boots the whole PC side: static file serving, WebSocket intake, aim
- * prediction, the 2ms cursor loop, button execution and jitter stats.
+ * the 2ms newest-wins cursor loop, button execution and jitter stats.
  */
 export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
   const log = opts.log ?? console.log;
@@ -737,21 +721,30 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       ? `Screen: ${rect.w}x${rect.h} at (${rect.x},${rect.y}) — ${rect.label}`
       : `Screen: ${rect.w}x${rect.h}`,
   );
-  const predictor = new AimPredictor(opts.predictMs ?? 0);
+  // Newest-wins aim, and NOTHING else: no lookahead, no extrapolation, no
+  // velocity fitting (removed 2026-08-13 by user decision — the cursor shows
+  // exactly where the phone last said the aim was). The loop pulls this each
+  // tick; clearing it idles the cursor (pause, tracking lost, calibration
+  // parking) until a fresh sample arrives.
+  let latestAim: { u: number; v: number } | null = null;
+  const clearAim = (): void => {
+    latestAim = null;
+  };
   // Per-monitor aim (aim.m, phone calibrated each monitor as its own plane):
-  // the active monitor's rect replaces the spanning rect; a switch resets the
-  // predictor so its velocity fit never interpolates across the bezel seam.
+  // the active monitor's rect replaces the spanning rect; a switch drops the
+  // pending sample so nothing from the old monitor's u,v space lands in the
+  // new rect.
   let activeMonitor: number | null = null;
   const setMonitor = (m: number | undefined): void => {
     if (!rects) return;
     const next = m !== undefined && m >= 1 && m <= rects.length ? m : null;
-    if (next !== activeMonitor) predictor.reset();
+    if (next !== activeMonitor) clearAim();
     activeMonitor = next;
   };
   const cursor = createCursorLoop(
     mouse,
     () => (rects && activeMonitor !== null ? rects[activeMonitor - 1] : rect),
-    () => predictor.predict(Date.now()),
+    () => latestAim,
     (e) => console.error("mouse:", e.message),
   );
 
@@ -778,7 +771,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const togglePause = (): void => {
     paused = !paused;
     // aim collected before the pause must not flick the cursor on resume
-    if (paused) predictor.reset();
+    if (paused) clearAim();
     log(
       paused ? `tracking PAUSED — the mouse is yours (${pauseCombo} resumes)` : "tracking resumed",
     );
@@ -789,12 +782,12 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // cursor is parked at that monitor's center so the user aims at the right
   // panel (wrong-order calibration is what makes aim land on the wrong
   // monitor). Tagged (`cal`) aim is dropped in onAim, so nothing fights the
-  // park; the predictor reset keeps the idle cursor loop from re-applying a
-  // stale projection over it.
+  // park; clearing the pending sample keeps the idle cursor loop from
+  // re-applying a stale position over it.
   let parkedMonitor: number | null = null;
   const parkOnMonitor = (m: number | undefined): void => {
     if (!rects || m === undefined || m < 1 || m > rects.length) return;
-    predictor.reset();
+    clearAim();
     if (paused) return; // the user paused to own the mouse — do not yank it
     const r = rects[m - 1];
     const p = scaleToRect(0.5, 0.5, r);
@@ -814,7 +807,10 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   const handleMessage = createMessageHandler({
     isPaused: () => paused,
-    predictor,
+    setAim: (u, v) => {
+      latestAim = { u, v };
+    },
+    clearAim,
     jitter,
     mouse,
     pressButton: (id, down) => pressButton(id, down),
@@ -854,7 +850,6 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     const msg: ServerMsg = { type: "buttons", rev: buttonsRev };
     const text = JSON.stringify(msg);
     for (const c of wss.clients) if (c.readyState === c.OPEN) c.send(text);
-    if (wssTls) for (const c of wssTls.clients) if (c.readyState === c.OPEN) c.send(text);
     // The DataChannel is lossy (unordered, no retransmits): repeat the tiny
     // notification; the phone dedupes on `rev`.
     for (const delay of [0, 150, 400]) {
@@ -907,76 +902,53 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     buttonsSave: saveButtons,
   });
   const httpServer = http.createServer(handler);
-  const tls = mode === "adb" ? null : loadTls(opts.certsDir ?? path.join(ROOT, "certs"));
-  const httpsServer = tls ? https.createServer(tls, handler) : null;
 
   const onConnection = createWsHandler(gate, intake, log);
   const wss = new WebSocketServer({ server: httpServer });
   wss.on("connection", onConnection);
-  const wssTls = httpsServer ? new WebSocketServer({ server: httpsServer }) : null;
-  wssTls?.on("connection", onConnection);
   // ws FORWARDS the attached http server's 'error' events onto the WSS
   // emitter. Without a listener there, an EADDRINUSE at listen time becomes
   // an unhandled 'error' THROW mid-emit — aborting the http server's own
   // error listeners, so listenOrFallback would never see the failure. The
   // http-level handler owns bind errors; the WSS copy is deliberately eaten.
   wss.on("error", () => {});
-  wssTls?.on("error", () => {});
 
   // Built BEFORE anything binds: a failed listen (busy explicit port) must
-  // tear down the cursor loop, the hotkey watcher, the timers and whichever
-  // server DID bind — a half-started instance must never linger.
+  // tear down the cursor loop, the hotkey watcher and the timers — a
+  // half-started instance must never linger.
   const close = (): Promise<void> => {
     cursor.stop();
     hotkey?.stop();
     clearInterval(statsTimer);
     for (const t of notifyTimers) clearTimeout(t);
     for (const c of wss.clients) c.terminate();
-    if (wssTls) for (const c of wssTls.clients) c.terminate();
-    const closeSrv = (s: http.Server | https.Server | null): Promise<void> =>
-      new Promise((r) => (s ? s.close(() => r()) : r()));
-    return Promise.all([closeSrv(httpServer), closeSrv(httpsServer), rtcHub.close()]).then(
-      () => {},
-    );
+    const closeSrv = new Promise<void>((r) => httpServer.close(() => r()));
+    return Promise.all([closeSrv, rtcHub.close()]).then(() => {});
   };
 
   let httpPort: number;
-  let httpsPort: number | null = null;
   try {
     httpPort = await listenOrFallback(
       httpServer,
       opts.port ?? 8443,
       opts.portFallback ?? false,
-      "http",
       log,
     );
     log(`http+ws on :${httpPort}`);
     const report: ReportCtx = {
       mode,
-      qr: opts.qr !== false,
       httpPort,
       lanFrag: gate.key ? `#key=${gate.key}` : "",
       localFrag: gate.required("127.0.0.1") && gate.key ? `#key=${gate.key}` : "",
       log,
     };
     await printKeyAndUsbLines(report, gate.key);
-
-    if (httpsServer) {
-      httpsPort = await listenOrFallback(
-        httpsServer,
-        opts.httpsPort ?? 8444,
-        opts.httpsPortFallback ?? false,
-        "https",
-        log,
-      );
-      log(`https+wss on :${httpsPort}`);
-    }
-    printWifiLines(report, httpsPort);
+    printWifiLines(report);
     await printSetupQr(report, opts.pageUrl ?? DEFAULT_PAGE_URL, gate.key);
   } catch (e) {
     await close();
     throw e;
   }
 
-  return { httpPort, httpsPort, key: gate.key, close };
+  return { httpPort, key: gate.key, close };
 }

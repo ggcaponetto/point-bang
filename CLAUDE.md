@@ -10,7 +10,7 @@ Requires Node ≥ 23.6 (native type stripping runs .ts directly — no build).
 npm install
 npm start                        # node cli.ts serve — http+ws on :8443
 npm run start:adb                # USB flow only: runs `adb reverse` itself, no WiFi logs
-npm run start:wifi               # WiFi flow only: https URLs (certs) or Chrome-flag URLs
+npm run start:wifi               # WiFi flow only: QR (hosted page + LNA) + Chrome-flag fallback
 npm run check                    # self-diagnosis: assets present? input addon loadable?
 npm test                         # vitest + coverage, FAILS below 90% on any metric
 npm run test:watch
@@ -31,7 +31,6 @@ node cli.ts --help               # every option is a flag; npm start -- --port 9
 npm start -- --input none        # headless: print the aim, never touch the cursor
 npm start -- --screen 2560x1440  # screen assumed when there is none to measure
 npm start -- --pause-combo alt+p # tracking-pause hotkey (default shift+space; off = none)
-npm start -- --no-qr             # skip the setup QR in the banner
 npm start -- --key off           # disable the session key (trusted LAN); --key <v> pins one
 npm start -- --page-url https://you.example/phone/   # QR targets a self-hosted page
 npm run docs:build               # ALSO publishes public/ -> Pages /phone/ (build/pages.mjs)
@@ -46,9 +45,17 @@ adb reverse tcp:8443 tcp:8443    # phone via USB; re-run after cable replug/adb 
 ```
 
 Every command is one CLI (`cli.ts`, yargs): `serve` (default), `tunnel`, `ip`,
-`wifi`, `check`. Flags replaced the `PORT`/`PREDICT_MS` env vars — `FOO=bar cmd` is
-bash-only syntax and this project's primary platform is Windows. Both env
-vars are still honoured as defaults.
+`wifi`, `check`. Flags replaced the `PORT` env var — `FOO=bar cmd` is
+bash-only syntax and this project's primary platform is Windows. The env var
+is still honoured as a default.
+
+REMOVED SURFACE (user decision 2026-08-13 — do not reintroduce): `--predict-ms`
+and all cursor prediction/lookahead (the cursor shows exactly the newest phone
+sample; lib/predict.ts is gone, superseding the 2026-08-11 "off by default"
+decision); mkcert HTTPS/`--certs`/`--https-port`/:8444 (wireless is the QR
+flow — hosted page + Local Network Access + WebRTC — with the Chrome flag as
+the only fallback; there is no https/wss server anymore); `--no-qr` (the QR
+always prints outside adb mode — there is no use case for hiding it).
 
 Phone: Chrome → http://localhost:8443 → START AR → capture corners TL, TR, BL.
 End-to-end aim feel is still verified manually (see Working agreement) plus
@@ -77,7 +84,7 @@ use this approach; the only prior art is a hobbyist native app
 ```
 ./
 ├── cli.ts             # THE entry (yargs): logic-free, works as script and as SEA
-├── server.ts          # wires http/https + ws + cursor loop; no isMain block
+├── server.ts          # wires http + ws + cursor loop; no isMain block
 ├── lib/               # typed, unit-tested logic
 │   ├── cli.ts         #   flag surface (buildParser) + command dispatch (runCli)
 │   ├── protocol.ts    #   message types + parseMessage (never crash on garbage)
@@ -85,10 +92,8 @@ use this approach; the only prior art is a hobbyist native app
 │   ├── buttonstore.ts #   THE buttons.json at runtime: live file > asset copy; editor save target
 │   ├── cursor.ts      #   MouseLike interface, scaleToScreen, apply-latest loop
 │   ├── jitter.ts      #   JitterWindow p50/p95/max
-│   ├── predict.ts     #   AimPredictor: velocity fit + lookahead (opt-in, default OFF)
 │   ├── static.ts      #   normalizeUrlPath + safeResolve (traversal) + content types
 │   ├── assets.ts      #   AssetSource: public/ on disk OR embedded SEA assets
-│   ├── certs.ts       #   optional mkcert TLS loading
 │   ├── native.ts      #   loads libnut.node AND koffi: require in dev, extract+dlopen in a SEA
 │   ├── input.ts       #   MouseLike/KeyboardLike over raw libnut
 │   ├── hotkey.ts      #   pause combo: parser + GetAsyncKeyState/XQueryKeymap probes + poller
@@ -123,7 +128,7 @@ use this approach; the only prior art is a hobbyist native app
 │   └── math.js        # phone math + the shared button vocabulary: V, OneEuro, intersectUV,
 │                      #   normalizeKey/parseAction… (plain JS + JSDoc, imported by BOTH
 │                      #   Chrome and vitest — keep it dependency-free)
-├── test/              # vitest suites + fixtures/ (self-signed cert for https tests)
+├── test/              # vitest suites
 ├── .gitattributes     # eol=lf everywhere — a CRLF clone breaks husky + prettier
 ├── .husky/            # pre-commit: prettier+typecheck; pre-push: npm run validate
 └── .mcp.json          # context7 MCP server (up-to-date library docs in Claude Code)
@@ -137,15 +142,13 @@ bug was files placed flat next to the server causing 404s. They are also the
 SEA asset list in `lib/assets.ts`; adding a file to `public/` means adding it
 there too, or the executable 404s what the checkout serves fine.
 
-WiFi testing (no adb): if mkcert certs exist in `certs/{cert.pem,key.pem}`
-(next to the program — the repo root, or beside the executable; `--certs`
-overrides), the server additionally serves https+wss on :8444 and prints LAN URLs; phone
-opens https://<PC-IP>:8444 (mkcert root CA must be installed on the phone).
-Zero-setup alternative: Chrome flag `#unsafe-treat-insecure-origin-as-secure`
-with http://<PC-IP>:8443. Both documented in README. This is testing transport
-only — Phase 4 (WebRTC DataChannel) is still the plan for wireless _play_.
-The phone page picks ws/wss from `location.protocol`. :8443 http must never
-break; certs/ absent ⇒ HTTPS silently off.
+WiFi (no adb): the QR flow — hosted page + Local Network Access + WebRTC —
+is THE wireless story (see the tech decision below). The only fallback is
+the Chrome flag `#unsafe-treat-insecure-origin-as-secure` with
+http://<PC-IP>:8443, printed in wifi mode. There is NO https/wss server:
+mkcert/TLS support was removed 2026-08-13 (user decision — customers must
+never touch certificates, and the QR flow needs none). :8443 http must
+never break.
 
 What index.html already contains (reuse, don't reinvent):
 
@@ -189,7 +192,8 @@ What server.ts already contains:
 - Pause hotkey (`--pause-combo`, default shift+space, `off` disables): a PC
   key combo toggles a gate that drops aim/fire/button-downs at the socket
   while paused (button-UPs still pass — nothing stays stuck down), so the
-  real mouse can be used mid-session. Predictor resets on pause. Injectable
+  real mouse can be used mid-session. The pending aim sample is cleared on
+  pause so resume cannot flick the cursor. Injectable
   as `pauseProbe` — server tests pass `pauseCombo: "off"` or a fake probe,
   never the real keyboard.
 
@@ -241,7 +245,7 @@ monitor index (per-monitor calibration). The phone learns the aim targets via
 resolutions only, no layout coordinates; CORS'd and ungated like buttons.json —
 the aim intakes stay key-guarded). >1 targets ⇒ the phone calibrates one plane
 per monitor and tags aim with `m`; the PC maps it into that monitor's rect and
-resets the predictor on a switch. Aim without `m` (old phone page) maps into
+drops the pending sample on a switch. Aim without `m` (old phone page) maps into
 the spanning rect; an old server 404s `/monitors` and the phone stays
 single-plane — compatible in both directions.
 
@@ -267,7 +271,7 @@ cursor must not be fought by aim from already-done planes); resume is the
 absence of the tag. Plane→monitor assignment is PHONE state only — `m` is just
 the slot index + 1 — so the post-calibration SWAP button in the aim panel
 permutes the per-monitor arrays (`swapMonitorSlots` in math.js) and the server
-needs no swap awareness; its predictor resets on the `m` change it sees anyway.
+needs no swap awareness; it drops the pending sample on the `m` change anyway.
 
 v2 (IMPLEMENTED 2026-08-13, additive): live button config. The FIRST
 server→client message: `{"type":"buttons","rev":N}` = "config changed,
@@ -339,9 +343,9 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   a logged "pause hotkey: unavailable — reason", never a crash.
 - **Public tunnel: drive the `ngrok` CLI, never its SDK** (user request
   2026-08-11). `--tunnel ngrok` gives the phone an HTTPS origin from any
-  network — a secure context, so WebXR needs neither mkcert nor a Chrome flag,
-  and `wss://` rides the same tunnel because the page derives its WS scheme
-  from `location.protocol`. The `@ngrok/ngrok` SDK is a native addon and a SEA
+  network — a secure context, so WebXR needs no Chrome flag, and `wss://`
+  rides the same tunnel because the page derives its WS scheme from
+  `location.protocol`. The `@ngrok/ngrok` SDK is a native addon and a SEA
   blob cannot hold one, so we spawn the binary, exactly as `lib/adb` and
   `lib/wifi` shell out. The URL is read from the agent's documented local API
   (`127.0.0.1:4040/api/tunnels`, matched on OUR port and `proto: https`), not
@@ -359,8 +363,8 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   head-of-line stalls on WiFi; WS stays the automatic fallback when RTC
   negotiation fails on same-origin flows.
 - **Consumer wireless setup: QR → GitHub Pages → Local Network Access →
-  WebRTC** (user decision 2026-08-12; supersedes "mkcert HTTPS" as the
-  wireless story — mkcert and the Chrome flag are demoted to fallbacks).
+  WebRTC** (user decision 2026-08-12; 2026-08-13 the mkcert HTTPS path was
+  REMOVED outright — the Chrome flag is the sole fallback now).
   Customers must never generate certificates. The industry patterns were
   native companion app (out: abandons the browser premise), Plex-style
   per-device certs (out: needs a domain + DNS + CA automation), and
@@ -406,15 +410,14 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   wrong — bezels add distance that contains no pixels and monitors may be
   angled — so aim carries a per-monitor index instead (see Protocol v2), and
   smoothing/nudge state is per monitor with resets at the seam.
-- **Filtering split:** One Euro filter phone-side (kills ARCore micro-jumps;
-  adaptive: smooth when slow, responsive when flicking). Extrapolation
-  PC-side (fit velocity over last samples, project to now; hides network
-  jitter and ~1 frame of delay) — but OFF by default (user decision
-  2026-08-11): the projected lead reads as the cursor running ahead of aim,
-  clearest in raw-aim mode, and the user rejected the feel. `--predict-ms 0`
-  now means a strict newest-sample passthrough (no age projection either);
-  positive values opt back in for harness experiments. Don't double-smooth,
-  and don't raise the default back above 0 without a user decision.
+- **Filtering: One Euro phone-side, NOTHING PC-side** (user decision
+  2026-08-13, supersedes the 2026-08-11 "prediction off by default"). All
+  PC-side extrapolation/lookahead was REMOVED — lib/predict.ts is gone; the
+  cursor loop pulls the strict newest sample and that is the whole story.
+  History for context: prediction was tried, the projected lead read as the
+  cursor running ahead of aim, the user rejected the feel and later ordered
+  the code path deleted. Do not reintroduce any lookahead, and don't add
+  smoothing PC-side on top of One Euro.
 - **Latency budget** (measured targets): phone-side pose→send < 20ms typical;
   transport jitter p95 < 5ms on USB; motion-to-cursor (slow-mo camera test)
   30–60ms. Game+display adds 30–80ms on top and dominates — that's tuned in
@@ -434,13 +437,10 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
    click each dot's aim, output px error table; RTT ping/pong; drift check
    (aim center at t=0 and t=10min). Exit: a written accuracy/jitter/drift
    report generated by the harness.
-3. **Extrapolation + prediction PC-side.** IMPLEMENTED but OFF BY DEFAULT
-   (lib/predict.ts; user decision 2026-08-11 — the lead felt wrong, see Tech
-   decisions): least-squares velocity over last ~120ms, projected age+N ms
-   ahead (capped 45ms), cursor loop pulls the target every 2ms; predictor
-   resets on tracking lost. `--predict-ms N` opts in; 0 (default) is a strict
-   newest-sample passthrough. Exit criterion still open: the Phase-2 harness
-   must show a measured motion-to-cursor win before it can ever default on.
+3. **Extrapolation + prediction PC-side.** CLOSED — REMOVED 2026-08-13 (user
+   decision, see the Filtering tech decision): the phase was implemented,
+   rejected on feel, and finally deleted. The cursor is a strict
+   newest-sample passthrough; this phase must not be reopened.
 4. **Wireless mode.** IMPLEMENTED 2026-08-12 (see the QR tech decision):
    scan-to-play QR, Pages-hosted page, LNA signaling, WebRTC DataChannel
    over the LAN, WS auto-fallback on same-origin flows. Exit criterion
@@ -476,10 +476,9 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 
 ## Known pitfalls (all encountered or predicted in design — check here first)
 
-- WebXR requires secure context: localhost tunnel, mkcert HTTPS (:8444), or
-  the phone-side Chrome flag. `navigator.xr` undefined ⇒ opened via
-  plain-HTTP IP without the flag. mkcert certs are per-IP: DHCP giving the PC
-  a new address ⇒ regenerate, and never commit certs/.
+- WebXR requires a secure context: the hosted (QR) page, http://localhost via
+  the adb tunnel, an ngrok URL, or the phone-side Chrome flag. `navigator.xr`
+  undefined ⇒ opened via plain-HTTP IP without the flag.
 - `adb reverse` mappings die on cable replug / adb restart; re-run it.
 - Monitor is a bad ARCore surface (emissive, low texture): hit-test may land
   on the wall behind the screen — a constant few-cm offset that the u,v math
@@ -584,8 +583,8 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 - One calibration plane must never span two monitors: bezels are physical
   distance with no pixels, so a spanned plane lands offset on the far panel
   (and angled monitors break it outright) — that is WHY per-monitor planes
-  exist. Anything smoothing or extrapolating aim (One Euro phone-side, the
-  predictor PC-side) must reset when the aimed monitor changes, or it drags
+  exist. Anything smoothing aim (One Euro phone-side; PC-side keeps only the
+  newest sample) must reset when the aimed monitor changes, or it drags
   the cursor across the bezel seam. The phone treats a `/monitors` failure
   (old server, PC unreachable) as "one plane" silently — never an error.
 - Linux WiFi interfaces are `wlp2s0`/`wlx…`, matching neither "wifi" nor
@@ -624,7 +623,7 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   esbuild + postject (SEA build only), koffi (IN USE since 2026-08-12: pause
   hotkey key-state; also the future SendInput path), werift (IN USE since
   2026-08-12: WebRTC PC-side — pinned EXACT, pure TS on purpose), qrcode-terminal
-  (setup QR), mkcert (dev tooling, not a dep).
+  (setup QR).
 - knip ignores the `@nut-tree-fork/libnut-*` packages: they are resolved by a
   computed specifier at runtime, so static analysis can't see them.
 - Commit style: small commits per phase step, message prefix `P<phase>:`

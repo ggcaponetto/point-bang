@@ -1,6 +1,6 @@
 /**
  * Cursor movement: screen-space scaling and the 2ms pull loop that keeps the
- * OS cursor on the (predicted) aim point without ever queueing stale moves.
+ * OS cursor on the newest aim point without ever queueing stale moves.
  *
  * @module
  */
@@ -48,7 +48,7 @@ export interface CursorLoop {
 
 /**
  * Pull model: every tick asks `getTarget()` for where the cursor should be
- * NOW (typically an AimPredictor projection) and moves only when the target
+ * NOW (the newest phone sample) and moves only when the target
  * pixel changed. A slow `setPosition` call can never queue stale positions.
  */
 export function createCursorLoop(

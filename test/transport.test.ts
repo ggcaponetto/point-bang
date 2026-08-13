@@ -177,7 +177,7 @@ describe("parseFragment", () => {
       hosts: ["192.168.1.5:8443"],
       key: "abc123-XY",
     });
-    // the printed localhost/mkcert URLs carry only the key
+    // the printed localhost URLs carry only the key
     expect(parseFragment("#key=abc123-XY")).toEqual({ hosts: [], key: "abc123-XY" });
   });
   it("drops a malformed key rather than sending junk", () => {

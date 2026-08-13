@@ -5,7 +5,7 @@
  *
  * Never `*`: these endpoints ultimately move the mouse and press keys, so a
  * browser context only gets an answer when its Origin is the hosted page (the
- * allowlist) or the request is same-origin anyway (localhost/adb, mkcert,
+ * allowlist) or the request is same-origin anyway (localhost/adb,
  * tunnel — the Origin's host equals the Host header). Non-browser clients
  * send no Origin at all and pass untouched.
  *

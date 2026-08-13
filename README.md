@@ -64,7 +64,7 @@ flowchart LR
     C -- "WebRTC DataChannel (LAN)<br/>or WebSocket (USB)" --> D
     H --> D
     subgraph pc [PC — Node]
-        D[protocol handler] --> E[newest aim sample<br/>optional prediction, off by default]
+        D[protocol handler] --> E[newest aim sample<br/>no prediction, ever]
         E --> F[2ms cursor loop]
         F --> G[absolute mouse input]
         D --> I[button executor<br/>key combos and clicks]
@@ -112,8 +112,9 @@ node cli.ts --help   # every option is a flag
   Chrome's Local Network Access permission: zero certificates, zero flags,
   zero accounts (Chrome 142+).
 - **Latency-obsessed** — One Euro filtering phone-side, a 2ms newest-wins
-  cursor loop, zeroed input-driver delays, optional aim extrapolation
-  (`--predict-ms`, off by default), and live p50/p95 jitter stats to prove it.
+  cursor loop, zeroed input-driver delays, no prediction or lookahead of any
+  kind (the cursor is exactly where the phone last said the aim was), and
+  live p50/p95 jitter stats to prove it.
 - **20 assignable buttons** — one JSON file maps on-screen buttons to any
   key combo or mouse button, press-and-hold included, places each one
   anywhere on the screen, and gives each a tunable haptic tick on press.
@@ -154,7 +155,7 @@ node cli.ts --help   # every option is a flag
 ## Project status
 
 Working end-to-end: calibrate, aim, shoot — over USB, WiFi (QR → WebRTC),
-mkcert HTTPS, or an ngrok tunnel. On the
+or an ngrok tunnel. On the
 [roadmap](https://ggcaponetto.github.io/point-bang/reference/architecture):
 a measurement harness (accuracy/drift reports), MAME/RetroArch integration
 testing, and multi-gun support.

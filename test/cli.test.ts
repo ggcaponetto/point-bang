@@ -18,7 +18,7 @@ function spyDeps(extra: CliDeps = {}) {
       opts = o;
       // Echo the requested port as the bound one — post-bind consumers (adb)
       // must use the RESOLVED port, and this keeps their assertions natural.
-      return { httpPort: o.port ?? 1, httpsPort: null, close: async () => {} } as RunningServer;
+      return { httpPort: o.port ?? 1, key: null, close: async () => {} } as RunningServer;
     }) as CliDeps["start"],
     log: (l) => logs.push(l),
     error: (l) => errors.push(l),
@@ -31,19 +31,15 @@ function spyDeps(extra: CliDeps = {}) {
 }
 
 describe("serve defaults", () => {
-  it("boots on 8443/8444 with 20ms lookahead and certs beside the program", async () => {
+  it("boots on 8443 with the default pause combo", async () => {
     const { deps, seen } = spyDeps();
     expect(await runCli([], deps)).toBe(0);
     const o = seen()!;
     expect(o.mode).toBe("all");
     expect(o.port).toBe(8443);
-    expect(o.httpsPort).toBe(8444);
-    // default ports may degrade to a free one when busy…
+    // the default port may degrade to a free one when busy…
     expect(o.portFallback).toBe(true);
-    expect(o.httpsPortFallback).toBe(true);
-    expect(o.predictMs).toBe(0);
     expect(o.pauseCombo).toBe("shift+space");
-    expect(o.certsDir).toBe(path.join("/app", "certs"));
   });
 
   it("treats a bare invocation and an explicit `serve` identically", async () => {
@@ -65,14 +61,8 @@ describe("serve flags", () => {
         "wifi",
         "--port",
         "9000",
-        "--https-port",
-        "9001",
-        "--predict-ms",
-        "35",
         "--pause-combo",
         "ctrl+f9",
-        "--certs",
-        "/c",
         "--buttons",
         "/b.json",
       ],
@@ -82,13 +72,9 @@ describe("serve flags", () => {
     expect(o).toMatchObject({
       mode: "wifi",
       port: 9000,
-      httpsPort: 9001,
-      // …but explicitly pinned ones refuse instead of moving
+      // …but an explicitly pinned one refuses instead of moving
       portFallback: false,
-      httpsPortFallback: false,
-      predictMs: 35,
       pauseCombo: "ctrl+f9",
-      certsDir: "/c",
       buttonsFile: "/b.json",
     });
   });
@@ -355,18 +341,15 @@ describe("tunnel command", () => {
 });
 
 describe("environment fallbacks", () => {
-  it("honours PORT/HTTPS_PORT/PREDICT_MS/PAUSE_COMBO when no flag is given", async () => {
+  it("honours PORT/PAUSE_COMBO when no flag is given", async () => {
     const { deps, seen } = spyDeps({
-      env: { PORT: "8000", HTTPS_PORT: "8001", PREDICT_MS: "5", PAUSE_COMBO: "alt+p" },
+      env: { PORT: "8000", PAUSE_COMBO: "alt+p" },
     });
     await runCli([], deps);
     expect(seen()).toMatchObject({
       port: 8000,
-      httpsPort: 8001,
       // env-pinned counts as explicit: busy = refuse, never silently move
       portFallback: false,
-      httpsPortFallback: false,
-      predictMs: 5,
       pauseCombo: "alt+p",
     });
   });
@@ -446,12 +429,6 @@ describe("default dependencies", () => {
     expect(out).toHaveBeenCalled();
     out.mockRestore();
   });
-
-  it("defaults certs to ./certs in the working directory", async () => {
-    const { deps, seen } = spyDeps({ appDir: undefined });
-    await runCli([], deps);
-    expect(seen()!.certsDir).toBe(path.join(process.cwd(), "certs"));
-  });
 });
 
 describe("monitors command", () => {
@@ -504,17 +481,15 @@ describe("resolveAssets", () => {
 });
 
 describe("setup QR flags", () => {
-  it("defaults to the hosted page with the QR on", async () => {
+  it("defaults to the hosted page", async () => {
     const { deps, seen } = spyDeps();
     await runCli([], deps);
     expect(seen()!.pageUrl).toBe(DEFAULT_PAGE_URL);
-    expect(seen()!.qr).toBe(true);
   });
 
-  it("--no-qr and --page-url pass through", async () => {
+  it("--page-url passes through", async () => {
     const { deps, seen } = spyDeps();
-    await runCli(["--no-qr", "--page-url", "https://my.site/phone/"], deps);
-    expect(seen()!.qr).toBe(false);
+    await runCli(["--page-url", "https://my.site/phone/"], deps);
     expect(seen()!.pageUrl).toBe("https://my.site/phone/");
   });
 });

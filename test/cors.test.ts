@@ -14,7 +14,7 @@ describe("originAllowed", () => {
     ).toBe(true);
   });
 
-  it("passes same-origin browsers regardless of scheme (localhost, mkcert, tunnel)", () => {
+  it("passes same-origin browsers regardless of scheme (localhost, tunnel)", () => {
     expect(originAllowed({ origin: "http://localhost:8443", host: "localhost:8443" }, PAGES)).toBe(
       true,
     );

@@ -37,9 +37,9 @@ features:
   - icon: ⚡
     title: Latency-obsessed
     details: >
-      One Euro filtering phone-side, a 2ms newest-wins cursor loop, optional
-      aim extrapolation, and p50/p95 jitter stats printed live. Every stage
-      measured, every default justified.
+      One Euro filtering phone-side, a 2ms newest-wins cursor loop, and
+      p50/p95 jitter stats printed live. Every stage measured, every
+      default justified.
   - icon: 🧪
     title: Tested to 90%+
     details: >

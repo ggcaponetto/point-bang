@@ -9,7 +9,7 @@
 └─────────────────────────────────────────────────────────────────┼───────────┘
                                             USB tunnel or WiFi    │
 ┌─────────────────────────────── PC (Node) ───────────────────────┼───────────┐
-│ parseMessage ─→ newest aim sample (optional prediction) ─→ 2ms cursor loop  │
+│ parseMessage ─→ newest aim sample ─→ 2ms cursor loop                        │
 │              └→ button executor (key combos / mouse via libnut)            │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -35,20 +35,18 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
 ```
 ./
 ├── cli.ts             # the only entry: yargs commands, dev and executable alike
-├── server.ts          # http/https + ws + everything wired together
+├── server.ts          # http + ws + everything wired together
 ├── lib/               # typed, unit-tested logic (see the API docs)
 │   ├── cli.ts         #   flag surface + command dispatch
 │   ├── protocol.ts    #   message parsing — never crashes on garbage
 │   ├── buttons.ts     #   action parsing + executor + config loading
 │   ├── cursor.ts      #   MouseLike interface + the 2ms pull loop
-│   ├── predict.ts     #   AimPredictor: velocity fit, capped lookahead (opt-in)
 │   ├── jitter.ts      #   p50/p95/max transport jitter stats
 │   ├── native.ts      #   loads libnut.node + koffi (from disk, or out of the SEA blob)
 │   ├── input.ts       #   MouseLike/KeyboardLike over libnut (delays zeroed!)
 │   ├── hotkey.ts      #   pause combo: key-state polling via koffi FFI
 │   ├── assets.ts      #   phone page from disk or from embedded SEA assets
 │   ├── static.ts      #   URL normalization + traversal guard + content types
-│   ├── certs.ts       #   optional mkcert TLS
 │   ├── check.ts       #   `point-bang check` self-diagnosis
 │   ├── net.ts         #   LAN address discovery
 │   ├── wifi.ts        #   band detection: netsh / nmcli / iw
@@ -79,14 +77,13 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
   dev loop depends on it.
 - **One CLI, two homes.** `cli.ts` is the entry for both `node cli.ts` and the
   single executable; the only difference is where assets come from
-  (`lib/assets.ts`) and where `certs/` is looked for.
+  (`lib/assets.ts`).
 - **Apply-latest, never queue.** The cursor loop pulls the newest target
   position each tick; no queue of stale positions can form anywhere.
-- **Filtering split.** One Euro smoothing lives phone-side (kills ARCore
-  micro-jumps adaptively); extrapolation lives PC-side (hides network
-  jitter) but is **off by default** — the projected lead was visible as the
-  cursor running ahead of aim, so `--predict-ms` is opt-in. They compose;
-  they never double-smooth.
+- **All filtering is phone-side.** One Euro smoothing on the phone kills
+  ARCore micro-jumps adaptively; the PC applies strictly the newest sample
+  and adds nothing — no smoothing, no prediction — so the cursor never
+  double-smooths and never runs ahead of your aim.
 - **Page origin ≠ server origin.** The phone page is published to GitHub
   Pages (`/phone/`, copied from `public/` at docs-build time) so the QR flow
   gets an HTTPS origin without the customer touching certificates. The same
