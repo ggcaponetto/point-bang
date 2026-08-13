@@ -21,8 +21,8 @@ export default defineConfig({
         {
           text: "Guide",
           items: [
-            { text: "Getting Started (USB)", link: "/guide/getting-started" },
             { text: "Playing over WiFi", link: "/guide/wifi" },
+            { text: "Playing over USB", link: "/guide/getting-started" },
             { text: "Game Guides", link: "/guide/games/" },
             { text: "· Time Crisis", link: "/guide/games/time-crisis/" },
             { text: "Buttons", link: "/guide/buttons" },

@@ -10,21 +10,6 @@ emulator bindings, and the in-game calibration.
 
 _More coming. Want one for your favorite? See below._
 
-## MAME arcade lightgun games
-
-For arcade classics (Point Blank, Area 51, Lethal Enforcers) no per-game
-guide is needed — one command line does it:
-
-```sh
-mame <rom> -lightgun -lightgun_device mouse -offscreen_reload -lowlatency
-```
-
-- `-lightgun_device mouse` reads the absolute cursor point-bang drives.
-- `-offscreen_reload` turns shots fired off-screen into the classic
-  reload — combine it with aiming past the screen edge.
-- In the MAME UI, map the trigger under **Input (this machine)** if the
-  default mouse-button mapping doesn't take.
-
 ## Community guides, hacks and mods
 
 Setups vary wildly — CRT filters, Sinden-style borders, gun-shell phone

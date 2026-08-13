@@ -135,5 +135,4 @@ games:
 
 ---
 
-Looking for other games? Back to the [game guides](../) — MAME arcade
-classics need just one command line.
+Looking for other games? Back to the [game guides](../).
