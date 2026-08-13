@@ -58,23 +58,27 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
 │   ├── sea.mjs        # esbuild -> sea blob -> postject: the single executable
 │   ├── pages.mjs      # copies public/ into the docs artifact -> GitHub Pages /phone/
 │   └── smoke.mjs      # exercises the built binary
+├── editor/            # button editor: a Vite + React + MUI + i18next workspace
+│   ├── src/model.ts   #   pure editor logic (drag/resize/hit-test/validation, tested)
+│   └── src/...        #   components: phone-canvas preview + tabbed settings panel
 ├── public/
 │   ├── index.html     # phone page: XR/DOM glue (buildless, ES module)
 │   ├── transport.js   # PC link: RTC-first ladder + WS fallback (JSDoc-typed, tested)
 │   ├── math.js        # pure math + button vocabulary shared by Chrome AND vitest
-│   ├── editor.html    # live button editor (PC browser): DOM glue only
-│   ├── editor.js      # editor logic: drag/resize/hit-test/validation (tested)
+│   ├── editor.html    # GENERATED: the editor workspace's single-file build output
 │   └── buttons.json   # 20 assignable buttons, read by both sides
 └── test/              # vitest suites, 90% coverage enforced
 ```
 
 ## Design decisions worth knowing
 
-- **No build step in development.** Node ≥ 23.6 runs the TypeScript directly
-  via type stripping; Chrome loads the phone page and its math module as-is.
-  Edit + reload beats a bundler for tuning. The one exception is
-  `npm run build:sea`, which bundles for distribution only — nothing in the
-  dev loop depends on it.
+- **No build step in development — except the editor.** Node ≥ 23.6 runs the
+  TypeScript directly via type stripping; Chrome loads the phone page and its
+  math module as-is. Edit + reload beats a bundler for tuning. The two
+  exceptions bundle for distribution only: `npm run build:sea` (the
+  executable) and the button editor (a React app that `serve` rebuilds
+  automatically whenever its sources changed) — nothing else in the dev loop
+  depends on either.
 - **One CLI, two homes.** `cli.ts` is the entry for both `node cli.ts` and the
   single executable; the only difference is where assets come from
   (`lib/assets.ts`).

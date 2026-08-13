@@ -46,8 +46,13 @@ bundles `cli.ts` to CommonJS with esbuild, lists `public/*` and `libnut.node`
 into a copy of the Node binary with postject. CI builds and smoke-tests both
 Windows and Linux binaries and uploads them as artifacts.
 
-This is the project's **only** build step. `node cli.ts` still runs straight
-from source, and the phone page stays buildless.
+`node cli.ts` still runs straight from source, and the phone page stays
+buildless. The one other built artifact is the button editor: an npm
+workspace (`editor/`, Vite + React + MUI) whose single-file output
+`public/editor.html` is generated — `serve` rebuilds it automatically when
+the editor sources changed, `npm run -w editor dev` gives a live dev server
+that proxies to a running `npm start`, and `build:sea` rebuilds it before
+bundling so executables never ship a stale editor.
 
 ## Testing the QR/remote flow without the hosted page
 
@@ -176,8 +181,12 @@ session key: open the URLs exactly as the server prints them — they carry
 - TypeScript is run natively by Node ≥ 23.6 — **erasable syntax only** (no
   enums, no parameter properties; `erasableSyntaxOnly` enforces it).
 - The phone page stays buildless: inline ES-module glue plus
-  `public/math.js`, which is plain JS with JSDoc types so Chrome and vitest
-  share one implementation.
+  `public/math.js`, which is plain JS with JSDoc types so Chrome, vitest AND
+  the editor bundle share one implementation.
+- The button editor lives in the `editor/` npm workspace (React + MUI +
+  i18next) with its own vitest suite and 90% gate on its logic modules;
+  `npm run validate` runs it too. Its build output `public/editor.html` is
+  generated — never edit or commit it.
 - Protocol changes are **additive only**.
 - Anything platform-specific (`netsh`, `nmcli`, `adb`, path separators, line
   endings) belongs in `lib/` behind an injectable function, so both OS paths

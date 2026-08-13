@@ -1,7 +1,8 @@
-// Pure logic for the button editor page (editor.html). Plain JS ES module on
-// purpose, the math.js deal: Chrome loads it directly, vitest imports it for
-// tests, JSDoc types are checked by `npm run typecheck`. The DOM glue stays in
-// editor.html — everything with behavior worth testing lives here.
+// Pure logic for the button editor — the typed port of the old
+// public/editor.js. Framework-free on purpose: vitest gates it at 90%+,
+// the React components stay thin. The problem strings mirror the server's
+// save verdicts in lib/buttons.ts BYTE FOR BYTE — both sides pin them in
+// tests, so never reword one without the other.
 
 import {
   parseAction,
@@ -10,27 +11,19 @@ import {
   normalizePad,
   normalizeKey,
   listKeys,
-} from "./math.js";
+} from "../../public/math.js";
+import type { Rect, Handle, ButtonsConfig, DecomposedAction } from "./types";
 
-/** @typedef {{ x: number, y: number, w: number, h: number }} Rect */
-/** @typedef {"nw" | "ne" | "sw" | "se"} Handle */
-
-/** @param {number} v @param {number} lo @param {number} hi */
-const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-/** Snap to whole percent — the shipped config uses integer rects. @param {number} v */
-const snap = (v) => Math.round(v);
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+/** Snap to whole percent — the shipped config uses integer rects. */
+const snap = (v: number) => Math.round(v);
 
 // Same shapes lib/buttons accepts — keep in sync with `usableVibrate` there.
-/** @param {unknown} v */
-const usableVibrate = (v) =>
+const usableVibrate = (v: unknown) =>
   typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v) && v >= 0);
 
-/**
- * Moves a rect by a % delta, kept fully on screen, snapped to whole percent.
- * @param {Rect} rect @param {number} dxPct @param {number} dyPct
- * @returns {Rect}
- */
-export function clampRectMove(rect, dxPct, dyPct) {
+/** Moves a rect by a % delta, kept fully on screen, snapped to whole percent. */
+export function clampRectMove(rect: Rect, dxPct: number, dyPct: number): Rect {
   return {
     ...rect,
     x: snap(clamp(rect.x + dxPct, 0, 100 - rect.w)),
@@ -42,11 +35,14 @@ export function clampRectMove(rect, dxPct, dyPct) {
  * Resizes a rect by dragging one corner handle. The dragged edges move, the
  * opposite ones stay put; the rect never leaves the screen or shrinks below
  * `minPct` in either dimension.
- * @param {Rect} rect @param {Handle} handle @param {number} dxPct @param {number} dyPct
- * @param {number} [minPct]
- * @returns {Rect}
  */
-export function resizeRect(rect, handle, dxPct, dyPct, minPct = 4) {
+export function resizeRect(
+  rect: Rect,
+  handle: Handle,
+  dxPct: number,
+  dyPct: number,
+  minPct = 4,
+): Rect {
   let { x, y, w, h } = rect;
   if (handle.includes("w")) {
     const nx = clamp(x + dxPct, 0, x + w - minPct);
@@ -63,13 +59,12 @@ export function resizeRect(rect, handle, dxPct, dyPct, minPct = 4) {
   return { ...rect, x: snap(x), y: snap(y), w: snap(w), h: snap(h) };
 }
 
-/**
- * Converts a pointer position to frame-relative percent coordinates.
- * @param {number} clientX @param {number} clientY
- * @param {{ left: number, top: number, width: number, height: number }} frame
- * @returns {{ x: number, y: number }}
- */
-export function pointerToPct(clientX, clientY, frame) {
+/** Converts a pointer position to frame-relative percent coordinates. */
+export function pointerToPct(
+  clientX: number,
+  clientY: number,
+  frame: { left: number; top: number; width: number; height: number },
+): { x: number; y: number } {
   return {
     x: ((clientX - frame.left) / frame.width) * 100,
     y: ((clientY - frame.top) / frame.height) * 100,
@@ -79,17 +74,18 @@ export function pointerToPct(clientX, clientY, frame) {
 /**
  * What a pointer at (px,py)% lands on: a corner handle beats the body, the
  * topmost (last-rendered) button beats the ones under it. Buttons without a
- * usable rect never hit.
- * @param {Array<{ id: string, rect: Rect | null }>} buttons in render order
- * @param {number} px @param {number} py @param {number} [handlePct] grab radius
- * @returns {{ id: string, part: Handle | "body" } | null}
+ * usable rect never hit. `buttons` is in render order.
  */
-export function hitTest(buttons, px, py, handlePct = 2) {
+export function hitTest(
+  buttons: Array<{ id: string; rect: Rect | null }>,
+  px: number,
+  py: number,
+  handlePct = 2,
+): { id: string; part: Handle | "body" } | null {
   for (let i = buttons.length - 1; i >= 0; i--) {
     const { id, rect } = buttons[i];
     if (!rect) continue;
-    /** @type {[Handle, number, number][]} */
-    const corners = [
+    const corners: [Handle, number, number][] = [
       ["nw", rect.x, rect.y],
       ["ne", rect.x + rect.w, rect.y],
       ["sw", rect.x, rect.y + rect.h],
@@ -108,29 +104,28 @@ export function hitTest(buttons, px, py, handlePct = 2) {
  * and every key this editor does not understand (the `"//"` doc string,
  * future per-button fields) rides along unchanged. Setting a patch value to
  * `undefined` removes it on serialize (JSON drops undefined).
- * @param {{ buttons: Array<Record<string, unknown>> }} config
- * @param {string} id @param {Record<string, unknown>} patch
  */
-export function updateButton(config, id, patch) {
+export function updateButton(
+  config: ButtonsConfig,
+  id: string,
+  patch: Record<string, unknown>,
+): ButtonsConfig {
   return {
     ...config,
     buttons: config.buttons.map((b) => (b.id === id ? { ...b, ...patch } : b)),
   };
 }
 
-/** @param {Rect} a @param {Rect} b */
-const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+const overlaps = (a: Rect, b: Rect) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 /**
  * A free spot for a newly placed button: scans the screen in coarse steps for
  * the first w×h rect that overlaps none of the existing ones (reading order,
  * top-left first), so repeated "add button" clicks never stack new buttons on
  * top of each other. Falls back to dead center when the screen is full.
- * @param {Rect[]} rects existing button rects
- * @param {number} [w] @param {number} [h]
- * @returns {Rect}
  */
-export function nextFreeRect(rects, w = 20, h = 16) {
+export function nextFreeRect(rects: Rect[], w = 20, h = 16): Rect {
   for (let y = 0; y + h <= 100; y += 7) {
     for (let x = 0; x + w <= 100; x += 7) {
       const candidate = { x, y, w, h };
@@ -140,13 +135,9 @@ export function nextFreeRect(rects, w = 20, h = 16) {
   return { x: 40, y: 42, w, h };
 }
 
-/**
- * The per-entry checks behind {@link configProblems}.
- * @param {Record<string, unknown>} d @param {string} id
- * @returns {string[]}
- */
-function entryProblems(d, id) {
-  const problems = [];
+/** The per-entry checks behind {@link configProblems}. */
+function entryProblems(d: Record<string, unknown>, id: string): string[] {
+  const problems: string[] = [];
   if (d.rect !== undefined && !normalizeButtonRect(d.rect))
     problems.push(`button ${id}: bad rect ignored (need {x,y,w,h} in % of the screen)`);
   if (d.vibrate !== undefined && !usableVibrate(d.vibrate))
@@ -170,10 +161,8 @@ function entryProblems(d, id) {
  * The slot itself stays — ids b0..b19 are the fixed vocabulary, so "delete"
  * means "back to factory empty". Unknown per-button fields are dropped on
  * purpose; unknown config-level keys are untouched.
- * @param {{ buttons: Array<Record<string, unknown>> }} config
- * @param {string} id
  */
-export function resetButton(config, id) {
+export function resetButton(config: ButtonsConfig, id: string): ButtonsConfig {
   return {
     ...config,
     buttons: config.buttons.map((b) =>
@@ -187,17 +176,15 @@ export function resetButton(config, id) {
  * parseButtonConfig, via the SAME math.js validators) plus a duplicate-id
  * check the server tolerates but a config should not contain. Empty array =
  * the save will be accepted.
- * @param {unknown} config
- * @returns {string[]}
  */
-export function configProblems(config) {
-  const c = /** @type {{ buttons?: unknown } | null} */ (config);
+export function configProblems(config: unknown): string[] {
+  const c = config as { buttons?: unknown } | null;
   if (typeof c !== "object" || !Array.isArray(c?.buttons))
     return ['config must be {"buttons": [...]}'];
-  const problems = [];
-  const seen = new Set();
-  for (const entry of /** @type {unknown[]} */ (c.buttons)) {
-    const d = /** @type {Record<string, unknown>} */ (entry ?? {});
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of c.buttons as unknown[]) {
+    const d = (entry ?? {}) as Record<string, unknown>;
     if (typeof d.id !== "string" || !d.id) {
       problems.push("button without id skipped");
       continue;
@@ -220,13 +207,12 @@ const BUILDER_MODS = ["ctrl", "shift", "alt", "win"];
  * Canonical spelling -> the listKeys INPUT spelling. Built FROM listKeys()
  * so it can never drift from the vocabulary (and it sidesteps the
  * canonical-not-reparseable trap by construction).
- * @returns {Map<string, string>}
  */
-const canonicalToSpelling = () => {
-  const map = new Map();
+const canonicalToSpelling = (): Map<string, string> => {
+  const map = new Map<string, string>();
   for (const g of listKeys())
     for (const k of g.keys) {
-      const c = /** @type {string} */ (normalizeKey(k));
+      const c = normalizeKey(k) as string;
       if (!map.has(c)) map.set(c, k);
     }
   return map;
@@ -237,13 +223,13 @@ const canonicalToSpelling = () => {
  * (composed in the fixed ctrl,shift,alt,win order); `key` is a listKeys
  * spelling or "" for none. Returns "" (unassigned) when there is nothing
  * to press.
- * @param {"none" | "mouse" | "key"} kind
- * @param {"left" | "right" | "middle"} mouseBtn
- * @param {string[]} mods
- * @param {string} key
- * @returns {string}
  */
-export function composeAction(kind, mouseBtn, mods, key) {
+export function composeAction(
+  kind: "none" | "mouse" | "key",
+  mouseBtn: "left" | "right" | "middle",
+  mods: string[],
+  key: string,
+): string {
   if (kind === "mouse") return `mouse:${mouseBtn}`;
   if (kind !== "key") return "";
   const parts = [...BUILDER_MODS.filter((m) => mods.includes(m)), ...(key ? [key] : [])];
@@ -255,20 +241,20 @@ export function composeAction(kind, mouseBtn, mods, key) {
  * Null = not representable by the builder: a non-modifier anywhere but last,
  * a repeated modifier, or a canonical with no builder spelling (cmd/meta in
  * a modifier position falls out here — they are main keys to the builder).
- * @param {string[]} canonicals @param {Map<string, string>} spelling
- * @returns {{ mods: string[], key: string } | null}
  */
-function classifyKeyParts(canonicals, spelling) {
+function classifyKeyParts(
+  canonicals: string[],
+  spelling: Map<string, string>,
+): { mods: string[]; key: string } | null {
   const modCanon = new Set(["control", "shift", "alt", "win"]);
-  /** @type {string[]} */
-  const mods = [];
+  const mods: string[] = [];
   let key = "";
   for (let i = 0; i < canonicals.length; i++) {
     const canon = canonicals[i];
     const isMod = modCanon.has(canon);
     if (!isMod && i < canonicals.length - 1) return null; // main key must be last
     if (isMod) {
-      const m = /** @type {string} */ (spelling.get(canon));
+      const m = spelling.get(canon) as string;
       if (mods.includes(m)) return null;
       mods.push(m);
     } else {
@@ -287,13 +273,8 @@ function classifyKeyParts(canonicals, spelling) {
  * builder spellings (`control` -> `ctrl`, `pgup` -> `pageup`); modifier
  * order normalizes on the next edit, the stored string is untouched until
  * the user actually changes something.
- * @param {string | undefined} spec
- * @returns {{ kind: "none" }
- *   | { kind: "mouse", button: "left" | "right" | "middle" }
- *   | { kind: "key", mods: string[], key: string }
- *   | { kind: "raw" }}
  */
-export function decomposeAction(spec) {
+export function decomposeAction(spec: string | undefined): DecomposedAction {
   if (!spec) return { kind: "none" };
   const parsed = parseAction(spec);
   if (!parsed) return { kind: "raw" };
@@ -302,12 +283,8 @@ export function decomposeAction(spec) {
   return result ? { kind: "key", ...result } : { kind: "raw" };
 }
 
-/**
- * Vibrate config value -> the feedback form's state.
- * @param {unknown} v
- * @returns {{ mode: "default" | "off" | "custom", ms: number }}
- */
-export function decomposeVibrate(v) {
+/** Vibrate config value -> the feedback form's state. */
+export function decomposeVibrate(v: unknown): { mode: "default" | "off" | "custom"; ms: number } {
   if (v === undefined || v === true) return { mode: "default", ms: 10 };
   if (v === false || v === 0) return { mode: "off", ms: 10 };
   if (typeof v === "number" && Number.isFinite(v) && v > 0) return { mode: "custom", ms: v };
@@ -316,12 +293,10 @@ export function decomposeVibrate(v) {
 
 /**
  * Parses the vibrate inspector field: "" = default (absent), "true"/"false",
- * or a pulse in ms. Returns {} to delete the key, {vibrate} to set it, null
- * for unusable input.
- * @param {string} text
- * @returns {{ vibrate?: unknown } | null}
+ * or a pulse in ms. Returns {vibrate: undefined} to delete the key,
+ * {vibrate} to set it, null for unusable input.
  */
-export function parseVibrateField(text) {
+export function parseVibrateField(text: string): { vibrate?: unknown } | null {
   const t = text.trim().toLowerCase();
   if (t === "") return { vibrate: undefined };
   if (t === "true") return { vibrate: true };
@@ -334,10 +309,8 @@ export function parseVibrateField(text) {
 /**
  * Parses the gamepad-button inspector field: "" = none (key removed), "any"
  * = every physical button, or a button index. Null for unusable input.
- * @param {string} text
- * @returns {{ pad?: unknown } | null}
  */
-export function parsePadField(text) {
+export function parsePadField(text: string): { pad?: unknown } | null {
   const t = text.trim().toLowerCase();
   if (t === "") return { pad: undefined };
   if (t === "any") return { pad: "any" };

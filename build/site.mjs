@@ -1,7 +1,8 @@
 // Builds the hosted start page (site/ — React + MUI + i18next) into
 // docs/public/start/, which VitePress copies verbatim into the Pages
-// artifact. site/ is a separate npm package on purpose: the core project
-// keeps its no-build-step rule; only the docs pipeline pays for a bundler.
+// artifact. site/ is an npm workspace: the root `npm install` provides its
+// dependencies (one lockfile), but it stays out of `validate` — only the
+// docs pipeline pays for its bundler.
 //
 // A Node program, not shell built-ins — npm scripts must run on cmd/PS too.
 
@@ -17,7 +18,6 @@ const SITE = path.join(ROOT, "site");
 fs.mkdirSync(path.join(SITE, "public"), { recursive: true });
 fs.copyFileSync(path.join(ROOT, "assets", "logo.svg"), path.join(SITE, "public", "logo.svg"));
 
-const run = (cmd) => execSync(cmd, { cwd: SITE, stdio: "inherit" });
-if (!fs.existsSync(path.join(SITE, "node_modules"))) run("npm ci");
-run("npm run build");
+// workspace commands run from the ROOT (that is where npm resolves -w)
+execSync("npm run -w site build", { cwd: ROOT, stdio: "inherit" });
 console.log("site: built -> docs/public/start/");

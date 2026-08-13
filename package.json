@@ -4,6 +4,14 @@
   "private": true,
   "description": "Phone WebXR -> PC cursor proof of concept",
   "type": "module",
+  "workspaces": [
+    "editor",
+    "site"
+  ],
+  "overrides": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
   "bin": {
     "point-bang": "cli.ts"
   },
@@ -23,7 +31,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "knip": "knip",
-    "validate": "npm run format:check && npm run typecheck && npm run knip && npm test",
+    "build:editor": "npm run -w editor build",
+    "validate": "npm run format:check && npm run typecheck && npm run knip && npm test && npm run -w editor validate",
     "docs:api": "typedoc",
     "docs:assets": "node build/pages.mjs",
     "docs:site": "node build/site.mjs",

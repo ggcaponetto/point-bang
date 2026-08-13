@@ -39,13 +39,16 @@ jobs:
         if: runner.os == 'Linux'
       - run: npm run typecheck
       - run: npm test
+      # the editor workspace gates (tests + vite build) on BOTH OSes —
+      # Windows is the primary platform
+      - run: npm run -w editor validate
       # Quality trackers run once (Linux) and are skipped gracefully until
       # the CODECOV_TOKEN / SONAR_TOKEN repo secrets exist.
       - name: Upload coverage to Codecov
         if: runner.os == 'Linux' && env.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@v5
         with:
-          files: coverage/lcov.info
+          files: coverage/lcov.info,editor/coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
       - name: SonarQube scan

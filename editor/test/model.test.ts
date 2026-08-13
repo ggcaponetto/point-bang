@@ -13,7 +13,7 @@ import {
   decomposeAction,
   decomposeVibrate,
   resetButton,
-} from "../public/editor.js";
+} from "../src/model";
 
 const R = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
 

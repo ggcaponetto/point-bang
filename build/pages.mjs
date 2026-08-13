@@ -11,13 +11,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PUBLIC_ASSETS } from "../lib/assets.ts";
+import { PHONE_ASSETS } from "../lib/assets.ts";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEST = path.join(ROOT, "docs", "public", "phone");
 
+// PHONE_ASSETS only: the editor (a generated bundle) works exclusively
+// against the local PC server — publishing it to Pages would be dead weight.
 fs.mkdirSync(DEST, { recursive: true });
-for (const name of PUBLIC_ASSETS) {
+for (const name of PHONE_ASSETS) {
   const src = path.join(ROOT, "public", name);
   if (!fs.existsSync(src)) throw new Error(`missing public asset: ${src}`);
   fs.copyFileSync(src, path.join(DEST, name));
@@ -27,4 +29,4 @@ fs.copyFileSync(
   path.join(ROOT, "assets", "logo.svg"),
   path.join(ROOT, "docs", "public", "logo.svg"),
 );
-console.log(`pages: copied ${PUBLIC_ASSETS.length} phone-page files + logo -> ${DEST}`);
+console.log(`pages: copied ${PHONE_ASSETS.length} phone-page files + logo -> ${DEST}`);

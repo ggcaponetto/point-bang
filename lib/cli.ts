@@ -8,6 +8,7 @@ import type { Ffi, LibNut } from "./native.ts";
 import { startNgrok, formatTunnelReport } from "./tunnel.ts";
 import { diskAssets, seaAssets, type AssetSource } from "./assets.ts";
 import { adbReverse } from "./adb.ts";
+import { ensureEditorBuilt } from "./editorbuild.ts";
 import { runCheck } from "./check.ts";
 import { lanIPv4, formatIpReport } from "./net.ts";
 import { resolveKey } from "./auth.ts";
@@ -51,6 +52,8 @@ export interface CliDeps {
   tunnel?: typeof startNgrok;
   /** Registers teardown; tests inject one to avoid real signal handlers. */
   onShutdown?: (fn: () => void) => void;
+  /** Editor auto-build for `serve`; tests inject a noop so npm never runs. */
+  buildEditor?: typeof ensureEditorBuilt;
 }
 
 /**
@@ -305,6 +308,14 @@ async function runServeCommand(
     error(resolvedKey.problem);
     return 1;
   }
+  // BEFORE the server starts, so the banner's /editor.html URL is honest.
+  // Never fatal: a broken editor build must not take down the phone flow.
+  (deps.buildEditor ?? ensureEditorBuilt)({
+    root: appDir,
+    isSea: deps.isSea,
+    publicDir: a.public,
+    log,
+  });
   try {
     const server = await (deps.start ?? startServer)({
       mode: a.mode,
