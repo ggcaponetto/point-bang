@@ -163,7 +163,9 @@ export function swapMonitorSlots(arrays, a, b, active) {
     arr[a] = arr[b];
     arr[b] = tmp;
   }
-  return active === a + 1 ? b + 1 : active === b + 1 ? a + 1 : active;
+  if (active === a + 1) return b + 1;
+  if (active === b + 1) return a + 1;
+  return active;
 }
 
 /**
@@ -263,24 +265,24 @@ export class EdgeGesture {
   }
 
   /**
+   * How far past the margin band a coordinate is; 0 while inside.
+   * @param {number} value @returns {number}
+   */
+  overshoot(value) {
+    if (value < -this.margin) return -this.margin - value;
+    if (value > 1 + this.margin) return value - 1 - this.margin;
+    return 0;
+  }
+
+  /**
    * Which edge (if any) the aim is past.
    * @param {{ u: number, v: number } | null} uv
    * @returns {"left" | "right" | "top" | "bottom" | null}
    */
   classify(uv) {
     if (!uv) return null;
-    const du =
-      uv.u < -this.margin
-        ? -this.margin - uv.u
-        : uv.u > 1 + this.margin
-          ? uv.u - 1 - this.margin
-          : 0;
-    const dv =
-      uv.v < -this.margin
-        ? -this.margin - uv.v
-        : uv.v > 1 + this.margin
-          ? uv.v - 1 - this.margin
-          : 0;
+    const du = this.overshoot(uv.u);
+    const dv = this.overshoot(uv.v);
     if (du === 0 && dv === 0) return null;
     if (du >= dv) return uv.u < 0 ? "left" : "right";
     return uv.v < 0 ? "top" : "bottom";

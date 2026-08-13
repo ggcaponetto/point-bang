@@ -100,12 +100,17 @@ export function selectMonitor(report: MonitorsReport, choice: MonitorChoice): Mo
  * A connected output with no geometry has no active mode (screen is off) and
  * is not part of the desktop.
  */
+// Anchored and matched per whitespace token (not scanned across the line):
+// an unanchored /(\d+)x…/ re-tries at every offset of long digit runs, which
+// is super-linear on hostile input; a full-token match cannot backtrack.
+const XRANDR_GEOMETRY = /^(\d+)x(\d+)([+-]\d+)([+-]\d+)$/;
+
 export function parseXrandr(output: string): MonitorRect[] {
   const monitors: MonitorRect[] = [];
   for (const line of output.split(/\r?\n/)) {
     const parts = line.trim().split(/\s+/);
     if (parts.length < 2 || parts[1] !== "connected") continue;
-    const geo = /(\d+)x(\d+)([+-]\d+)([+-]\d+)/.exec(line);
+    const geo = parts.map((t) => XRANDR_GEOMETRY.exec(t)).find((g) => g !== null);
     if (!geo) continue;
     monitors.push({
       x: Number(geo[3]),
