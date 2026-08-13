@@ -129,7 +129,7 @@ export interface ServerOptions {
    * Defaults to `buttonsFile !== undefined` for embedded/test callers.
    */
   buttonsExplicit?: boolean;
-  /** PC key combo toggling tracking pause; `"off"` disables. Default `shift+space`. */
+  /** PC key combo toggling tracking pause; `"off"` disables. Default `shift+s`. */
   pauseCombo?: string;
   /** Injected combo probe for tests — replaces the real key-state FFI. */
   pauseProbe?: ComboProbe;
@@ -281,7 +281,7 @@ async function setupPauseHotkey(
   let reason: string | null = null;
   if (!keys) {
     probe = null;
-    reason = `unrecognized combo "${pauseCombo}" (expected e.g. shift+space)`;
+    reason = `unrecognized combo "${pauseCombo}" (expected e.g. shift+s)`;
   } else if (!probe) {
     try {
       const r = createComboProbe(keys, {
@@ -767,7 +767,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // While paused, aim and button-downs are dropped at the socket; button-ups
   // still pass so nothing held on the phone stays stuck down forever.
   let paused = false;
-  const pauseCombo = opts.pauseCombo ?? "shift+space";
+  const pauseCombo = opts.pauseCombo ?? "shift+s";
   const togglePause = (): void => {
     paused = !paused;
     // aim collected before the pause must not flick the cursor on resume

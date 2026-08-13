@@ -44,7 +44,7 @@ describe("serve defaults", () => {
     expect(o.port).toBe(8443);
     // the default port may degrade to a free one when busy…
     expect(o.portFallback).toBe(true);
-    expect(o.pauseCombo).toBe("shift+space");
+    expect(o.pauseCombo).toBe("shift+s");
   });
 
   it("treats a bare invocation and an explicit `serve` identically", async () => {

@@ -2,7 +2,7 @@ import { normalizeKey } from "./buttons.ts";
 import type { Ffi } from "./native.ts";
 
 /**
- * The pause hotkey: a PC-side key combination (default `shift+space`) that
+ * The pause hotkey: a PC-side key combination (default `shift+s`) that
  * toggles tracking on and off, so the real mouse can be used mid-session and
  * the gun resumed afterwards — no reconnecting, no recalibrating.
  *
@@ -11,14 +11,14 @@ import type { Ffi } from "./native.ts";
  * global (they see the combo even while a fullscreen game has focus). Nothing
  * is grabbed or swallowed: the focused app still receives the combo, so pick
  * one your game ignores. Combos use the same key vocabulary as buttons.json
- * (`shift+space`, `ctrl+f12`, …), though only keys with stable virtual-key /
+ * (`shift+s`, `ctrl+f12`, …), though only keys with stable virtual-key /
  * keysym mappings are watchable — punctuation is rejected here because its
  * codes are layout-dependent.
  *
  * @module
  */
 
-/** Parses `"shift+space"` into canonical key names; null when any part is unknown. */
+/** Parses `"shift+s"` into canonical key names; null when any part is unknown. */
 export function parseCombo(spec: string): string[] | null {
   const keys: string[] = [];
   for (const part of spec.split("+")) {

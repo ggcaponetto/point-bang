@@ -35,7 +35,7 @@ node cli.ts --help               # every option is a flag; npm start -- --port 9
                                  # printed URLs follow); a busy EXPLICIT --port refuses
 npm start -- --input none        # headless: print the aim, never touch the cursor
 npm start -- --screen 2560x1440  # screen assumed when there is none to measure
-npm start -- --pause-combo alt+p # tracking-pause hotkey (default shift+space; off = none)
+npm start -- --pause-combo alt+p # tracking-pause hotkey (default shift+s; off = none)
 npm start -- --key off           # disable the session key (trusted LAN); --key <v> pins one
 npm start -- --page-url https://you.example/phone/   # QR targets a self-hosted page
 npm run docs:build               # ALSO publishes public/ -> Pages /phone/ (build/pages.mjs)
@@ -208,7 +208,7 @@ What server.ts already contains:
 - Jitter stats: prints p50/p95/max of (arrival − t) minus window-min every 2s.
   (Clock offset unknown → only jitter is meaningful, not absolute latency.)
 - `fire` → left click via libnut.
-- Pause hotkey (`--pause-combo`, default shift+space, `off` disables): a PC
+- Pause hotkey (`--pause-combo`, default shift+s, `off` disables): a PC
   key combo toggles a gate that drops aim/fire/button-downs at the socket
   while paused (button-UPs still pass — nothing stays stuck down), so the
   real mouse can be used mid-session. The pending aim sample is cleared on
@@ -375,7 +375,7 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   imposes: no top-level await in `cli.ts` (CJS), `import.meta.url` is rewritten
   by a define, and no cross-compiling (build on the OS you ship for).
 - **Pause hotkey: poll global key state via koffi FFI** (user request
-  2026-08-12). `--pause-combo` (default `shift+space`) toggles tracking so
+  2026-08-12). `--pause-combo` (default `shift+s`) toggles tracking so
   the real mouse works mid-session; resume without reconnecting. Reading is
   passive polling every 25ms — `GetAsyncKeyState` on Windows, one
   `XQueryKeymap` snapshot on X11 — NOT a hook or grab: nothing is swallowed,

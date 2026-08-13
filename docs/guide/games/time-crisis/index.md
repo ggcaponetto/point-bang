@@ -53,7 +53,7 @@ Two tips before launching the game:
 
 - Recalibration takes ~15 seconds and is needed once per session (or after
   bumping the monitor).
-- Press **shift+space** on the PC keyboard any time to pause tracking and
+- Press **shift+s** on the PC keyboard any time to pause tracking and
   use the real mouse; press it again to resume.
 
 ## 4. Phone buttons

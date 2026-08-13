@@ -180,7 +180,7 @@ completes**. If they still don't, check the server's startup log for
 
 ## The pause hotkey does nothing
 
-Check the server's startup log. `pause hotkey: shift+space toggles tracking`
+Check the server's startup log. `pause hotkey: shift+s toggles tracking`
 means it is armed; `pause hotkey: unavailable — <reason>` tells you why it is
 not (headless session, no X display, an unwatchable key in the combo). Run
 `point-bang check` to see the hotkey status for your install. On Wayland the

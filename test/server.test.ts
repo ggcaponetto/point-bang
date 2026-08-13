@@ -647,7 +647,7 @@ describe("startServer pause hotkey", () => {
   it("toggles pause: aim/fire/presses drop, releases pass, resume works", async () => {
     let comboDown = false;
     const t = await bootPaused({ down: () => comboDown });
-    expect(t.logs.some((l) => l.includes("pause hotkey: shift+space toggles tracking"))).toBe(true);
+    expect(t.logs.some((l) => l.includes("pause hotkey: shift+s toggles tracking"))).toBe(true);
 
     const ws = await wsOpen(`ws://127.0.0.1:${t.srv.httpPort}`);
     // live: aim moves the cursor, b1 (mouse:right) goes down and stays held
