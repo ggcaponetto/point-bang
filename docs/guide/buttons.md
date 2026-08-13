@@ -21,11 +21,14 @@ file's ids to actions. One file, both sides.
 You rarely need to edit the JSON by hand: the server hosts a drag-and-drop
 editor — the startup banner prints its URL
 (`Edit: open http://localhost:8443/editor.html …`, open it **on the PC**).
-Drag buttons around a phone-shaped canvas, resize them by their corners,
-remap labels/actions/vibration/edges/gamepad buttons, and turn unused
-(hidden) slots into new buttons with **＋ add button**. Problems are shown
-live with the exact messages the server would log, and Save is disabled
-until the config is clean.
+Drag buttons around a phone-shaped canvas (portrait by default, toggle to
+landscape), build actions from dropdowns — mouse click, or modifier
+checkboxes plus a key picker listing every supported key — assign
+off-screen edges and gamepad buttons from labeled selects, and turn unused
+(hidden) slots into new buttons with **＋ add button**. The editor speaks
+English, German and Italian (switch in the header; it follows your browser
+language on first visit). Problems are shown live with the exact messages
+the server would log, and Save is disabled until the config is clean.
 
 **Save applies everywhere immediately**: the file is rewritten atomically,
 the PC remaps actions without a restart, and a connected phone re-renders
