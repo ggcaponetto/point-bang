@@ -12,6 +12,10 @@
       ],
       "project": ["**/*.ts", "build/*.mjs"],
       "ignoreDependencies": ["@nut-tree-fork/libnut-linux", "@nut-tree-fork/libnut-win32"]
+    },
+    "editor": {
+      "entry": ["src/main.tsx", "test/**/*.test.{ts,tsx}"],
+      "project": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}", "*.ts"]
     }
   }
 }

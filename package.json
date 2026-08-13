@@ -5,8 +5,13 @@
   "description": "Phone WebXR -> PC cursor proof of concept",
   "type": "module",
   "workspaces": [
+    "editor",
     "site"
   ],
+  "overrides": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
   "bin": {
     "point-bang": "cli.ts"
   },
