@@ -218,7 +218,7 @@
         <div id="frame"></div>
         <div class="under">
           <label><input type="checkbox" id="portrait" /> portrait phone</label>
-          <select id="addHidden" hidden>
+          <select id="addHidden" hidden aria-label="add one of the unused button slots">
             <option value="">＋ add button…</option>
           </select>
           <span id="chipLabel" hidden>place on canvas:</span>
@@ -358,7 +358,8 @@
         for (const b of hidden) {
           const o = document.createElement("option");
           o.value = b.id;
-          o.textContent = `${b.id}${b.label && b.label !== b.id.toUpperCase() ? ` (${b.label})` : ""}`;
+          const hasOwnLabel = b.label && b.label !== b.id.toUpperCase();
+          o.textContent = hasOwnLabel ? b.id + " (" + b.label + ")" : b.id;
           sel.appendChild(o);
         }
         sel.value = "";
