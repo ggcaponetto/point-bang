@@ -6,44 +6,144 @@
       "label": "LEFT",
       "action": "mouse:left",
       "visible": true,
-      "rect": { "x": 2, "y": 30, "w": 44, "h": 30 }
+      "rect": {
+        "x": 2,
+        "y": 30,
+        "w": 44,
+        "h": 30
+      }
     },
     {
       "id": "b1",
       "label": "RIGHT",
       "action": "mouse:right",
       "visible": true,
-      "rect": { "x": 54, "y": 30, "w": 44, "h": 30 }
+      "rect": {
+        "x": 54,
+        "y": 30,
+        "w": 44,
+        "h": 30
+      }
     },
     {
       "id": "b2",
       "label": "A",
-      "action": "key:a",
+      "action": "key:left",
       "visible": true,
-      "rect": { "x": 2, "y": 17, "w": 20, "h": 10 }
+      "rect": {
+        "x": 2,
+        "y": 11,
+        "w": 45,
+        "h": 17
+      }
     },
     {
       "id": "b3",
       "label": "B",
-      "action": "key:b",
+      "action": "key:right",
       "visible": true,
-      "rect": { "x": 78, "y": 17, "w": 20, "h": 10 }
+      "rect": {
+        "x": 53,
+        "y": 11,
+        "w": 44,
+        "h": 17
+      }
     },
-    { "id": "b4", "label": "B4", "action": "", "visible": false },
-    { "id": "b5", "label": "B5", "action": "", "visible": false },
-    { "id": "b6", "label": "B6", "action": "", "visible": false },
-    { "id": "b7", "label": "B7", "action": "", "visible": false },
-    { "id": "b8", "label": "B8", "action": "", "visible": false },
-    { "id": "b9", "label": "B9", "action": "", "visible": false },
-    { "id": "b10", "label": "B10", "action": "", "visible": false },
-    { "id": "b11", "label": "B11", "action": "", "visible": false },
-    { "id": "b12", "label": "B12", "action": "", "visible": false },
-    { "id": "b13", "label": "B13", "action": "", "visible": false },
-    { "id": "b14", "label": "B14", "action": "", "visible": false },
-    { "id": "b15", "label": "B15", "action": "", "visible": false },
-    { "id": "b16", "label": "B16", "action": "", "visible": false },
-    { "id": "b17", "label": "B17", "action": "", "visible": false },
-    { "id": "b18", "label": "B18", "action": "", "visible": false },
-    { "id": "b19", "label": "B19", "action": "", "visible": false }
+    {
+      "id": "b4",
+      "label": "B4",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b5",
+      "label": "B5",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b6",
+      "label": "B6",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b7",
+      "label": "B7",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b8",
+      "label": "B8",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b9",
+      "label": "B9",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b10",
+      "label": "B10",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b11",
+      "label": "B11",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b12",
+      "label": "B12",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b13",
+      "label": "B13",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b14",
+      "label": "B14",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b15",
+      "label": "B15",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b16",
+      "label": "B16",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b17",
+      "label": "B17",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b18",
+      "label": "B18",
+      "action": "",
+      "visible": false
+    },
+    {
+      "id": "b19",
+      "label": "B19",
+      "action": "",
+      "visible": false
+    }
   ]
 }

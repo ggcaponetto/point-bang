@@ -26,6 +26,32 @@ No custom hardware. No markers. No sensor bars.
 
 ---
 
+<div align="center">
+
+## ❤️ A note from a tired, happy dad
+
+There's a little boy in the next room who thinks his dad makes video
+games. The truth is his dad chases calibration bugs at midnight and
+whispers "one more build" while other people whisper goodnight.
+
+I made point-bang because arcades made my childhood magical, and I
+wanted to hand that feeling to my son and share it for free to strangers  
+on the internet.
+
+The hours in this repo came from somewhere — a
+coffee can't buy them back — but it turns them into something I can
+show him one day and say: _look, buddy, it mattered. People played
+because of us._
+
+If point-bang made you feel eight years old again, even for one
+evening — the yellow button below is how you say it.
+
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/ggcaponetto)
+
+</div>
+
+---
+
 ## Getting started (players)
 
 No Node, no build tools, no certificates — three steps:
@@ -52,7 +78,31 @@ has the lowest jitter of all and charges the phone while you play.
 
 Alternatively, you can skip setting up a game and just move the PC cursor around with your phone to test the aim.
 
-## How it works
+## Getting started (developers)
+
+Requires Node ≥ 23.6 (TypeScript runs natively via type stripping — no
+build step anywhere in the dev loop):
+
+```sh
+git clone https://github.com/ggcaponetto/point-bang.git
+cd point-bang
+npm install
+npm run start:adb    # USB flow: sets up the adb tunnel for you
+```
+
+Open **http://localhost:8443** in Chrome on the phone, tap **START AR**,
+capture the three corners. `npm start` additionally prints the QR for the
+wireless flow, `npm run start:tunnel` exposes a public ngrok URL, and the
+[development guide](https://ggcaponetto.github.io/point-bang/reference/development)
+covers testing the remote flow against uncommitted code.
+
+```sh
+npm run validate     # format:check + typecheck + knip + tests (90% coverage gate)
+npm run build:sea    # single self-contained executable -> dist/point-bang[.exe]
+node cli.ts --help   # every option is a flag
+```
+
+### How it works
 
 ```mermaid
 flowchart LR
@@ -78,30 +128,6 @@ pointing at three screen corners; WebXR anchors keep the calibration
 self-correcting as ARCore refines its map of your room. The wireless setup
 needs **zero certificates**: the phone page is hosted over HTTPS, signaling
 is one Local-Network-Access fetch, and WebRTC brings its own encryption.
-
-## Getting started (developers)
-
-Requires Node ≥ 23.6 (TypeScript runs natively via type stripping — no
-build step anywhere in the dev loop):
-
-```sh
-git clone https://github.com/ggcaponetto/point-bang.git
-cd point-bang
-npm install
-npm run start:adb    # USB flow: sets up the adb tunnel for you
-```
-
-Open **http://localhost:8443** in Chrome on the phone, tap **START AR**,
-capture the three corners. `npm start` additionally prints the QR for the
-wireless flow, `npm run start:tunnel` exposes a public ngrok URL, and the
-[development guide](https://ggcaponetto.github.io/point-bang/reference/development)
-covers testing the remote flow against uncommitted code.
-
-```sh
-npm run validate     # format:check + typecheck + knip + tests (90% coverage gate)
-npm run build:sea    # single self-contained executable -> dist/point-bang[.exe]
-node cli.ts --help   # every option is a flag
-```
 
 ## Highlights
 
@@ -142,15 +168,8 @@ node cli.ts --help   # every option is a flag
 - **Pause hotkey** — `shift+space` pauses tracking so the real mouse
   works, and resumes right where you left off; configurable, and never
   swallows the combo from the focused game.
-- **Play-anywhere setup path** — `--tunnel ngrok` publishes an HTTPS URL
-  the phone can open from any network.
-- **Runs headless** — no display? `serve` prints the aim instead of
-  moving a cursor; `--input none` forces it anywhere.
 - **Windows and Linux, equally** — one yargs CLI, no bash-only syntax,
   CI runs the whole suite on both.
-- **Seriously tested** — 300+ tests, 90%+ coverage enforced on every
-  metric, integration tests with fake input devices, prettier/knip/husky
-  gates, Codecov + SonarQube quality tracking.
 
 ## Project status
 
