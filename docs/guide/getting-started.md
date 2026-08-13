@@ -105,3 +105,14 @@ Cursor injection uses X11's XTEST extension: install `libx11` and `libxtst`
 Recalibration takes ~15 seconds and is needed once per session — WebXR
 anchors don't persist across sessions, and bumping the monitor invalidates
 the calibration (anchors track the spot in space, not the object).
+
+## Multiple monitors
+
+`point-bang monitors` lists your displays; `serve --monitor 2` aims at one
+of them, `--monitor all` spans the whole desktop with **each monitor
+calibrated as its own plane** (bezels and angled panels stay accurate, with
+independent aim correction per monitor). During an `all` calibration the PC
+cursor jumps to the center of the monitor you should calibrate next — aim
+at the panel the cursor sits on. Calibrated them in the wrong order anyway?
+Tap **SWAP** in the phone's aim panel and the assignment flips instantly,
+no recalibration.

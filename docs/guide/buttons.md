@@ -2,17 +2,34 @@
 
 `public/buttons.json` defines **20 assignable buttons**. Each entry has:
 
-| Field     | Meaning                                                    |
-| --------- | ---------------------------------------------------------- |
-| `id`      | Stable identifier sent over the wire (`fire`, `b1`…`b20`)  |
-| `label`   | Text shown on the phone                                    |
-| `action`  | What the PC does — see below                               |
-| `visible` | Whether the phone shows the button                         |
-| `rect`    | _(optional)_ Where the phone places it — see **Placement** |
-| `vibrate` | _(optional)_ Haptic tick on press — see **Haptics**        |
+| Field     | Meaning                                                             |
+| --------- | ------------------------------------------------------------------- |
+| `id`      | Stable identifier sent over the wire (`fire`, `b1`…`b20`)           |
+| `label`   | Text shown on the phone                                             |
+| `action`  | What the PC does — see below                                        |
+| `visible` | Whether the phone shows the button                                  |
+| `rect`    | _(optional)_ Where the phone places it — see **Placement**          |
+| `vibrate` | _(optional)_ Haptic tick on press — see **Haptics**                 |
+| `edge`    | _(optional)_ Screen edge that presses it — see **Off-screen edges** |
+| `pad`     | _(optional)_ Physical gamepad button — see **Physical triggers**    |
 
 The phone renders the visible buttons during play; the server maps the same
 file's ids to actions. One file, both sides.
+
+## The live editor
+
+You rarely need to edit the JSON by hand: the server hosts a drag-and-drop
+editor — the startup banner prints its URL
+(`Edit: open http://localhost:8443/editor.html …`, open it **on the PC**).
+Drag buttons around a phone-shaped canvas, resize them by their corners,
+remap labels/actions/vibration/edges/gamepad buttons, and turn unused
+(hidden) slots into new buttons with **＋ add button**. Problems are shown
+live with the exact messages the server would log, and Save is disabled
+until the config is clean.
+
+**Save applies everywhere immediately**: the file is rewritten atomically,
+the PC remaps actions without a restart, and a connected phone re-renders
+its overlay mid-session — no recalibration, no page reload.
 
 ## Placement
 
@@ -72,6 +89,40 @@ vibration API, so it's a silent no-op there; and the vibration motor shakes
 the same phone the AR tracking runs on — if your aim visibly wobbles when
 firing, shorten the pulse or set `"vibrate": false` on the trigger.
 
+## Off-screen edges
+
+Assign a button to a screen edge and it presses when you **aim past that
+edge** — the classic Time Crisis reload/duck, generalized to all four edges:
+
+```json
+{ "id": "b4", "label": "RELOAD", "action": "key:r", "visible": false, "edge": "bottom" }
+```
+
+Hold your aim past the edge for ~150ms and the button goes **down**; the
+moment your aim comes back on screen (or is lost) it releases — so
+duck-and-hold mechanics work naturally. The margin is generous enough that
+ordinary shots near the screen border (and the bezels between monitors in
+`--monitor all`) never false-trigger. One button per edge; the button does
+**not** need to be `visible` — an edge-only reload needs no spot on the
+screen. In the editor it's the "off-screen edge" dropdown.
+
+## Physical triggers (Bluetooth)
+
+Pair a Bluetooth gamepad — or a one-button clicker — with the **phone**, and
+map its buttons with `pad`:
+
+```json
+"pad": 0        this gamepad button index presses the button
+"pad": "any"    EVERY physical button presses it (one-button clickers)
+```
+
+Devices expose different button layouts, so the phone HUD shows the index of
+the last physical press (`pad 3`) — press your trigger once, read the
+number, put it in the config. `"any"` skips even that: whatever the clicker
+reports, it fires. Presses and releases pass through separately, so a held
+physical trigger holds the action. This uses the browser Gamepad API; a
+device that pairs as a _keyboard_ instead of a gamepad won't be seen.
+
 ## FIRE is a button too
 
 The entry with id `"fire"` is the trigger: it keeps its red styling wherever
@@ -88,6 +139,13 @@ whole tap duration (~100ms) to every shot. All point-bang buttons send on
 
 ## Applying changes
 
-Edit `public/buttons.json`, restart the server, reload the phone page.
-Invalid actions are reported at server start (`buttons: …`) and skipped —
-a broken entry never takes the gun down.
+The editor's **Save** applies everything live — server and phone, no
+restarts. Editing `public/buttons.json` by hand still works: the phone picks
+the file up on its next page load, and the PC's action map on the next server
+start. Invalid actions are reported (`buttons: …`) and skipped — a broken
+entry never takes the gun down, and the editor refuses to save one at all.
+
+In the single-executable build the live config lives in a `buttons.json`
+**next to the executable** (created by the first editor save); until it
+exists, the copy baked into the binary serves. `--buttons <file>` points both
+sides at any explicit file.
