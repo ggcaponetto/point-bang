@@ -233,6 +233,35 @@ export function composeAction(kind, mouseBtn, mods, key) {
 }
 
 /**
+ * Sorts a combo's canonical parts into checkbox modifiers + one main key.
+ * Null = not representable by the builder: a non-modifier anywhere but last,
+ * a repeated modifier, or a canonical with no builder spelling (cmd/meta in
+ * a modifier position falls out here — they are main keys to the builder).
+ * @param {string[]} canonicals @param {Map<string, string>} spelling
+ * @returns {{ mods: string[], key: string } | null}
+ */
+function classifyKeyParts(canonicals, spelling) {
+  const modCanon = new Set(["control", "shift", "alt", "win"]);
+  /** @type {string[]} */
+  const mods = [];
+  let key = "";
+  for (let i = 0; i < canonicals.length; i++) {
+    const canon = canonicals[i];
+    const isMod = modCanon.has(canon);
+    if (!isMod && i < canonicals.length - 1) return null; // main key must be last
+    if (isMod) {
+      const m = /** @type {string} */ (spelling.get(canon));
+      if (mods.includes(m)) return null;
+      mods.push(m);
+    } else {
+      key = spelling.get(canon) ?? "";
+      if (!key) return null;
+    }
+  }
+  return { mods, key };
+}
+
+/**
  * Action spec -> builder state, for populating the form from an existing
  * action. `kind: "raw"` marks a spec the 4-checkbox + 1-key builder cannot
  * represent (several main keys, cmd/meta used as a modifier, unknown keys) —
@@ -251,30 +280,8 @@ export function decomposeAction(spec) {
   const parsed = parseAction(spec);
   if (!parsed) return { kind: "raw" };
   if (parsed.kind === "mouse") return { kind: "mouse", button: parsed.button };
-  const modCanon = new Set(["control", "shift", "alt", "win"]);
-  const spelling = canonicalToSpelling();
-  /** @type {string[]} */
-  const mods = [];
-  let key = "";
-  for (let i = 0; i < parsed.keys.length; i++) {
-    const canon = parsed.keys[i];
-    if (i < parsed.keys.length - 1) {
-      // every part before the last must be a distinct checkbox modifier
-      if (!modCanon.has(canon)) return { kind: "raw" };
-      const m = /** @type {string} */ (spelling.get(canon));
-      if (mods.includes(m)) return { kind: "raw" };
-      mods.push(m);
-    } else if (modCanon.has(canon)) {
-      // a mods-only combo like key:ctrl+shift
-      const m = /** @type {string} */ (spelling.get(canon));
-      if (mods.includes(m)) return { kind: "raw" };
-      mods.push(m);
-    } else {
-      key = spelling.get(canon) ?? "";
-      if (!key) return { kind: "raw" }; // canonical with no builder spelling
-    }
-  }
-  return { kind: "key", mods, key };
+  const result = classifyKeyParts(parsed.keys, canonicalToSpelling());
+  return result ? { kind: "key", ...result } : { kind: "raw" };
 }
 
 /**

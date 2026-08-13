@@ -31,7 +31,8 @@ describe("runCheck", () => {
     });
     expect(code).toBe(0);
     expect(logs.some((l) => l.startsWith("asset index.html"))).toBe(true);
-    expect(logs).toContain("buttons: 4 action(s) mapped");
+    // the COUNT is the user's live config — assert the report, not the number
+    expect(logs.some((l) => /^buttons: \d+ action\(s\) mapped$/.test(l))).toBe(true);
     expect(logs).toContain("input: ready — screen 1920x1080");
     expect(logs).toContain("pause hotkey: ready (default shift+space)");
   });

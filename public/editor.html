@@ -309,9 +309,13 @@
     </header>
 
     <div id="intro" hidden>
-      <b data-i18n="intro.title"></b>
-      <p data-i18n="intro.body"></p>
-      <button id="introDismiss" data-i18n="intro.dismiss"></button>
+      <b data-i18n="intro.title">What is this?</b>
+      <p data-i18n="intro.body">
+        These buttons appear on your phone screen during play. Pick one below, give it an action (a
+        key or mouse click on the PC), drag it where your thumb can reach — then hit Save. It
+        applies instantly: no restart, no recalibration.
+      </p>
+      <button id="introDismiss" data-i18n="intro.dismiss">Got it</button>
     </div>
 
     <main>
@@ -319,50 +323,59 @@
         <div id="frame"></div>
         <div class="under">
           <label
-            ><input type="checkbox" id="landscape" /> <span data-i18n="frame.landscape"></span
-          ></label>
+            ><input type="checkbox" id="landscape" />
+            <span data-i18n="frame.landscape">landscape phone</span></label
+          >
           <select id="addHidden" hidden data-i18n-title="under.addButtonTitle">
-            <option value="" data-i18n="under.addButton"></option>
+            <option value="" data-i18n="under.addButton">＋ add button…</option>
           </select>
-          <span id="chipLabel" hidden data-i18n="under.place"></span>
+          <span id="chipLabel" hidden data-i18n="under.place">place on canvas:</span>
           <span id="chips"></span>
         </div>
-        <p class="hint" data-i18n="under.hint"></p>
-        <p class="hint" data-i18n="frame.hint"></p>
+        <p class="hint" data-i18n="under.hint">
+          Drag a button to move it. Drag a corner to resize. Tap to edit its details.
+        </p>
+        <p class="hint" data-i18n="frame.hint">
+          The canvas is your phone's screen. Positions are % of the screen, so they fit any phone —
+          the default layout was designed for playing with the phone held sideways.
+        </p>
       </section>
 
       <aside>
         <div id="list"></div>
         <div id="inspector" hidden>
           <fieldset class="sec">
-            <legend data-i18n="section.button"></legend>
+            <legend data-i18n="section.button">Button</legend>
             <label
-              ><span data-i18n="field.label"></span>
+              ><span data-i18n="field.label">label</span>
               <input type="text" id="fLabel" data-i18n-title="field.labelHint"
             /></label>
             <label
-              ><input type="checkbox" id="fVisible" /> <span data-i18n="field.visible"></span
-            ></label>
-            <p class="hint" data-i18n="field.visibleHint"></p>
+              ><input type="checkbox" id="fVisible" />
+              <span data-i18n="field.visible">visible on the phone screen</span></label
+            >
+            <p class="hint" data-i18n="field.visibleHint">
+              hidden buttons can still fire via the extra triggers below
+            </p>
           </fieldset>
 
           <fieldset class="sec">
-            <legend data-i18n="section.action"></legend>
+            <legend data-i18n="section.action">Action on the PC</legend>
             <label
-              ><span data-i18n="action.type"></span>
+              ><span data-i18n="action.type">what happens on the PC</span>
               <select id="aKind">
-                <option value="none" data-i18n="action.typeNone"></option>
-                <option value="mouse" data-i18n="action.typeMouse"></option>
-                <option value="key" data-i18n="action.typeKey"></option>
+                <option value="none" data-i18n="action.typeNone">nothing (unassigned)</option>
+                <option value="mouse" data-i18n="action.typeMouse">mouse click</option>
+                <option value="key" data-i18n="action.typeKey">keyboard key / combo</option>
               </select>
             </label>
             <div id="aMouseRow" hidden>
               <label
-                ><span data-i18n="action.mouseButton"></span>
+                ><span data-i18n="action.mouseButton">mouse button</span>
                 <select id="aMouse">
-                  <option value="left" data-i18n="action.mouseLeft"></option>
-                  <option value="right" data-i18n="action.mouseRight"></option>
-                  <option value="middle" data-i18n="action.mouseMiddle"></option>
+                  <option value="left" data-i18n="action.mouseLeft">left click</option>
+                  <option value="right" data-i18n="action.mouseRight">right click</option>
+                  <option value="middle" data-i18n="action.mouseMiddle">middle click</option>
                 </select>
               </label>
             </div>
@@ -374,78 +387,109 @@
                 <label><input type="checkbox" id="modWin" /> Win</label>
               </div>
               <label
-                ><span data-i18n="action.key"></span>
+                ><span data-i18n="action.key">key</span>
                 <select id="aKey"></select
               ></label>
             </div>
-            <p class="hint" id="aRawHint" hidden data-i18n="action.rawHint"></p>
-            <span data-i18n="action.result" class="hint"></span>
+            <p class="hint" id="aRawHint" hidden data-i18n="action.rawHint">
+              this combo is more than the builder can show — edit it as text below
+            </p>
+            <span data-i18n="action.result" class="hint">resulting action</span>
             <code id="aResult">—</code>
             <details id="aAdvanced">
-              <summary data-i18n="action.advanced"></summary>
-              <input type="text" id="fAction" placeholder="key:r / mouse:left / key:ctrl+shift+f" />
+              <summary data-i18n="action.advanced">advanced: edit as text</summary>
+              <input
+                type="text"
+                id="fAction"
+                placeholder="key:r / mouse:left / key:ctrl+shift+f"
+                aria-label="advanced: edit as text"
+                data-i18n-aria="action.advanced"
+              />
             </details>
-            <p class="hint" data-i18n="action.hint"></p>
+            <p class="hint" data-i18n="action.hint">
+              Example: 'keyboard key' + Ctrl + Shift + F presses Ctrl+Shift+F in your game whenever
+              the button is held.
+            </p>
           </fieldset>
 
           <fieldset class="sec">
-            <legend data-i18n="section.placement"></legend>
+            <legend data-i18n="section.placement">Placement on the phone</legend>
             <p class="hint" id="placementInfo"></p>
-            <button class="secbtn" id="btnPlace" data-i18n="placement.place"></button>
-            <button class="secbtn" id="rmRect" data-i18n="placement.remove"></button>
-            <p class="hint" data-i18n="placement.hint"></p>
+            <button class="secbtn" id="btnPlace" data-i18n="placement.place">
+              place on canvas
+            </button>
+            <button class="secbtn" id="rmRect" data-i18n="placement.remove">
+              remove from canvas (back to the strip)
+            </button>
+            <p class="hint" data-i18n="placement.hint">
+              Placed buttons sit exactly where you drag them; strip buttons queue up at the bottom
+              edge.
+            </p>
           </fieldset>
 
           <fieldset class="sec">
-            <legend data-i18n="section.triggers"></legend>
+            <legend data-i18n="section.triggers">Extra triggers</legend>
             <label
-              ><span data-i18n="triggers.edge"></span>
+              ><span data-i18n="triggers.edge">off-screen edge</span>
               <select id="fEdge">
-                <option value="" data-i18n="triggers.edgeNone"></option>
-                <option value="any" data-i18n="triggers.edgeAny"></option>
-                <option value="left" data-i18n="triggers.edgeLeft"></option>
-                <option value="right" data-i18n="triggers.edgeRight"></option>
-                <option value="top" data-i18n="triggers.edgeTop"></option>
-                <option value="bottom" data-i18n="triggers.edgeBottom"></option>
+                <option value="" data-i18n="triggers.edgeNone">none</option>
+                <option value="any" data-i18n="triggers.edgeAny">any edge</option>
+                <option value="left" data-i18n="triggers.edgeLeft">left</option>
+                <option value="right" data-i18n="triggers.edgeRight">right</option>
+                <option value="top" data-i18n="triggers.edgeTop">top</option>
+                <option value="bottom" data-i18n="triggers.edgeBottom">bottom</option>
               </select>
             </label>
-            <p class="hint" data-i18n="triggers.edgeHint"></p>
+            <p class="hint" data-i18n="triggers.edgeHint">
+              Aim past that screen edge for a moment = press; aim back on screen = release. The
+              classic arcade reload: point at the floor to duck. 'Any edge' fires no matter which
+              edge you leave.
+            </p>
             <label
-              ><span data-i18n="triggers.pad"></span>
+              ><span data-i18n="triggers.pad">physical button (Bluetooth)</span>
               <select id="fPadMode">
-                <option value="" data-i18n="triggers.padNone"></option>
-                <option value="any" data-i18n="triggers.padAny"></option>
-                <option value="index" data-i18n="triggers.padSpecific"></option>
+                <option value="" data-i18n="triggers.padNone">none</option>
+                <option value="any" data-i18n="triggers.padAny">any gamepad button</option>
+                <option value="index" data-i18n="triggers.padSpecific">one specific button</option>
               </select>
             </label>
             <label id="fPadIdxRow" hidden
-              ><span data-i18n="triggers.padIndex"></span>
+              ><span data-i18n="triggers.padIndex">button number</span>
               <input type="number" id="fPadIdx" min="0" step="1" value="0"
             /></label>
-            <p class="hint" data-i18n="triggers.padHint"></p>
+            <p class="hint" data-i18n="triggers.padHint">
+              Pair a Bluetooth gamepad or camera clicker with the PHONE. Press any of its buttons
+              during a session — the phone HUD shows that button's number; enter it here. 'Any'
+              works for one-button clickers.
+            </p>
           </fieldset>
 
           <fieldset class="sec">
-            <legend data-i18n="section.feedback"></legend>
+            <legend data-i18n="section.feedback">Feedback</legend>
             <label
-              ><span data-i18n="feedback.vibrate"></span>
+              ><span data-i18n="feedback.vibrate">vibration on press</span>
               <select id="fVibMode">
-                <option value="default" data-i18n="feedback.vibrateDefault"></option>
-                <option value="off" data-i18n="feedback.vibrateOff"></option>
-                <option value="custom" data-i18n="feedback.vibrateCustom"></option>
+                <option value="default" data-i18n="feedback.vibrateDefault">
+                  default (short tick)
+                </option>
+                <option value="off" data-i18n="feedback.vibrateOff">off</option>
+                <option value="custom" data-i18n="feedback.vibrateCustom">custom length</option>
               </select>
             </label>
             <label id="fVibMsRow" hidden
-              ><span data-i18n="feedback.vibrateMs"></span>
+              ><span data-i18n="feedback.vibrateMs">milliseconds (max 100)</span>
               <input type="number" id="fVibMs" min="1" max="100" step="1" value="10"
             /></label>
-            <p class="hint" data-i18n="feedback.hint"></p>
+            <p class="hint" data-i18n="feedback.hint">
+              A tiny tick confirms the press. Keep it short — the motor shakes the same phone that
+              tracks your aim.
+            </p>
           </fieldset>
         </div>
       </aside>
     </main>
     <div id="problemsWrap" hidden>
-      <p id="problemsPre" data-i18n="problems.preamble"></p>
+      <p id="problemsPre" data-i18n="problems.preamble">The server would refuse this config:</p>
       <ul id="problems"></ul>
     </div>
 
@@ -494,9 +538,11 @@
         document.title = t("title");
         document.documentElement.lang = lang;
         for (const el of document.querySelectorAll("[data-i18n]"))
-          el.textContent = t(el.getAttribute("data-i18n"));
+          el.textContent = t(el.dataset.i18n);
         for (const el of document.querySelectorAll("[data-i18n-title]"))
-          el.title = t(el.getAttribute("data-i18n-title"));
+          el.title = t(el.dataset.i18nTitle);
+        for (const el of document.querySelectorAll("[data-i18n-aria]"))
+          el.setAttribute("aria-label", t(el.dataset.i18nAria));
         for (const [id, l] of [
           ["langEn", "en"],
           ["langDe", "de"],
@@ -652,7 +698,7 @@
         $("aKind").value = kind;
         $("aMouseRow").hidden = kind !== "mouse";
         $("aKeyRow").hidden = kind !== "key";
-        for (const [id, name] of MOD_BOXES) $(id).disabled = raw;
+        for (const [id] of MOD_BOXES) $(id).disabled = raw;
         $("aKey").disabled = raw;
         $("aMouse").value = d.kind === "mouse" ? d.button : "left";
         if (d.kind === "key") {
@@ -687,7 +733,10 @@
         // triggers
         $("fEdge").value = normalizeEdge(b.edge) ?? "";
         const pad = b.pad === undefined ? null : normalizePad(b.pad);
-        $("fPadMode").value = pad === "any" ? "any" : typeof pad === "number" ? "index" : "";
+        let padMode = "";
+        if (pad === "any") padMode = "any";
+        else if (typeof pad === "number") padMode = "index";
+        $("fPadMode").value = padMode;
         $("fPadIdxRow").hidden = typeof pad !== "number";
         if (typeof pad === "number") $("fPadIdx").value = String(pad);
         // feedback
