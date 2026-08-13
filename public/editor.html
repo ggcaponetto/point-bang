@@ -40,6 +40,18 @@
         color: var(--dim);
         flex: 1;
       }
+      .lang button {
+        background: none;
+        border: 1px solid var(--line);
+        color: var(--dim);
+        border-radius: 6px;
+        padding: 4px 8px;
+        cursor: pointer;
+      }
+      .lang button.on {
+        color: var(--text);
+        border-color: var(--dim);
+      }
       #save {
         padding: 8px 22px;
         font-weight: 700;
@@ -54,9 +66,35 @@
         color: #c9c9c9;
         cursor: not-allowed;
       }
+      #intro {
+        margin: 16px 16px 0;
+        padding: 12px 16px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        display: flex;
+        gap: 16px;
+        align-items: baseline;
+      }
+      #intro b {
+        white-space: nowrap;
+      }
+      #intro p {
+        margin: 0;
+        color: var(--dim);
+        flex: 1;
+      }
+      #introDismiss {
+        background: #333;
+        color: var(--text);
+        border: 0;
+        border-radius: 6px;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
       main {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 340px;
+        grid-template-columns: minmax(0, 1fr) 380px;
         gap: 16px;
         padding: 16px;
       }
@@ -65,20 +103,21 @@
           grid-template-columns: 1fr;
         }
       }
-      /* the phone-shaped canvas: rects are % of the PHONE viewport */
+      /* the phone-shaped canvas: portrait by default, rects are % either way */
       #frame {
         position: relative;
         width: 100%;
-        aspect-ratio: 19.5 / 9;
+        max-width: 340px;
+        aspect-ratio: 9 / 19.5;
         background: #000;
         border: 2px solid var(--line);
         border-radius: 12px;
         touch-action: none;
         overflow: hidden;
       }
-      #frame.portrait {
-        aspect-ratio: 9 / 19.5;
-        max-width: 340px;
+      #frame.landscape {
+        aspect-ratio: 19.5 / 9;
+        max-width: none;
       }
       .btn {
         position: absolute;
@@ -142,7 +181,7 @@
         align-self: start;
       }
       #list {
-        max-height: 260px;
+        max-height: 200px;
         overflow-y: auto;
         margin-bottom: 12px;
       }
@@ -168,12 +207,24 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      fieldset.sec {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        margin: 0 0 12px;
+        padding: 8px 12px 12px;
+      }
+      fieldset.sec legend {
+        color: var(--text);
+        font-weight: 600;
+        padding: 0 6px;
+      }
       #inspector label {
         display: block;
         margin: 8px 0 2px;
         color: var(--dim);
       }
       #inspector input[type="text"],
+      #inspector input[type="number"],
       #inspector select {
         width: 100%;
         padding: 6px 8px;
@@ -185,7 +236,44 @@
       #inspector input.bad {
         border-color: var(--accent);
       }
-      #rmRect {
+      .mods {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 8px 0 2px;
+      }
+      .mods label {
+        display: inline-flex;
+        gap: 4px;
+        margin: 0;
+        color: var(--text);
+        align-items: center;
+      }
+      .hint {
+        color: var(--dim);
+        font-size: 12px;
+        margin: 4px 0 0;
+      }
+      #aResult {
+        display: block;
+        margin-top: 8px;
+        padding: 6px 8px;
+        background: #111;
+        border-radius: 6px;
+        color: var(--ok);
+        font-family: ui-monospace, monospace;
+      }
+      #aResult.bad {
+        color: var(--accent);
+      }
+      details {
+        margin-top: 8px;
+        color: var(--dim);
+      }
+      details summary {
+        cursor: pointer;
+      }
+      .secbtn {
         margin-top: 10px;
         background: #333;
         color: var(--text);
@@ -194,99 +282,185 @@
         padding: 6px 12px;
         cursor: pointer;
       }
-      #problems {
+      #problemsWrap {
         margin: 0 16px 16px;
+      }
+      #problemsPre {
+        color: var(--accent);
+        font-weight: 600;
+        margin: 0 0 4px;
+      }
+      #problems {
+        margin: 0;
         padding: 0 0 0 20px;
         color: var(--accent);
-      }
-      #problems:empty {
-        display: none;
-      }
-      .hint {
-        color: var(--dim);
-        font-size: 12px;
       }
     </style>
   </head>
   <body>
     <header>
-      <h1>Button editor</h1>
-      <div id="status">loading buttons.json…</div>
-      <button id="save" disabled>Save</button>
+      <h1 data-i18n="header.title">Button editor</h1>
+      <div id="status"></div>
+      <span class="lang">
+        <button id="langEn">EN</button><button id="langDe">DE</button
+        ><button id="langIt">IT</button>
+      </span>
+      <button id="save" disabled data-i18n="header.save">Save</button>
     </header>
+
+    <div id="intro" hidden>
+      <b data-i18n="intro.title"></b>
+      <p data-i18n="intro.body"></p>
+      <button id="introDismiss" data-i18n="intro.dismiss"></button>
+    </div>
+
     <main>
       <section>
         <div id="frame"></div>
         <div class="under">
-          <label><input type="checkbox" id="portrait" /> portrait phone</label>
-          <select id="addHidden" hidden aria-label="add one of the unused button slots">
-            <option value="">＋ add button…</option>
+          <label
+            ><input type="checkbox" id="landscape" /> <span data-i18n="frame.landscape"></span
+          ></label>
+          <select id="addHidden" hidden data-i18n-title="under.addButtonTitle">
+            <option value="" data-i18n="under.addButton"></option>
           </select>
-          <span id="chipLabel" hidden>place on canvas:</span>
+          <span id="chipLabel" hidden data-i18n="under.place"></span>
           <span id="chips"></span>
         </div>
-        <p class="hint">
-          Drag a button to move it, drag a corner to resize (1% snap). Positions are % of the phone
-          screen. “＋ add button” turns one of the unused (hidden) slots into a visible button and
-          places it on a free spot — give it an action in the inspector. Save applies live: the PC
-          remaps actions and a connected phone re-renders — no recalibration.
-        </p>
+        <p class="hint" data-i18n="under.hint"></p>
+        <p class="hint" data-i18n="frame.hint"></p>
       </section>
+
       <aside>
         <div id="list"></div>
         <div id="inspector" hidden>
-          <label>label <input type="text" id="fLabel" /></label>
-          <label>
-            action
-            <input
-              type="text"
-              id="fAction"
-              list="actions"
-              placeholder="key:r / mouse:left / empty"
-            />
-          </label>
-          <datalist id="actions">
-            <option value="mouse:left"></option>
-            <option value="mouse:right"></option>
-            <option value="mouse:middle"></option>
-            <option value="key:r"></option>
-            <option value="key:enter"></option>
-            <option value="key:space"></option>
-            <option value="key:ctrl+shift+f"></option>
-          </datalist>
-          <label
-            >vibrate (blank = default, false = off, or ms) <input type="text" id="fVibrate"
-          /></label>
-          <label>
-            off-screen edge (aim past it &gt;150ms = press, back on screen = release)
-            <select id="fEdge">
-              <option value="">none</option>
-              <option value="any">any edge</option>
-              <option value="left">left</option>
-              <option value="right">right</option>
-              <option value="top">top</option>
-              <option value="bottom">bottom</option>
-            </select>
-          </label>
-          <label
-            >gamepad button (blank = none, "any" = every button, or an index)
-            <input type="text" id="fPad" placeholder="any / 0 / 7 — HUD shows the index"
-          /></label>
-          <label><input type="checkbox" id="fVisible" /> visible on the phone</label>
-          <button id="rmRect">remove rect (back to the strip)</button>
+          <fieldset class="sec">
+            <legend data-i18n="section.button"></legend>
+            <label
+              ><span data-i18n="field.label"></span>
+              <input type="text" id="fLabel" data-i18n-title="field.labelHint"
+            /></label>
+            <label
+              ><input type="checkbox" id="fVisible" /> <span data-i18n="field.visible"></span
+            ></label>
+            <p class="hint" data-i18n="field.visibleHint"></p>
+          </fieldset>
+
+          <fieldset class="sec">
+            <legend data-i18n="section.action"></legend>
+            <label
+              ><span data-i18n="action.type"></span>
+              <select id="aKind">
+                <option value="none" data-i18n="action.typeNone"></option>
+                <option value="mouse" data-i18n="action.typeMouse"></option>
+                <option value="key" data-i18n="action.typeKey"></option>
+              </select>
+            </label>
+            <div id="aMouseRow" hidden>
+              <label
+                ><span data-i18n="action.mouseButton"></span>
+                <select id="aMouse">
+                  <option value="left" data-i18n="action.mouseLeft"></option>
+                  <option value="right" data-i18n="action.mouseRight"></option>
+                  <option value="middle" data-i18n="action.mouseMiddle"></option>
+                </select>
+              </label>
+            </div>
+            <div id="aKeyRow" hidden>
+              <div class="mods">
+                <label><input type="checkbox" id="modCtrl" /> Ctrl</label>
+                <label><input type="checkbox" id="modShift" /> Shift</label>
+                <label><input type="checkbox" id="modAlt" /> Alt</label>
+                <label><input type="checkbox" id="modWin" /> Win</label>
+              </div>
+              <label
+                ><span data-i18n="action.key"></span>
+                <select id="aKey"></select
+              ></label>
+            </div>
+            <p class="hint" id="aRawHint" hidden data-i18n="action.rawHint"></p>
+            <span data-i18n="action.result" class="hint"></span>
+            <code id="aResult">—</code>
+            <details id="aAdvanced">
+              <summary data-i18n="action.advanced"></summary>
+              <input type="text" id="fAction" placeholder="key:r / mouse:left / key:ctrl+shift+f" />
+            </details>
+            <p class="hint" data-i18n="action.hint"></p>
+          </fieldset>
+
+          <fieldset class="sec">
+            <legend data-i18n="section.placement"></legend>
+            <p class="hint" id="placementInfo"></p>
+            <button class="secbtn" id="btnPlace" data-i18n="placement.place"></button>
+            <button class="secbtn" id="rmRect" data-i18n="placement.remove"></button>
+            <p class="hint" data-i18n="placement.hint"></p>
+          </fieldset>
+
+          <fieldset class="sec">
+            <legend data-i18n="section.triggers"></legend>
+            <label
+              ><span data-i18n="triggers.edge"></span>
+              <select id="fEdge">
+                <option value="" data-i18n="triggers.edgeNone"></option>
+                <option value="any" data-i18n="triggers.edgeAny"></option>
+                <option value="left" data-i18n="triggers.edgeLeft"></option>
+                <option value="right" data-i18n="triggers.edgeRight"></option>
+                <option value="top" data-i18n="triggers.edgeTop"></option>
+                <option value="bottom" data-i18n="triggers.edgeBottom"></option>
+              </select>
+            </label>
+            <p class="hint" data-i18n="triggers.edgeHint"></p>
+            <label
+              ><span data-i18n="triggers.pad"></span>
+              <select id="fPadMode">
+                <option value="" data-i18n="triggers.padNone"></option>
+                <option value="any" data-i18n="triggers.padAny"></option>
+                <option value="index" data-i18n="triggers.padSpecific"></option>
+              </select>
+            </label>
+            <label id="fPadIdxRow" hidden
+              ><span data-i18n="triggers.padIndex"></span>
+              <input type="number" id="fPadIdx" min="0" step="1" value="0"
+            /></label>
+            <p class="hint" data-i18n="triggers.padHint"></p>
+          </fieldset>
+
+          <fieldset class="sec">
+            <legend data-i18n="section.feedback"></legend>
+            <label
+              ><span data-i18n="feedback.vibrate"></span>
+              <select id="fVibMode">
+                <option value="default" data-i18n="feedback.vibrateDefault"></option>
+                <option value="off" data-i18n="feedback.vibrateOff"></option>
+                <option value="custom" data-i18n="feedback.vibrateCustom"></option>
+              </select>
+            </label>
+            <label id="fVibMsRow" hidden
+              ><span data-i18n="feedback.vibrateMs"></span>
+              <input type="number" id="fVibMs" min="1" max="100" step="1" value="10"
+            /></label>
+            <p class="hint" data-i18n="feedback.hint"></p>
+          </fieldset>
         </div>
       </aside>
     </main>
-    <ul id="problems"></ul>
+    <div id="problemsWrap" hidden>
+      <p id="problemsPre" data-i18n="problems.preamble"></p>
+      <ul id="problems"></ul>
+    </div>
 
     <script type="module">
-      // DOM glue only — the logic lives in editor.js (unit-tested, like
-      // math.js/transport.js). This page is served by the PC server itself,
-      // so /buttons.json and POST /buttons are same-origin; the session key
-      // (needed when the page is opened via a LAN URL) rides in the fragment,
-      // same as the phone page.
+      // DOM glue only — logic lives in editor.js / editor-i18n.js / math.js
+      // (all unit-tested). Served by the PC itself; the session key (needed
+      // when opened via a LAN URL) rides in the fragment like the phone page.
       import { parseFragment } from "./transport.js";
-      import { parseAction, normalizeButtonRect, normalizeEdge, normalizePad } from "./math.js";
+      import {
+        parseAction,
+        normalizeButtonRect,
+        normalizeEdge,
+        normalizePad,
+        listKeys,
+      } from "./math.js";
       import {
         clampRectMove,
         resizeRect,
@@ -297,7 +471,11 @@
         parseVibrateField,
         parsePadField,
         nextFreeRect,
+        composeAction,
+        decomposeAction,
+        decomposeVibrate,
       } from "./editor.js";
+      import { pickLanguage, makeT } from "./editor-i18n.js";
 
       const $ = (id) => document.getElementById(id);
       const { key } = parseFragment(location.hash);
@@ -305,6 +483,64 @@
       let selected = null;
       let drag = null;
 
+      // ---------- language ----------
+      let lang = pickLanguage(
+        navigator.languages ?? [navigator.language],
+        localStorage.getItem("pb.lang"),
+      );
+      let t = makeT(lang);
+
+      function applyI18n() {
+        document.title = t("title");
+        document.documentElement.lang = lang;
+        for (const el of document.querySelectorAll("[data-i18n]"))
+          el.textContent = t(el.getAttribute("data-i18n"));
+        for (const el of document.querySelectorAll("[data-i18n-title]"))
+          el.title = t(el.getAttribute("data-i18n-title"));
+        for (const [id, l] of [
+          ["langEn", "en"],
+          ["langDe", "de"],
+          ["langIt", "it"],
+        ])
+          $(id).classList.toggle("on", lang === l);
+        populateKeySelect();
+      }
+      function setLang(l) {
+        lang = l;
+        t = makeT(l);
+        localStorage.setItem("pb.lang", l);
+        applyI18n();
+        renderAll();
+      }
+      $("langEn").onclick = () => setLang("en");
+      $("langDe").onclick = () => setLang("de");
+      $("langIt").onclick = () => setLang("it");
+
+      // The key dropdown: full vocabulary from listKeys(), grouped; rebuilt
+      // on language change (optgroup labels are translated, values are not).
+      function populateKeySelect() {
+        const sel = $("aKey");
+        const previous = sel.value;
+        sel.replaceChildren();
+        const none = document.createElement("option");
+        none.value = "";
+        none.textContent = t("action.keyNone");
+        sel.appendChild(none);
+        for (const g of listKeys()) {
+          const og = document.createElement("optgroup");
+          og.label = t(`keys.group.${g.group}`);
+          for (const k of g.keys) {
+            const o = document.createElement("option");
+            o.value = k;
+            o.textContent = k;
+            og.appendChild(o);
+          }
+          sel.appendChild(og);
+        }
+        sel.value = previous;
+      }
+
+      // ---------- state helpers ----------
       const buttons = () => cfg?.buttons ?? [];
       const byId = (id) => buttons().find((b) => b.id === id);
       const rectButtons = () =>
@@ -312,6 +548,7 @@
           .filter((b) => b.visible)
           .map((b) => ({ id: b.id, rect: normalizeButtonRect(b.rect) }));
 
+      // ---------- canvas ----------
       function renderFrame() {
         const frame = $("frame");
         frame.replaceChildren();
@@ -342,8 +579,6 @@
         }
       }
 
-      // Placing (chip click or "add button") lands on a free spot instead of
-      // stacking every new button at the same coordinates.
       const placeOnCanvas = (id, extraPatch = {}) => {
         const taken = rectButtons()
           .map((b) => b.rect)
@@ -365,8 +600,6 @@
           c.onclick = () => placeOnCanvas(b.id);
           chips.appendChild(c);
         }
-        // The unused pool: buttons with visible:false are the "new button"
-        // slots — picking one reveals it, places it, and selects it.
         const sel = $("addHidden");
         const keep = sel.firstElementChild;
         sel.replaceChildren(keep);
@@ -397,7 +630,7 @@
           act.className = "act";
           act.textContent = `${b.label ?? ""} ${b.action ? "· " + b.action : ""}`;
           const vis = document.createElement("span");
-          vis.textContent = b.visible ? "👁" : "hidden";
+          vis.textContent = b.visible ? "👁" : t("list.hidden");
           row.append(idEl, act, vis);
           row.onclick = () => {
             selected = b.id;
@@ -407,23 +640,66 @@
         }
       }
 
+      // ---------- inspector ----------
+      function renderActionBuilder(b) {
+        const d = decomposeAction(b.action);
+        const raw = d.kind === "raw";
+        $("aRawHint").hidden = !raw;
+        $("aAdvanced").open = raw;
+        $("fAction").value = b.action ?? "";
+        $("fAction").classList.toggle("bad", Boolean(b.action) && !parseAction(b.action));
+        const kind = raw ? "key" : d.kind;
+        $("aKind").value = kind;
+        $("aMouseRow").hidden = kind !== "mouse";
+        $("aKeyRow").hidden = kind !== "key";
+        for (const [id, name] of MOD_BOXES) $(id).disabled = raw;
+        $("aKey").disabled = raw;
+        $("aMouse").value = d.kind === "mouse" ? d.button : "left";
+        if (d.kind === "key") {
+          for (const [id, name] of MOD_BOXES) $(id).checked = d.mods.includes(name);
+          $("aKey").value = d.key;
+        } else if (!raw) {
+          for (const [id] of MOD_BOXES) $(id).checked = false;
+          $("aKey").value = "";
+        }
+        updateResult(b.action ?? "");
+      }
+
+      function updateResult(spec) {
+        $("aResult").textContent = spec || "—";
+        $("aResult").classList.toggle("bad", Boolean(spec) && !parseAction(spec));
+      }
+
       function renderInspector() {
         const b = selected ? byId(selected) : null;
         $("inspector").hidden = !b;
         if (!b) return;
         $("fLabel").value = b.label ?? "";
-        $("fAction").value = b.action ?? "";
-        $("fAction").classList.toggle("bad", Boolean(b.action) && !parseAction(b.action));
-        $("fVibrate").value = b.vibrate === undefined ? "" : String(b.vibrate);
-        $("fEdge").value = normalizeEdge(b.edge) ?? "";
-        $("fPad").value = b.pad === undefined ? "" : String(b.pad);
-        $("fPad").classList.toggle("bad", b.pad !== undefined && normalizePad(b.pad) === null);
         $("fVisible").checked = Boolean(b.visible);
-        $("rmRect").hidden = !normalizeButtonRect(b.rect);
+        renderActionBuilder(b);
+        // placement
+        const rect = normalizeButtonRect(b.rect);
+        $("placementInfo").textContent = rect
+          ? t("placement.placed", { x: rect.x, y: rect.y, w: rect.w, h: rect.h })
+          : t("placement.strip");
+        $("btnPlace").hidden = Boolean(rect);
+        $("rmRect").hidden = !rect;
+        // triggers
+        $("fEdge").value = normalizeEdge(b.edge) ?? "";
+        const pad = b.pad === undefined ? null : normalizePad(b.pad);
+        $("fPadMode").value = pad === "any" ? "any" : typeof pad === "number" ? "index" : "";
+        $("fPadIdxRow").hidden = typeof pad !== "number";
+        if (typeof pad === "number") $("fPadIdx").value = String(pad);
+        // feedback
+        const vib = decomposeVibrate(b.vibrate);
+        $("fVibMode").value = vib.mode;
+        $("fVibMsRow").hidden = vib.mode !== "custom";
+        $("fVibMs").value = String(vib.ms);
       }
 
       function renderProblems() {
         const problems = cfg ? configProblems(cfg) : [];
+        $("problemsWrap").hidden = problems.length === 0;
         const ul = $("problems");
         ul.replaceChildren();
         for (const p of problems) {
@@ -434,8 +710,9 @@
         $("save").disabled = !cfg || problems.length > 0;
       }
 
-      // Light pass while typing in the inspector: everything EXCEPT the
-      // inspector re-renders, so the focused input keeps its caret.
+      // Light pass while typing: everything EXCEPT the inspector re-renders,
+      // so the focused input keeps its caret. Selects/checkboxes are safe to
+      // update inline in their own handlers.
       function renderLight() {
         renderFrame();
         renderChips();
@@ -468,48 +745,113 @@
             ? clampRectMove(drag.rect, dx, dy)
             : resizeRect(drag.rect, drag.part, dx, dy);
         cfg = updateButton(cfg, drag.id, { rect: next });
-        renderAll();
+        renderLight();
+        $("placementInfo").textContent = t("placement.placed", next);
       });
       const endDrag = () => (drag = null);
       frame.addEventListener("pointerup", endDrag);
       frame.addEventListener("pointercancel", endDrag);
 
-      $("portrait").onchange = (e) => frame.classList.toggle("portrait", e.target.checked);
+      $("landscape").onchange = (e) => frame.classList.toggle("landscape", e.target.checked);
 
-      // ---------- inspector ----------
+      // ---------- inspector wiring ----------
+      const MOD_BOXES = [
+        ["modCtrl", "ctrl"],
+        ["modShift", "shift"],
+        ["modAlt", "alt"],
+        ["modWin", "win"],
+      ];
       const patchSelected = (patch) => {
         if (!selected) return;
         cfg = updateButton(cfg, selected, patch);
         renderLight();
       };
+
       $("fLabel").oninput = (e) => patchSelected({ label: e.target.value });
-      $("fAction").oninput = (e) => {
-        patchSelected({ action: e.target.value });
-        e.target.classList.toggle("bad", Boolean(e.target.value) && !parseAction(e.target.value));
-      };
-      $("fVibrate").oninput = (e) => {
-        const parsed = parseVibrateField(e.target.value);
-        e.target.classList.toggle("bad", parsed === null);
-        if (parsed) patchSelected(parsed);
-      };
-      $("fEdge").onchange = (e) => patchSelected({ edge: e.target.value || undefined });
-      $("fPad").oninput = (e) => {
-        const parsed = parsePadField(e.target.value);
-        e.target.classList.toggle("bad", parsed === null);
-        if (parsed) patchSelected(parsed);
-      };
       $("fVisible").onchange = (e) => {
         patchSelected({ visible: e.target.checked });
         renderInspector();
+      };
+
+      // Builder: every control funnels into one applyBuilder() — patch the
+      // spec, update the result line, never rebuild the focused inputs.
+      function applyBuilder() {
+        const kind = $("aKind").value;
+        const mods = MOD_BOXES.filter(([id]) => $(id).checked).map(([, name]) => name);
+        const spec = composeAction(kind, $("aMouse").value, mods, $("aKey").value);
+        patchSelected({ action: spec });
+        $("fAction").value = spec;
+        $("fAction").classList.remove("bad");
+        $("aRawHint").hidden = true;
+        for (const [id] of MOD_BOXES) $(id).disabled = false;
+        $("aKey").disabled = false;
+        updateResult(spec);
+      }
+      $("aKind").onchange = () => {
+        const kind = $("aKind").value;
+        $("aMouseRow").hidden = kind !== "mouse";
+        $("aKeyRow").hidden = kind !== "key";
+        applyBuilder();
+      };
+      $("aMouse").onchange = applyBuilder;
+      $("aKey").onchange = applyBuilder;
+      for (const [id] of MOD_BOXES) $(id).onchange = applyBuilder;
+
+      // Advanced escape hatch: free text for combos the builder cannot show.
+      $("fAction").oninput = (e) => {
+        patchSelected({ action: e.target.value });
+        e.target.classList.toggle("bad", Boolean(e.target.value) && !parseAction(e.target.value));
+        updateResult(e.target.value);
+      };
+
+      // placement
+      $("btnPlace").onclick = () => {
+        if (selected) placeOnCanvas(selected);
       };
       $("rmRect").onclick = () => {
         patchSelected({ rect: undefined });
         renderInspector();
       };
 
+      // triggers
+      $("fEdge").onchange = (e) => patchSelected({ edge: e.target.value || undefined });
+      $("fPadMode").onchange = (e) => {
+        const mode = e.target.value;
+        $("fPadIdxRow").hidden = mode !== "index";
+        if (mode === "") patchSelected({ pad: undefined });
+        else if (mode === "any") patchSelected({ pad: "any" });
+        else patchSelected(parsePadField($("fPadIdx").value) ?? { pad: 0 });
+      };
+      $("fPadIdx").oninput = (e) => {
+        const parsed = parsePadField(e.target.value);
+        e.target.classList.toggle("bad", parsed === null || parsed.pad === undefined);
+        if (parsed && parsed.pad !== undefined) patchSelected(parsed);
+      };
+
+      // feedback
+      $("fVibMode").onchange = (e) => {
+        const mode = e.target.value;
+        $("fVibMsRow").hidden = mode !== "custom";
+        if (mode === "default") patchSelected({ vibrate: undefined });
+        else if (mode === "off") patchSelected({ vibrate: false });
+        else patchSelected(parseVibrateField($("fVibMs").value) ?? { vibrate: 10 });
+      };
+      $("fVibMs").oninput = (e) => {
+        const parsed = parseVibrateField(e.target.value);
+        e.target.classList.toggle("bad", parsed === null);
+        if (parsed && typeof parsed.vibrate === "number") patchSelected(parsed);
+      };
+
+      // ---------- intro ----------
+      if (!localStorage.getItem("pb.editorIntroDismissed")) $("intro").hidden = false;
+      $("introDismiss").onclick = () => {
+        $("intro").hidden = true;
+        localStorage.setItem("pb.editorIntroDismissed", "1");
+      };
+
       // ---------- save ----------
       $("save").onclick = async () => {
-        $("status").textContent = "saving…";
+        $("status").textContent = t("status.saving");
         try {
           const res = await fetch("/buttons", {
             method: "POST",
@@ -518,27 +860,29 @@
           });
           const body = await res.json().catch(() => null);
           if (res.ok) {
-            $("status").textContent =
-              `saved (rev ${body?.rev ?? "?"}) — PC remapped, phone updated live`;
+            $("status").textContent = t("status.saved", { rev: body?.rev ?? "?" });
           } else {
-            $("status").textContent =
-              `save refused (HTTP ${res.status}): ` +
-              (body?.problems?.join("; ") ?? "see server log");
+            $("status").textContent = t("status.refused", {
+              status: res.status,
+              detail: body?.problems?.join("; ") ?? t("status.refusedFallback"),
+            });
           }
         } catch (e) {
-          $("status").textContent = "save failed: " + e;
+          $("status").textContent = t("status.saveFailed", { error: e });
         }
       };
 
       // ---------- boot ----------
+      applyI18n();
+      $("status").textContent = t("status.loading");
       try {
         const res = await fetch("./buttons.json");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         cfg = await res.json();
-        $("status").textContent = "editing the live config — Save applies without a restart";
+        $("status").textContent = t("status.editing");
         renderAll();
       } catch (e) {
-        $("status").textContent = "could not load buttons.json: " + e;
+        $("status").textContent = t("status.loadFailed", { error: e });
       }
     </script>
   </body>
