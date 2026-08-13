@@ -1,8 +1,8 @@
 {
-  "//": "20 assignable buttons. The phone shows the `visible` ones during play; each press sends its id, and the PC runs the action. Actions: 'key:<combo>' (e.g. key:r, key:enter, key:ctrl+shift+f), 'mouse:left'|'mouse:right'|'mouse:middle', or '' for unassigned. Optional 'rect' {x,y,w,h} places a button at that percent of the screen (origin top-left); buttons without a rect fall into the scrollable strip ('fire' without a rect takes the big red slot instead). Optional 'vibrate' controls the haptic tick on press: absent/true = default (10ms), false = off for that button, a number = pulse length in ms (max 100). Optional 'edge' ('left'|'right'|'top'|'bottom') presses the button while aim is held past that screen edge (off-screen reload/duck; works on invisible buttons). Optional 'pad' (a gamepad button index, or 'any') presses it from a Bluetooth gamepad/clicker paired with the phone. Easiest way to edit: the live editor the server banner points at (/editor.html) — Save applies to the PC and a connected phone instantly, no restart, no recalibration.",
+  "//": "20 assignable buttons (b0-b19). The phone shows the `visible` ones during play; each press sends its id, and the PC runs the action. Actions: 'key:<combo>' (e.g. key:r, key:enter, key:ctrl+shift+f), 'mouse:left'|'mouse:right'|'mouse:middle', or '' for unassigned. Optional 'rect' {x,y,w,h} places a button at that percent of the screen (origin top-left); buttons without a rect fall into the scrollable strip. Optional 'vibrate' controls the haptic tick on press: absent/true = default (10ms), false = off for that button, a number = pulse length in ms (max 100). Optional 'edge' ('left'|'right'|'top'|'bottom'|'any') presses the button while aim is held past that screen edge — 'any' fires on every edge, several buttons may share an edge, and it works on invisible buttons (off-screen reload/duck). Optional 'pad' (a gamepad button index, or 'any') presses it from a Bluetooth gamepad/clicker paired with the phone. Easiest way to edit: the live editor the server banner points at (/editor.html) — Save applies to the PC and a connected phone instantly, no restart, no recalibration.",
   "buttons": [
     {
-      "id": "fire",
+      "id": "b0",
       "label": "LEFT",
       "action": "mouse:left",
       "visible": true,
@@ -44,7 +44,6 @@
     { "id": "b16", "label": "B16", "action": "", "visible": false },
     { "id": "b17", "label": "B17", "action": "", "visible": false },
     { "id": "b18", "label": "B18", "action": "", "visible": false },
-    { "id": "b19", "label": "B19", "action": "", "visible": false },
-    { "id": "b20", "label": "B20", "action": "", "visible": false }
+    { "id": "b19", "label": "B19", "action": "", "visible": false }
   ]
 }

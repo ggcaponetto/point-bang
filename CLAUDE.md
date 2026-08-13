@@ -173,8 +173,8 @@ What index.html already contains (reuse, don't reinvent):
 - Post-calibration UI: the `visible` buttons from buttons.json (pointerdown/up
   → button down/up messages) — an entry with a `rect` ({x,y,w,h} in % of the
   screen) is absolutely placed in #btnLayer (defaults: big LEFT/RIGHT click
-  buttons + A/B); without one it falls into the scrollable strip, "fire" into
-  the big red slot — and the aim-adjust panel (nudge pad shifting sent u,v by
+  buttons + A/B); without one it falls into the scrollable strip (no special
+  ids — the trigger is just b0) — and the aim-adjust panel (nudge pad shifting sent u,v by
   0.5%/tap — applied AFTER the filter, zeroed on recalibrate — plus the
   smoothing slider, plus — multi-monitor only — the SWAP button that reassigns
   the aimed plane to the next monitor if calibration was done in the wrong
@@ -592,10 +592,10 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   (old server, PC unreachable) as "one plane" silently — never an error.
 - Linux WiFi interfaces are `wlp2s0`/`wlx…`, matching neither "wifi" nor
   "wlan" — `lib/net.ts` matches `^wl` for that reason.
-- Overlay controls (FIRE, slider) start hidden via **inline** style, and JS
-  reveals them with `style.display=""`. Never move the hiding into a CSS rule:
-  clearing the inline style falls back to the stylesheet, so a CSS
-  `display:none` can never be un-hidden that way (past bug: FIRE and the
+- Overlay controls (the strip, the aim panel) start hidden via **inline**
+  style, and JS reveals them with `style.display=""`. Never move the hiding
+  into a CSS rule: clearing the inline style falls back to the stylesheet, so
+  a CSS `display:none` can never be un-hidden that way (past bug: FIRE and the
   smoothing slider were unreachable — calibration worked, clicking didn't).
 - Don't add smoothing PC-side on top of One Euro; don't let any queue of aim
   samples build anywhere (always newest-wins).
@@ -603,8 +603,8 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   judged by p95, not p50.
 - Game-input UI must react on pointerDOWN. A `"click"` listener fires on
   finger RELEASE, silently adding the whole tap duration (~100ms) — this was
-  the fire button's hidden latency for a while. Also: the phone no longer
-  sends v1 `{"type":"fire"}` (fire is a buttons.json button now), but the
+  the trigger's hidden latency for a while. Also: the phone no longer
+  sends v1 `{"type":"fire"}` (the trigger is a buttons.json button now), but the
   server still handles it — protocol is additive, old clients stay valid.
 
 ## Working agreement for Claude Code

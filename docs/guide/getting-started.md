@@ -57,8 +57,8 @@ point-bang serve --pause-combo off       # disable the hotkey entirely
 ```
 
 The keys are read passively (no global hook): the focused game still
-receives the combo, so pick one your game ignores. While paused, aim, FIRE
-and new button presses from the phone are dropped; releases still go through
+receives the combo, so pick one your game ignores. While paused, aim and
+new button presses from the phone are dropped; releases still go through
 so nothing stays held down.
 
 ## No Node? The single executable
@@ -99,7 +99,7 @@ Cursor injection uses X11's XTEST extension: install `libx11` and `libxtst`
      use this when hit-testing won't land on the screen.
 4. The HUD shows the measured aspect ratio — green means the calibration is
    geometrically sane.
-5. Aim at the screen: the PC cursor follows. The red **FIRE** button
+5. Aim at the screen: the PC cursor follows. The big **LEFT** button
    left-clicks (and it's [remappable](/guide/buttons)).
 
 Recalibration takes ~15 seconds and is needed once per session — WebXR

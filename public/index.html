@@ -163,13 +163,6 @@
         padding: 20px 10px;
         font-size: 18px;
       }
-      #btnFire {
-        background: var(--bad);
-        color: #fff;
-      }
-      #btnFire.held {
-        background: #ff7076;
-      }
       /* aim adjust: nudge pad (offset correction) + smoothing slider */
       #aimAdj {
         position: absolute;
@@ -246,15 +239,6 @@
       .posbtn.held {
         background: var(--acc);
         color: #04121f;
-      }
-      /* the fire button keeps its trigger red even when placed by rect
-         (darker + more opaque than --bad so white text stays ≥4.5:1) */
-      #btnLayer #btnFire {
-        background: rgba(160, 26, 30, 0.85);
-        color: #fff;
-      }
-      #btnLayer #btnFire.held {
-        background: #ff7076;
       }
     </style>
   </head>
@@ -530,20 +514,19 @@
       // Rendered from buttons.json (same file maps ids to PC actions).
       // pointerdown/up => {"type":"button",id,down} so press-and-hold works.
       // A button with a "rect" ({x,y,w,h} in % of the screen) is placed there,
-      // inside #btnLayer. Without one it falls into the scrollable strip —
-      // except "fire", which takes the big red slot in #controls. All buttons
-      // fire on pointerDOWN — a "click" listener would add the whole tap
-      // duration (~100ms) before the shot registers.
+      // inside #btnLayer; without one it falls into the scrollable strip. All
+      // buttons fire on pointerDOWN — a "click" listener would add the whole
+      // tap duration (~100ms) before the shot registers.
       //
       // IDEMPOTENT on purpose: the PC pushes {"type":"buttons"} after a live
       // editor save and this re-runs mid-session — recalibration untouched.
-      let calibrated = false; // gates the fire-slot reveal on a mid-session rebuild
+      let calibrated = false; // gates edge gestures until calibration is done
 
       // A held button about to be re-rendered must release FIRST — its
       // pointercancel listener sends the button-up, so nothing on the PC
       // stays stuck down when the element is thrown away.
       function releaseHeldDom() {
-        const held = document.querySelectorAll("#btnLayer .held, #btnStrip .held, #btnFire.held");
+        const held = document.querySelectorAll("#btnLayer .held, #btnStrip .held");
         for (const el of held) el.dispatchEvent(new Event("pointercancel"));
       }
 
@@ -568,23 +551,19 @@
       }
 
       // Builds one on-screen button and puts it where its config says:
-      // rect => #btnLayer, fire without a rect => the big red slot, else the
-      // strip. Trigger-click haptics stay VERY short on purpose (rapid fire
-      // must stay crisp, and the motor shakes the IMU ARCore is tracking).
+      // rect => #btnLayer, else the strip. Trigger-click haptics stay VERY
+      // short on purpose (rapid fire must stay crisp, and the motor shakes
+      // the IMU ARCore is tracking).
       function placeButton(b, strip, layer) {
-        const isFire = b.id === "fire";
         const rect = normalizeButtonRect(b.rect);
         const vibrateMs = normalizeVibrate(b.vibrate, VIBRATE_MS);
         const el = document.createElement("button");
-        if (isFire) el.id = "btnFire";
         if (rect) {
           el.className = "posbtn";
           el.style.left = rect.x + "%";
           el.style.top = rect.y + "%";
           el.style.width = rect.w + "%";
           el.style.height = rect.h + "%";
-        } else if (isFire) {
-          el.style.display = "none"; // revealed after calibration
         } else {
           el.className = "pbtn";
         }
@@ -606,10 +585,6 @@
         el.addEventListener("pointercancel", release);
         el.addEventListener("pointerleave", release);
         if (rect) layer.appendChild(el);
-        else if (isFire)
-          document
-            .getElementById("controls")
-            .insertBefore(el, document.getElementById("btnRestart"));
         else strip.appendChild(el);
       }
 
@@ -624,13 +599,9 @@
           releaseHeldDom();
           strip.replaceChildren();
           layer.replaceChildren();
-          document.getElementById("btnFire")?.remove(); // never two #btnFire ids
           rebuildTriggerMaps(cfg.buttons ?? []);
           for (const b of (cfg.buttons ?? []).filter((x) => x.visible))
             placeButton(b, strip, layer);
-          // A fire button rebuilt mid-session must not stay at its inline
-          // display:none — the session already revealed the controls.
-          if (calibrated) show("btnFire", true);
         } catch (e) {
           console.warn("buttons.json load failed:", e);
         }
@@ -641,7 +612,7 @@
       // Long-pressing any control must never pop the context menu mid-game.
       // One listener on the overlay root covers every button inside it.
       $("overlay").addEventListener("contextmenu", (e) => e.preventDefault());
-      // btnFire is created from buttons.json, so it may not exist yet (or at all)
+      // Tolerates ids that may not exist yet (config-driven elements).
       function show(id, on) {
         const el = $(id);
         if (el) el.style.display = on ? "" : "none";
@@ -723,7 +694,6 @@
         calibrated = false;
         releaseVirtual(); // an edge/pad hold must not survive a recalibration
         $("btnCapture").style.display = "";
-        show("btnFire", false);
         show("aimAdj", false);
         show("mSwap", false);
         show("btnStrip", false);
@@ -794,7 +764,6 @@
         );
         calibrated = true;
         $("btnCapture").style.display = "none";
-        show("btnFire", true);
         show("aimAdj", true);
         show("mSwap", multi);
         refreshSwapLabel();

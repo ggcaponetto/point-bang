@@ -4,7 +4,7 @@
 
 | Field     | Meaning                                                             |
 | --------- | ------------------------------------------------------------------- |
-| `id`      | Stable identifier sent over the wire (`fire`, `b1`…`b20`)           |
+| `id`      | Stable identifier sent over the wire (`b0`…`b19`)                   |
 | `label`   | Text shown on the phone                                             |
 | `action`  | What the PC does — see below                                        |
 | `visible` | Whether the phone shows the button                                  |
@@ -37,7 +37,7 @@ A button with a `rect` is placed at that position, sized to match:
 
 ```json
 {
-  "id": "fire",
+  "id": "b0",
   "label": "LEFT",
   "action": "mouse:left",
   "visible": true,
@@ -128,13 +128,12 @@ reports, it fires. Presses and releases pass through separately, so a held
 physical trigger holds the action. This uses the browser Gamepad API; a
 device that pairs as a _keyboard_ instead of a gamepad won't be seen.
 
-## FIRE is a button too
+## The trigger is just `b0`
 
-The entry with id `"fire"` is the trigger: it keeps its red styling wherever
-its `rect` puts it (by default it IS the big LEFT button), and without a
-`rect` it renders into the big red slot at the bottom of the screen instead
-of the strip — but it's config like everything else. Default action is
-`mouse:left`; remap it, relabel it, or hide it entirely.
+There is no special fire button: the default trigger is simply `b0` — the
+big LEFT half of the screen, action `mouse:left`. Remap it, relabel it,
+resize it, or hide it like any other button; nothing about its id is
+magic.
 
 ::: info Why buttons trigger on touch-down
 A `click` event fires when your finger comes **up**, silently adding your

@@ -53,7 +53,7 @@ never `*`.
 ## v2 (additive)
 
 ```json
-{ "type": "button", "id": "fire", "down": true }
+{ "type": "button", "id": "b0", "down": true }
 { "type": "aim", "u": 0.51, "v": 0.33, "t": 1712345678901, "q": 1, "m": 2 }
 { "type": "aim", "u": 0.51, "v": 0.33, "t": 1712345678901, "q": 1, "m": 1, "cal": 1 }
 { "type": "calib", "stage": "target", "m": 2 }
