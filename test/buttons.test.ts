@@ -96,14 +96,14 @@ describe("parseButtonConfig", () => {
     expect(cfg.actions.size).toBe(0);
     expect(cfg.problems[0]).toContain("buttons disabled");
   });
-  it("accepts edge/pad triggers and reports unusable or colliding ones", () => {
+  it("accepts edge/pad triggers (shared edges and any included), reports unusable ones", () => {
     const cfg = parseButtonConfig(
       JSON.stringify({
         buttons: [
           { id: "b1", action: "key:r", edge: "bottom", pad: 0 },
           { id: "b2", action: "key:a", edge: "up" }, // not an edge
-          { id: "b3", action: "key:b", edge: "bottom" }, // already taken by b1
-          { id: "b4", action: "key:c", pad: "any" },
+          { id: "b3", action: "key:b", edge: "bottom" }, // shared edge — both fire, no problem
+          { id: "b4", action: "key:c", edge: "any", pad: "any" }, // any edge, any pad button
           { id: "b5", action: "key:d", pad: -1 }, // not an index
         ],
       }),
@@ -111,8 +111,7 @@ describe("parseButtonConfig", () => {
     // like rects/vibrate these are phone-side: actions still map, typos log
     expect([...cfg.actions.keys()]).toEqual(["b1", "b2", "b3", "b4", "b5"]);
     expect(cfg.problems).toEqual([
-      "button b2: bad edge ignored (need left/right/top/bottom)",
-      "button b3: edge bottom already assigned",
+      "button b2: bad edge ignored (need left/right/top/bottom/any)",
       'button b5: bad pad ignored (need a gamepad button index or "any")',
     ]);
   });

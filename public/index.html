@@ -444,7 +444,9 @@
       //   clickers). The HUD shows the index of the last physical press so
       //   any device's layout is discoverable.
       const edgeGesture = new EdgeGesture();
-      let edgeMap = {}; // edge -> { id, vibrateMs }, rebuilt with the buttons
+      let edgeMap = {}; // edge -> [{ id, vibrateMs }] — several buttons may share an edge
+      let edgeAny = []; // fire on EVERY edge
+      let edgeHeld = new Map(); // edge -> ids sent down (release exactly those)
       let padMap = new Map(); // index -> [{ id, vibrateMs }]
       let padAny = []; // fire on EVERY physical button
       let padHeld = new Map(); // index -> ids sent down (release exactly those)
@@ -455,12 +457,24 @@
         send({ type: "button", id: t.id, down });
       }
 
+      function edgePress(edge) {
+        const targets = [...(edgeMap[edge] ?? []), ...edgeAny];
+        for (const t of targets) pressVirtual(t, true);
+        if (targets.length)
+          edgeHeld.set(
+            edge,
+            targets.map((t) => t.id),
+          );
+      }
+
+      function edgeRelease(edge) {
+        for (const id of edgeHeld.get(edge) ?? []) send({ type: "button", id, down: false });
+        edgeHeld.delete(edge);
+      }
+
       // Force-release everything edge/pad-held (recalibrate, config reload).
       function releaseVirtual() {
-        for (const e of edgeGesture.flush()) {
-          const t = edgeMap[e.edge];
-          if (t) pressVirtual(t, false);
-        }
+        for (const e of edgeGesture.flush()) edgeRelease(e.edge);
         for (const ids of padHeld.values())
           for (const id of ids) send({ type: "button", id, down: false });
         padHeld = new Map();
@@ -469,8 +483,8 @@
       function edgeTick(aim, now) {
         if (!calibrated) return;
         for (const e of edgeGesture.update(aim ? { u: aim.u, v: aim.v } : null, now)) {
-          const t = edgeMap[e.edge];
-          if (t) pressVirtual(t, e.down);
+          if (e.down) edgePress(e.edge);
+          else edgeRelease(e.edge);
         }
       }
 
@@ -538,13 +552,15 @@
       function rebuildTriggerMaps(buttonDefs) {
         releaseVirtual();
         edgeMap = {};
+        edgeAny = [];
         padMap = new Map();
         padAny = [];
         for (const b of buttonDefs) {
           if (typeof b.id !== "string" || !b.id) continue;
           const t = { id: b.id, vibrateMs: normalizeVibrate(b.vibrate, VIBRATE_MS) };
           const edge = normalizeEdge(b.edge);
-          if (edge && !edgeMap[edge]) edgeMap[edge] = t; // first wins, like the server says
+          if (edge === "any") edgeAny.push(t);
+          else if (edge) edgeMap[edge] = [...(edgeMap[edge] ?? []), t];
           const pad = normalizePad(b.pad);
           if (pad === "any") padAny.push(t);
           else if (pad !== null) padMap.set(pad, [...(padMap.get(pad) ?? []), t]);

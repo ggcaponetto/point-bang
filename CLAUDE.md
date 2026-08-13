@@ -223,13 +223,16 @@ wobbles on fire. iOS has no vibration API — silent no-op.
 
 Edge + gamepad triggers (2026-08-13, additive buttons.json fields — the wire
 messages are ordinary `button` down/up, so servers need nothing): optional
-per-button `edge` ("left"|"right"|"top"|"bottom") presses the button when aim
-is held past that screen edge >150ms and releases the INSTANT aim comes back
-on screen / is lost / crosses to another edge — the Time Crisis reload/duck,
-generalized to all four edges (`EdgeGesture` in math.js; fed RAW pre-filter
-aim so smoothing lag can never delay the release; margin 0.1 so ordinary
-edge-of-screen play and typical inter-monitor bezels don't false-trigger; one
-button per edge, first wins, duplicates reported at config load). Optional
+per-button `edge` ("left"|"right"|"top"|"bottom"|"any") presses the button
+when aim is held past that screen edge >150ms and releases the INSTANT aim
+comes back on screen / is lost / crosses to another edge — the Time Crisis
+reload/duck, generalized to all four edges ("any" = every edge; `EdgeGesture`
+in math.js; fed RAW pre-filter aim so smoothing lag can never delay the
+release; margin 0.1 so ordinary edge-of-screen play and typical inter-monitor
+bezels don't false-trigger). Several buttons may share an edge and "any"
+fires alongside a specific assignment — the fan-out mirrors the pad model
+exactly (per-edge target arrays + an any-list + held-set bookkeeping); the
+old one-button-per-edge rule was dropped 2026-08-13. Optional
 per-button `pad` (gamepad button index, or "any" for one-button BT clickers)
 presses it from a physical Bluetooth control via the poll-only Gamepad API
 (`diffPressed` in math.js, sampled every XR frame across all connected pads);

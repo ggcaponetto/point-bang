@@ -197,9 +197,9 @@ describe("swapMonitorSlots", () => {
 });
 
 describe("normalizeEdge / normalizePad", () => {
-  it("canonicalizes edges, rejects everything else", () => {
-    for (const e of ["left", "right", "top", "bottom"]) expect(normalizeEdge(e)).toBe(e);
-    for (const bad of ["up", "LEFT", "", 1, null, undefined, {}])
+  it("canonicalizes edges (incl. any), rejects everything else", () => {
+    for (const e of ["left", "right", "top", "bottom", "any"]) expect(normalizeEdge(e)).toBe(e);
+    for (const bad of ["up", "LEFT", "ANY", "", 1, null, undefined, {}])
       expect(normalizeEdge(bad)).toBeNull();
   });
   it("accepts a button index or any, rejects everything else", () => {

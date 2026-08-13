@@ -102,9 +102,14 @@ Hold your aim past the edge for ~150ms and the button goes **down**; the
 moment your aim comes back on screen (or is lost) it releases — so
 duck-and-hold mechanics work naturally. The margin is generous enough that
 ordinary shots near the screen border (and the bezels between monitors in
-`--monitor all`) never false-trigger. One button per edge; the button does
-**not** need to be `visible` — an edge-only reload needs no spot on the
-screen. In the editor it's the "off-screen edge" dropdown.
+`--monitor all`) never false-trigger.
+
+`"edge": "any"` fires the button on **every** edge — the classic "point
+anywhere off screen to reload". Several buttons may share an edge (they
+press and release together, exactly like two buttons on the same gamepad
+index), and an `any` button fires alongside a specific-edge one. The button
+does **not** need to be `visible` — an edge-only reload needs no spot on
+the screen. In the editor it's the "off-screen edge" dropdown.
 
 ## Physical triggers (Bluetooth)
 

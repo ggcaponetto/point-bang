@@ -144,6 +144,8 @@ function entryProblems(d, id) {
     problems.push(`button ${id}: bad rect ignored (need {x,y,w,h} in % of the screen)`);
   if (d.vibrate !== undefined && !usableVibrate(d.vibrate))
     problems.push(`button ${id}: bad vibrate ignored (need true/false or a pulse in ms)`);
+  if (d.edge !== undefined && !normalizeEdge(d.edge))
+    problems.push(`button ${id}: bad edge ignored (need left/right/top/bottom/any)`);
   if (d.pad !== undefined && normalizePad(d.pad) === null)
     problems.push(`button ${id}: bad pad ignored (need a gamepad button index or "any")`);
   if (!d.action) return problems;
@@ -153,20 +155,6 @@ function entryProblems(d, id) {
     problems.push(`button ${id}: unknown action "${d.action}"`);
   }
   return problems;
-}
-
-/**
- * Edge assignment verdict for one entry — same strings the server produces.
- * @param {Record<string, unknown>} d @param {string} id @param {Set<string>} seen
- * @returns {string | null}
- */
-function edgeProblem(d, id, seen) {
-  if (d.edge === undefined) return null;
-  const edge = normalizeEdge(d.edge);
-  if (!edge) return `button ${id}: bad edge ignored (need left/right/top/bottom)`;
-  if (seen.has(edge)) return `button ${id}: edge ${edge} already assigned`;
-  seen.add(edge);
-  return null;
 }
 
 /**
@@ -183,7 +171,6 @@ export function configProblems(config) {
     return ['config must be {"buttons": [...]}'];
   const problems = [];
   const seen = new Set();
-  const edgesSeen = new Set();
   for (const entry of /** @type {unknown[]} */ (c.buttons)) {
     const d = /** @type {Record<string, unknown>} */ (entry ?? {});
     if (typeof d.id !== "string" || !d.id) {
@@ -192,8 +179,6 @@ export function configProblems(config) {
     }
     if (seen.has(d.id)) problems.push(`button ${d.id}: duplicate id`);
     seen.add(d.id);
-    const ep = edgeProblem(d, d.id, edgesSeen);
-    if (ep) problems.push(ep);
     problems.push(...entryProblems(d, d.id));
   }
   return problems;

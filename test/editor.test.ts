@@ -122,14 +122,14 @@ describe("configProblems", () => {
         buttons: [
           { id: "b1", edge: "bottom", pad: 0 },
           { id: "b2", edge: "up" },
-          { id: "b3", edge: "bottom" },
-          { id: "b4", pad: "sometimes" },
+          { id: "b3", edge: "bottom" }, // shared edge is fine — both fire
+          { id: "b4", edge: "any" }, // any edge is fine
+          { id: "b5", pad: "sometimes" },
         ],
       }),
     ).toEqual([
-      "button b2: bad edge ignored (need left/right/top/bottom)",
-      "button b3: edge bottom already assigned",
-      'button b4: bad pad ignored (need a gamepad button index or "any")',
+      "button b2: bad edge ignored (need left/right/top/bottom/any)",
+      'button b5: bad pad ignored (need a gamepad button index or "any")',
     ]);
   });
   it("rejects a config without a buttons array", () => {

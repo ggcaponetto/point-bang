@@ -214,18 +214,20 @@ export function normalizeVibrate(v, defaultMs = 10) {
 
 // ==================== edge & gamepad triggers ====================
 
-/** The four assignable screen edges. */
-const EDGES = new Set(["left", "right", "top", "bottom"]);
+/** The assignable screen edges, plus "any" = every edge triggers the button. */
+const EDGES = new Set(["left", "right", "top", "bottom", "any"]);
 
 /**
  * A button's `edge` config value, canonicalized — or null for anything that
- * is not an assignable edge.
+ * is not an assignable edge. `"any"` is a mapping concept only: the gesture
+ * classifier always reports a concrete edge, and an "any" assignment fires
+ * for whichever one it is.
  * @param {unknown} v
- * @returns {"left" | "right" | "top" | "bottom" | null}
+ * @returns {"left" | "right" | "top" | "bottom" | "any" | null}
  */
 export function normalizeEdge(v) {
   return typeof v === "string" && EDGES.has(v)
-    ? /** @type {"left" | "right" | "top" | "bottom"} */ (v)
+    ? /** @type {"left" | "right" | "top" | "bottom" | "any"} */ (v)
     : null;
 }
 
