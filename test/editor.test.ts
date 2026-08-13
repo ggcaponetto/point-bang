@@ -7,6 +7,7 @@ import {
   updateButton,
   configProblems,
   parseVibrateField,
+  nextFreeRect,
 } from "../public/editor.js";
 
 const R = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
@@ -120,6 +121,24 @@ describe("configProblems", () => {
   });
   it("accepts the clean case", () => {
     expect(configProblems({ buttons: [{ id: "b1", action: "key:a", visible: true }] })).toEqual([]);
+  });
+});
+
+describe("nextFreeRect", () => {
+  it("takes the top-left corner on an empty screen", () => {
+    expect(nextFreeRect([])).toEqual(R(0, 0, 20, 16));
+  });
+  it("skips past existing buttons in reading order", () => {
+    // a full-width bar across the top forces the next row down
+    expect(nextFreeRect([R(0, 0, 100, 20)])).toEqual(R(0, 21, 20, 16));
+    // top-left taken → next slot to the right
+    expect(nextFreeRect([R(0, 0, 20, 16)])).toEqual(R(21, 0, 20, 16));
+  });
+  it("honors a custom size", () => {
+    expect(nextFreeRect([], 44, 30)).toEqual(R(0, 0, 44, 30));
+  });
+  it("falls back to center when the screen is full", () => {
+    expect(nextFreeRect([R(0, 0, 100, 100)], 20, 16)).toEqual(R(40, 42, 20, 16));
   });
 });
 

@@ -111,6 +111,28 @@ export function updateButton(config, id, patch) {
   };
 }
 
+/** @param {Rect} a @param {Rect} b */
+const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * A free spot for a newly placed button: scans the screen in coarse steps for
+ * the first w×h rect that overlaps none of the existing ones (reading order,
+ * top-left first), so repeated "add button" clicks never stack new buttons on
+ * top of each other. Falls back to dead center when the screen is full.
+ * @param {Rect[]} rects existing button rects
+ * @param {number} [w] @param {number} [h]
+ * @returns {Rect}
+ */
+export function nextFreeRect(rects, w = 20, h = 16) {
+  for (let y = 0; y + h <= 100; y += 7) {
+    for (let x = 0; x + w <= 100; x += 7) {
+      const candidate = { x, y, w, h };
+      if (!rects.some((r) => overlaps(candidate, r))) return candidate;
+    }
+  }
+  return { x: 40, y: 42, w, h };
+}
+
 /**
  * The per-entry checks behind {@link configProblems}.
  * @param {Record<string, unknown>} d @param {string} id
