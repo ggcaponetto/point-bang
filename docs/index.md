@@ -53,3 +53,16 @@ features:
       needs no trackable surface at all. Anchor-pinned hit-test mode, which
       keeps refining as ARCore learns the room, is one toggle away.
 ---
+
+## See it in action
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; margin-top: 24px;">
+  <figure style="flex: 1 1 260px; max-width: 320px; margin: 0;">
+    <iframe src="https://www.youtube-nocookie.com/embed/UE3XUln_xOE" title="Time Crisis gameplay with point-bang" style="width: 100%; aspect-ratio: 9 / 16; border: 0; border-radius: 12px;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+    <figcaption style="text-align: center; margin-top: 8px;">Time Crisis gameplay</figcaption>
+  </figure>
+  <figure style="flex: 1 1 260px; max-width: 320px; margin: 0;">
+    <iframe src="https://www.youtube-nocookie.com/embed/k40vjbAD5yA" title="Two-ray corner calibration walkthrough" style="width: 100%; aspect-ratio: 9 / 16; border: 0; border-radius: 12px;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+    <figcaption style="text-align: center; margin-top: 8px;">Two-ray calibration</figcaption>
+  </figure>
+</div>
