@@ -23,7 +23,8 @@ export default defineConfig({
           items: [
             { text: "Getting Started (USB)", link: "/guide/getting-started" },
             { text: "Playing over WiFi", link: "/guide/wifi" },
-            { text: "Your First Game", link: "/guide/first-game" },
+            { text: "Game Guides", link: "/guide/games/" },
+            { text: "· Time Crisis", link: "/guide/games/time-crisis/" },
             { text: "Buttons", link: "/guide/buttons" },
             { text: "Aim & Latency Tuning", link: "/guide/latency" },
             { text: "Troubleshooting", link: "/guide/troubleshooting" },
