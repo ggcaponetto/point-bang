@@ -52,6 +52,23 @@ evening — the yellow button below is how you say it.
 
 ---
 
+## See it in action
+
+<div align="center">
+<table>
+<tr>
+<td align="center">
+<a href="https://youtube.com/shorts/UE3XUln_xOE"><img src="https://img.youtube.com/vi/UE3XUln_xOE/hqdefault.jpg" alt="Time Crisis gameplay with point-bang" width="320"></a>
+<br><b>Time Crisis gameplay</b>
+</td>
+<td align="center">
+<a href="https://youtube.com/shorts/k40vjbAD5yA"><img src="https://img.youtube.com/vi/k40vjbAD5yA/hqdefault.jpg" alt="Two-ray corner calibration walkthrough" width="320"></a>
+<br><b>Two-ray calibration</b>
+</td>
+</tr>
+</table>
+</div>
+
 ## Getting started (players)
 
 No Node, no build tools, no certificates — three steps:
