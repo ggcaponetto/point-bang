@@ -248,8 +248,8 @@
       <div class="row">
         <label for="method">Calibration</label>
         <select id="method">
+          <option value="tworay">Two-ray corners (2 taps/corner — recommended)</option>
           <option value="hittest">Hit-test corners (1 tap/corner)</option>
-          <option value="tworay">Two-ray corners (2 taps/corner)</option>
         </select>
       </div>
       <div class="row">
@@ -657,7 +657,9 @@
 
       // ============================== calibration state ==============================
       const CORNERS = ["TOP-LEFT", "TOP-RIGHT", "BOTTOM-LEFT"];
-      let method = "hittest";
+      // two-ray is the default/recommended method (user decision 2026-08-13):
+      // it needs no trackable surface, and monitors are bad ARCore surfaces
+      let method = "tworay";
       let expectedAspect = 16 / 9; // manual #aspect input — single-plane fallback
       let calibs = []; // per monitor { corners:[3], anchors:[3], done }
       let planes = []; // per monitor { origin, right, down } | null, rebuilt each frame

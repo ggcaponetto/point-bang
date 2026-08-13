@@ -170,13 +170,17 @@ What index.html already contains (reuse, don't reinvent):
 - XR session boilerplate: `immersive-ar`, required `hit-test` + `dom-overlay`,
   optional `local-floor` (fallback `local`) + `anchors`; throwaway WebGL layer
   (AR sessions must render; we clear to transparent).
-- Two calibration methods behind a UI toggle:
-  1. **hit-test**: aim center crosshair at 3 screen corners (TL, TR, BL),
-     CAPTURE each; each corner gets an XRAnchor; corner positions are re-read
-     from anchor poses every frame so calibration self-corrects.
-  2. **two-ray** fallback (for when ARCore finds no surface at the screen):
-     2 captures per corner from positions ≥50cm apart; closest-point-between-
-     two-rays; captures with >12cm ray gap are rejected with a retry prompt.
+- Two calibration methods behind a UI toggle (user decision 2026-08-13:
+  **two-ray is the DEFAULT and the recommended method** — monitors are bad
+  ARCore surfaces, so hit-test demoted from default to alternative; keep the
+  docs recommending two-ray):
+  1. **two-ray** (default): aim at 3 screen corners (TL, TR, BL), 2 captures
+     per corner from positions ≥50cm apart; closest-point-between-two-rays;
+     captures with >12cm ray gap are rejected with a retry prompt. Needs no
+     trackable surface.
+  2. **hit-test**: CAPTURE each corner once; each corner gets an XRAnchor;
+     corner positions are re-read from anchor poses every frame so
+     calibration self-corrects — when ARCore finds a surface at all.
 - Sanity check: measured aspect |right|/|down| vs user-entered monitor aspect,
   green if within 8%.
 - Per-frame: viewer pose → forward vector (−Z of pose quaternion) → ray-plane
@@ -523,8 +527,8 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 - `adb reverse` mappings die on cable replug / adb restart; re-run it.
 - Monitor is a bad ARCore surface (emissive, low texture): hit-test may land
   on the wall behind the screen — a constant few-cm offset that the u,v math
-  mostly self-corrects; if hit-test finds nothing, that's what two-ray mode
-  is for. Room clutter around the monitor improves tracking; blank walls and
+  mostly self-corrects; if hit-test finds nothing, that's why two-ray mode
+  is the default. Room clutter around the monitor improves tracking; blank walls and
   whip-pans cause `limited/lost` states — never send aim while lost.
 - Anchors don't persist across sessions (browser support patchy): expect
   ~15s recalibration per session. Bumping the monitor invalidates calibration

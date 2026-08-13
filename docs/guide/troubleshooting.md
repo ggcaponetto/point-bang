@@ -146,9 +146,10 @@ Install or update **Google Play Services for AR** on the phone.
 ## Hit-test never finds the screen corners
 
 Expected on some setups: monitors are emissive, low-texture surfaces that
-ARCore struggles with. Switch to **two-ray mode** — it needs no surfaces.
-Room clutter around the monitor actually improves tracking; blank walls and
-whip-pans cause `limited`/`lost` states.
+ARCore struggles with — which is why **two-ray mode** (no surfaces needed)
+is the default. If you switched to hit-test, switch back. Room clutter
+around the monitor actually improves tracking; blank walls and whip-pans
+cause `limited`/`lost` states.
 
 ## Cursor is mirrored or rotated
 

@@ -44,8 +44,9 @@ How the pieces map, end to end:
    network"_ — tap **Allow**. The HUD's `link` field turns `rtc`.
 3. Tap **START AR**, sweep the phone slowly around the desk until tracking
    shows `good`, then aim the crosshair at your **top-left, top-right, and
-   bottom-left** screen corners (that exact order), pressing **CAPTURE** on
-   each. The aspect check turns green when the calibration is sane.
+   bottom-left** screen corners (that exact order), pressing **CAPTURE**
+   twice per corner from two spots ~50cm apart (the default two-ray
+   method). The aspect check turns green when the calibration is sane.
 4. Aim at the screen — the PC cursor follows. You are now a lightgun.
 
 Two tips before launching the game:
