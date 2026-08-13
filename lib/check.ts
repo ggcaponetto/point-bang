@@ -36,6 +36,8 @@ async function checkAssets(d: CheckDeps): Promise<number> {
     const data = await d.assets.read(name);
     if (!data) {
       d.log(`asset ${name}: MISSING`);
+      if (name === "editor.html")
+        d.log("editor: not built — serve builds it automatically, or: npm run -w editor build");
       missing++;
       continue;
     }

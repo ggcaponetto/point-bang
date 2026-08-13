@@ -1,15 +1,17 @@
 import { describe, it, expect } from "vitest";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { diskAssets, seaAssets, PUBLIC_ASSETS } from "../lib/assets.ts";
+import { diskAssets, seaAssets, PHONE_ASSETS } from "../lib/assets.ts";
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 
 describe("diskAssets", () => {
   const src = diskAssets(PUBLIC);
 
+  // PHONE_ASSETS only: editor.html is GENERATED (editor workspace build) and
+  // legitimately absent on a fresh clone — the suite must stay green there.
   it("reads the real phone page files", async () => {
-    for (const name of PUBLIC_ASSETS) expect((await src.read(name))?.length).toBeGreaterThan(0);
+    for (const name of PHONE_ASSETS) expect((await src.read(name))?.length).toBeGreaterThan(0);
   });
   it("accepts a leading slash, the shape a request path has", async () => {
     expect((await src.read("/math.js"))?.length).toBeGreaterThan(0);

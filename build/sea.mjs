@@ -11,7 +11,7 @@
  * chains — so it behaves identically under bash and cmd.exe. It is the only
  * build step in the project; `node cli.ts` still runs straight from source.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -125,6 +125,11 @@ function writeConfig(assets) {
 function main() {
   fs.rmSync(DIST, { recursive: true, force: true });
   fs.mkdirSync(DIST, { recursive: true });
+
+  // Always rebuild the editor first — release artifacts must never bake a
+  // stale (or missing) public/editor.html; collectAssets throws otherwise.
+  log("building the editor (vite) -> public/editor.html");
+  execSync("npm run -w editor build", { cwd: ROOT, stdio: "inherit" });
 
   bundle();
   const assets = collectAssets();

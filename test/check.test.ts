@@ -7,6 +7,17 @@ import type { LibNut, Ffi } from "../lib/native.ts";
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 
+// public/editor.html is GENERATED (editor workspace build) and legitimately
+// absent on a fresh clone — stub it so these tests exercise a complete
+// install regardless of the local build state.
+const builtAssets = () => {
+  const disk = diskAssets(PUBLIC);
+  return {
+    read: async (name: string) =>
+      (await disk.read(name)) ?? (name === "editor.html" ? Buffer.from("<!doctype html>") : null),
+  };
+};
+
 const okNative = () =>
   Promise.resolve({
     getScreenSize: () => ({ width: 1920, height: 1080 }),
@@ -22,7 +33,7 @@ describe("runCheck", () => {
   it("passes on a complete install and reports screen size and hotkey", async () => {
     const logs: string[] = [];
     const code = await runCheck({
-      assets: diskAssets(PUBLIC),
+      assets: builtAssets(),
       log: (l) => logs.push(l),
       loadNative: okNative,
       loadFfi: okFfi,
@@ -57,7 +68,7 @@ describe("runCheck", () => {
   it("reports an unusable input addon without failing — CI has no display", async () => {
     const logs: string[] = [];
     const code = await runCheck({
-      assets: diskAssets(PUBLIC),
+      assets: builtAssets(),
       log: (l) => logs.push(l),
       platform: "linux",
       env: withDisplay,
@@ -75,7 +86,7 @@ describe("runCheck", () => {
     const logs: string[] = [];
     let called = false;
     const code = await runCheck({
-      assets: diskAssets(PUBLIC),
+      assets: builtAssets(),
       log: (l) => logs.push(l),
       platform: "linux",
       env: {},
@@ -94,7 +105,7 @@ describe("runCheck", () => {
   it("gives non-Linux platforms a generic hint", async () => {
     const logs: string[] = [];
     await runCheck({
-      assets: diskAssets(PUBLIC),
+      assets: builtAssets(),
       log: (l) => logs.push(l),
       platform: "win32",
       env: {},
@@ -107,7 +118,7 @@ describe("runCheck", () => {
   it("reports a hotkey FFI that will not load without failing the check", async () => {
     const logs: string[] = [];
     const code = await runCheck({
-      assets: diskAssets(PUBLIC),
+      assets: builtAssets(),
       log: (l) => logs.push(l),
       platform: "win32",
       env: withDisplay,

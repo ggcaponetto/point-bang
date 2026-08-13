@@ -4,6 +4,7 @@ certs/
 dist/
 test/fixtures/
 package-lock.json
+public/editor.html
 docs/api/
 docs/public/
 docs/.vitepress/dist/
