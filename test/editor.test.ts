@@ -12,6 +12,7 @@ import {
   composeAction,
   decomposeAction,
   decomposeVibrate,
+  resetButton,
 } from "../public/editor.js";
 
 const R = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
@@ -228,6 +229,32 @@ describe("decomposeAction", () => {
       if (d.kind === "mouse") expect(composeAction("mouse", d.button, [], "")).toBe(spec);
       if (d.kind === "key") expect(composeAction("key", "left", d.mods, d.key)).toBe(spec);
     }
+  });
+});
+
+describe("resetButton", () => {
+  it("returns the slot to factory empty, dropping every optional field", () => {
+    const cfg = {
+      "//": "doc",
+      buttons: [
+        {
+          id: "b4",
+          label: "DUCK",
+          action: "key:r",
+          visible: true,
+          rect: { x: 1, y: 2, w: 3, h: 4 },
+          vibrate: 5,
+          edge: "any",
+          pad: 0,
+        },
+        { id: "b5", label: "B5", action: "", visible: false },
+      ],
+    };
+    const next = resetButton(cfg, "b4");
+    expect(next.buttons[0]).toEqual({ id: "b4", label: "B4", action: "", visible: false });
+    expect(next.buttons[1]).toBe(cfg.buttons[1]); // others by reference
+    expect((next as unknown as { "//": string })["//"]).toBe("doc"); // config keys survive
+    expect(cfg.buttons[0].label).toBe("DUCK"); // original untouched
   });
 });
 

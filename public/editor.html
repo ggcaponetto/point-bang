@@ -282,6 +282,10 @@
         padding: 6px 12px;
         cursor: pointer;
       }
+      .secbtn.danger {
+        background: #4a2020;
+        color: #f0b0b0;
+      }
       #problemsWrap {
         margin: 0 16px 16px;
       }
@@ -363,6 +367,15 @@
             <p class="hint" data-i18n="field.visibleHint">
               hidden buttons can still fire via the extra triggers below
             </p>
+            <button
+              class="secbtn danger"
+              id="btnReset"
+              data-i18n="field.reset"
+              data-i18n-title="field.resetHint"
+              title="back to factory empty: no action, hidden, everything cleared"
+            >
+              reset this button
+            </button>
           </fieldset>
 
           <fieldset class="sec">
@@ -524,6 +537,7 @@
         composeAction,
         decomposeAction,
         decomposeVibrate,
+        resetButton,
       } from "./editor.js";
       import { pickLanguage, makeT } from "./editor-i18n.js";
 
@@ -826,6 +840,12 @@
       $("fVisible").onchange = (e) => {
         patchSelected({ visible: e.target.checked });
         renderInspector();
+      };
+      // Local until "save" is clicked — reload discards, so no confirm dialog.
+      $("btnReset").onclick = () => {
+        if (!selected) return;
+        cfg = resetButton(cfg, selected);
+        renderAll();
       };
 
       // Builder: every control funnels into one applyBuilder() — patch the

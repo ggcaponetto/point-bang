@@ -165,6 +165,24 @@ function entryProblems(d, id) {
 }
 
 /**
+ * Resets one button to its pristine unused-slot state: no action, hidden,
+ * default label, and every optional field (rect/vibrate/edge/pad) removed.
+ * The slot itself stays — ids b0..b19 are the fixed vocabulary, so "delete"
+ * means "back to factory empty". Unknown per-button fields are dropped on
+ * purpose; unknown config-level keys are untouched.
+ * @param {{ buttons: Array<Record<string, unknown>> }} config
+ * @param {string} id
+ */
+export function resetButton(config, id) {
+  return {
+    ...config,
+    buttons: config.buttons.map((b) =>
+      b.id === id ? { id, label: id.toUpperCase(), action: "", visible: false } : b,
+    ),
+  };
+}
+
+/**
  * Client-side mirror of the server's save verdicts (lib/buttons
  * parseButtonConfig, via the SAME math.js validators) plus a duplicate-id
  * check the server tolerates but a config should not contain. Empty array =
