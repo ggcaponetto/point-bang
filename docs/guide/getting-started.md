@@ -88,15 +88,16 @@ Cursor injection uses X11's XTEST extension: install `libx11` and `libxtst`
 
 ## Calibrate
 
-1. Pick a calibration method (start with **hit-test**), confirm your monitor
-   aspect ratio, and tap **START AR**.
+1. Keep the default calibration method (**two-ray** — recommended), confirm
+   your monitor aspect ratio, and tap **START AR**.
 2. Sweep the phone slowly around the desk/monitor area until the HUD shows
    tracking `good`.
 3. Aim the green crosshair at each named screen corner — **top-left,
    top-right, bottom-left, in that exact order** — and press **CAPTURE**.
-   - **Hit-test mode**: one capture per corner (ARCore must see a surface).
-   - **Two-ray mode**: two captures per corner from positions ~50cm apart —
-     use this when hit-testing won't land on the screen.
+   - **Two-ray mode** (default, recommended): two captures per corner from
+     positions ~50cm apart — works on any screen, no surface tracking needed.
+   - **Hit-test mode**: one capture per corner, but ARCore must see a
+     surface at the screen — monitors often defeat that.
 4. The HUD shows the measured aspect ratio — green means the calibration is
    geometrically sane.
 5. Aim at the screen: the PC cursor follows. The big **LEFT** button

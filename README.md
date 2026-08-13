@@ -131,8 +131,9 @@ is one Local-Network-Access fetch, and WebRTC brings its own encryption.
 
 ## Highlights
 
-- **Absolute aim, no drift** — WebXR `immersive-ar` with anchor-pinned,
-  self-correcting calibration; two-ray fallback for hard-to-track screens.
+- **Absolute aim, no drift** — WebXR `immersive-ar` with two-ray corner
+  calibration that works on any screen (no surface tracking needed);
+  anchor-pinned self-correcting hit-test mode one toggle away.
 - **Scan-to-play wireless setup** — the startup QR loads the hosted page
   over HTTPS and connects a WebRTC DataChannel straight across the LAN via
   Chrome's Local Network Access permission: zero certificates, zero flags,

@@ -47,8 +47,9 @@ features:
       TypeScript run natively by Node — no build step — with vitest enforcing
       90% coverage on every metric, prettier, knip and husky gates.
   - icon: 📐
-    title: Self-correcting calibration
+    title: Calibrates on any screen
     details: >
-      Three corner captures with WebXR anchors that keep refining as ARCore
-      learns the room; two-ray fallback when the screen defeats hit-testing.
+      Aim at three corners, two taps each — the recommended two-ray method
+      needs no trackable surface at all. Anchor-pinned hit-test mode, which
+      keeps refining as ARCore learns the room, is one toggle away.
 ---
