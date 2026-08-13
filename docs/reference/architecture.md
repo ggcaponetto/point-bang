@@ -63,7 +63,9 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
 ├── public/
 │   ├── index.html     # phone page: XR/DOM glue (buildless, ES module)
 │   ├── transport.js   # PC link: RTC-first ladder + WS fallback (JSDoc-typed, tested)
-│   ├── math.js        # pure math shared by Chrome AND vitest (JSDoc-typed)
+│   ├── math.js        # pure math + button vocabulary shared by Chrome AND vitest
+│   ├── editor.html    # live button editor (PC browser): DOM glue only
+│   ├── editor.js      # editor logic: drag/resize/hit-test/validation (tested)
 │   └── buttons.json   # 20 assignable buttons, read by both sides
 └── test/              # vitest suites, 90% coverage enforced
 ```
@@ -90,7 +92,9 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
   gets an HTTPS origin without the customer touching certificates. The same
   files served by the PC keep every same-origin flow working — one source,
   two origins. Cross-origin, the page may only fetch `buttons.json` and
-  `POST /rtc/offer`, gated by an Origin allowlist (`--page-url`).
+  `/monitors`, and POST to `/rtc/offer` and `/buttons`, gated by an Origin
+  allowlist (`--page-url`); the state-changing POSTs additionally require
+  the session key.
 - **Session key (`lib/auth.ts`).** CORS only constrains browsers — curl and
   any device on the LAN send no Origin — so both aim intakes are gated by a
   per-run key: the WebSocket upgrade takes it as `?key=`, `/rtc/offer` in

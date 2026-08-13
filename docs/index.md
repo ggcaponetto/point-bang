@@ -28,10 +28,12 @@ features:
       A Node server and your Android phone's Chrome. USB cable for the lowest
       jitter, or the same WiFi network — both first-class, one command each.
   - icon: 🕹️
-    title: 20 assignable buttons
+    title: 20 assignable buttons, edited live
     details: >
-      A JSON file maps on-screen buttons to any key combo or mouse button,
-      press-and-hold included. FIRE itself is just a button — remap it freely.
+      A drag-and-drop editor maps buttons to any key combo or mouse button —
+      applied to the PC and phone instantly, mid-session. Assign a screen
+      edge (aim off-screen to reload, arcade-style) or a Bluetooth trigger
+      to any of them.
   - icon: ⚡
     title: Latency-obsessed
     details: >
