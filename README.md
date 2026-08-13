@@ -44,8 +44,8 @@ No Node, no build tools, no certificates — three steps:
    corners, and the PC cursor follows your aim. Aim data flows over a
    WebRTC DataChannel directly across your WiFi.
 
-Then set up an actual game — **[Your First Game
-→](https://ggcaponetto.github.io/point-bang/guide/first-game)** walks
+Then set up an actual game — the **[game guides
+→](https://ggcaponetto.github.io/point-bang/guide/games/)** walk
 through Time Crisis in DuckStation and MAME lightgun classics. Prefer a
 cable? The [USB flow](https://ggcaponetto.github.io/point-bang/guide/getting-started)
 has the lowest jitter of all and charges the phone while you play.

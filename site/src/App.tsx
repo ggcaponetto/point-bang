@@ -203,7 +203,7 @@ export function App() {
           <Button variant="outlined" href={DOCS}>
             {t("links.docs")}
           </Button>
-          <Button variant="outlined" href={`${DOCS}guide/first-game`}>
+          <Button variant="outlined" href={`${DOCS}guide/games/time-crisis/`}>
             {t("links.firstGame")}
           </Button>
           <Button variant="outlined" href={REPO}>
