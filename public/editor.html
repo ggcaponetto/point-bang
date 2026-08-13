@@ -122,6 +122,18 @@
         color: var(--text);
         cursor: pointer;
       }
+      #addHidden {
+        padding: 4px 8px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .row.hid .act,
+      .row.hid b {
+        opacity: 0.45;
+      }
       aside {
         background: var(--panel);
         border: 1px solid var(--line);
@@ -206,13 +218,17 @@
         <div id="frame"></div>
         <div class="under">
           <label><input type="checkbox" id="portrait" /> portrait phone</label>
+          <select id="addHidden" hidden aria-label="add one of the unused button slots">
+            <option value="">＋ add button…</option>
+          </select>
           <span id="chipLabel" hidden>place on canvas:</span>
           <span id="chips"></span>
         </div>
         <p class="hint">
           Drag a button to move it, drag a corner to resize (1% snap). Positions are % of the phone
-          screen. Save applies live: the PC remaps actions and a connected phone re-renders — no
-          recalibration.
+          screen. “＋ add button” turns one of the unused (hidden) slots into a visible button and
+          places it on a free spot — give it an action in the inspector. Save applies live: the PC
+          remaps actions and a connected phone re-renders — no recalibration.
         </p>
       </section>
       <aside>
@@ -263,6 +279,7 @@
         updateButton,
         configProblems,
         parseVibrateField,
+        nextFreeRect,
       } from "./editor.js";
 
       const $ = (id) => document.getElementById(id);
@@ -308,6 +325,17 @@
         }
       }
 
+      // Placing (chip click or "add button") lands on a free spot instead of
+      // stacking every new button at the same coordinates.
+      const placeOnCanvas = (id, extraPatch = {}) => {
+        const taken = rectButtons()
+          .map((b) => b.rect)
+          .filter(Boolean);
+        cfg = updateButton(cfg, id, { ...extraPatch, rect: nextFreeRect(taken) });
+        selected = id;
+        renderAll();
+      };
+
       function renderChips() {
         const chips = $("chips");
         chips.replaceChildren();
@@ -317,28 +345,42 @@
           const c = document.createElement("button");
           c.className = "chip";
           c.textContent = b.label || b.id;
-          c.onclick = () => {
-            cfg = updateButton(cfg, b.id, { rect: { x: 40, y: 40, w: 20, h: 16 } });
-            selected = b.id;
-            renderAll();
-          };
+          c.onclick = () => placeOnCanvas(b.id);
           chips.appendChild(c);
         }
+        // The unused pool: buttons with visible:false are the "new button"
+        // slots — picking one reveals it, places it, and selects it.
+        const sel = $("addHidden");
+        const keep = sel.firstElementChild;
+        sel.replaceChildren(keep);
+        const hidden = buttons().filter((b) => !b.visible);
+        sel.hidden = hidden.length === 0;
+        for (const b of hidden) {
+          const o = document.createElement("option");
+          o.value = b.id;
+          const hasOwnLabel = b.label && b.label !== b.id.toUpperCase();
+          o.textContent = hasOwnLabel ? b.id + " (" + b.label + ")" : b.id;
+          sel.appendChild(o);
+        }
+        sel.value = "";
       }
+      $("addHidden").onchange = (e) => {
+        if (e.target.value) placeOnCanvas(e.target.value, { visible: true });
+      };
 
       function renderList() {
         const list = $("list");
         list.replaceChildren();
         for (const b of buttons()) {
           const row = document.createElement("div");
-          row.className = "row" + (b.id === selected ? " sel" : "");
+          row.className = "row" + (b.id === selected ? " sel" : "") + (b.visible ? "" : " hid");
           const idEl = document.createElement("b");
           idEl.textContent = b.id;
           const act = document.createElement("span");
           act.className = "act";
           act.textContent = `${b.label ?? ""} ${b.action ? "· " + b.action : ""}`;
           const vis = document.createElement("span");
-          vis.textContent = b.visible ? "👁" : "";
+          vis.textContent = b.visible ? "👁" : "hidden";
           row.append(idEl, act, vis);
           row.onclick = () => {
             selected = b.id;
