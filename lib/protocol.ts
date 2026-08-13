@@ -66,6 +66,34 @@ export interface ServerMsg {
   rev: number;
 }
 
+// Per-type validators, split out of parseMessage so the dispatch stays flat.
+// A malformed OPTIONAL field is dropped, never the whole message.
+const sanitizeMonitorIndex = (m: Record<string, unknown>): void => {
+  if (m.m !== undefined && (!Number.isInteger(m.m) || (m.m as number) < 1)) delete m.m;
+};
+
+const parseAim = (m: Record<string, unknown>): AimMsg | null => {
+  if (typeof m.u !== "number" || typeof m.v !== "number") return null;
+  sanitizeMonitorIndex(m);
+  // the calibration tag: only the literal 1 counts
+  if (m.cal !== undefined && m.cal !== 1) delete m.cal;
+  return m as unknown as AimMsg;
+};
+
+const parseCalib = (m: Record<string, unknown>): CalibMsg | null => {
+  if (typeof m.stage !== "string") return null;
+  sanitizeMonitorIndex(m);
+  return m as unknown as CalibMsg;
+};
+
+const parseState = (m: Record<string, unknown>): StateMsg | null =>
+  m.tracking === "good" || m.tracking === "limited" || m.tracking === "lost"
+    ? (m as unknown as StateMsg)
+    : null;
+
+const parseButton = (m: Record<string, unknown>): ButtonMsg | null =>
+  typeof m.id === "string" && typeof m.down === "boolean" ? (m as unknown as ButtonMsg) : null;
+
 /**
  * Parses and validates a raw WebSocket payload.
  *
@@ -83,24 +111,15 @@ export function parseMessage(raw: string | Buffer): ClientMsg | null {
   const m = d as Record<string, unknown>;
   switch (m.type) {
     case "aim":
-      if (typeof m.u !== "number" || typeof m.v !== "number") return null;
-      // a malformed monitor index is dropped, not the whole sample
-      if (m.m !== undefined && (!Number.isInteger(m.m) || (m.m as number) < 1)) delete m.m;
-      // same treatment for the calibration tag: only the literal 1 counts
-      if (m.cal !== undefined && m.cal !== 1) delete m.cal;
-      return m as unknown as AimMsg;
+      return parseAim(m);
     case "fire":
       return { type: "fire" };
     case "calib":
-      if (typeof m.stage !== "string") return null;
-      if (m.m !== undefined && (!Number.isInteger(m.m) || (m.m as number) < 1)) delete m.m;
-      return m as unknown as CalibMsg;
+      return parseCalib(m);
     case "state":
-      if (m.tracking !== "good" && m.tracking !== "limited" && m.tracking !== "lost") return null;
-      return m as unknown as StateMsg;
+      return parseState(m);
     case "button":
-      if (typeof m.id !== "string" || typeof m.down !== "boolean") return null;
-      return m as unknown as ButtonMsg;
+      return parseButton(m);
     default:
       return null;
   }

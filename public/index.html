@@ -373,7 +373,11 @@
       // snapshotted at START; null (old server, PC unreachable) = classic
       // single-plane flow.
       let monTargets = null;
-      fetchMonitors(hosts, (u, i) => fetch(u, i)).then((t) => (monTargets = t));
+      // Deliberately NOT a top-level await: this must never delay module init
+      // or the START tap — start() snapshots whatever has resolved by then.
+      void (async () => {
+        monTargets = await fetchMonitors(hosts, (u, i) => fetch(u, i));
+      })();
       let targets = null; // frozen at start()
       let numMon = 1;
       let multi = false;
@@ -469,30 +473,40 @@
         }
       }
 
-      function padTick() {
-        const pads = navigator.getGamepads?.() ?? [];
+      // Pressed-state snapshot merged across every connected pad.
+      function padSnapshot() {
         const curr = [];
-        for (const p of pads) {
+        for (const p of navigator.getGamepads?.() ?? []) {
           if (!p) continue;
           p.buttons.forEach((b, i) => {
             if (b.pressed) curr[i] = true;
           });
         }
+        return curr;
+      }
+
+      function padPress(index) {
+        show("hPadWrap", true);
+        setHud("hPad", String(index)); // how the user discovers a device's layout
+        const targets = [...(padMap.get(index) ?? []), ...padAny];
+        for (const t of targets) pressVirtual(t, true);
+        if (targets.length)
+          padHeld.set(
+            index,
+            targets.map((t) => t.id),
+          );
+      }
+
+      function padRelease(index) {
+        for (const id of padHeld.get(index) ?? []) send({ type: "button", id, down: false });
+        padHeld.delete(index);
+      }
+
+      function padTick() {
+        const curr = padSnapshot();
         for (const ev of diffPressed(padPrev, curr)) {
-          if (ev.down) {
-            show("hPadWrap", true);
-            setHud("hPad", String(ev.index));
-            const targets = [...(padMap.get(ev.index) ?? []), ...padAny];
-            for (const t of targets) pressVirtual(t, true);
-            if (targets.length)
-              padHeld.set(
-                ev.index,
-                targets.map((t) => t.id),
-              );
-          } else {
-            for (const id of padHeld.get(ev.index) ?? []) send({ type: "button", id, down: false });
-            padHeld.delete(ev.index);
-          }
+          if (ev.down) padPress(ev.index);
+          else padRelease(ev.index);
         }
         padPrev = curr;
       }
@@ -509,6 +523,79 @@
       // IDEMPOTENT on purpose: the PC pushes {"type":"buttons"} after a live
       // editor save and this re-runs mid-session — recalibration untouched.
       let calibrated = false; // gates the fire-slot reveal on a mid-session rebuild
+
+      // A held button about to be re-rendered must release FIRST — its
+      // pointercancel listener sends the button-up, so nothing on the PC
+      // stays stuck down when the element is thrown away.
+      function releaseHeldDom() {
+        const held = document.querySelectorAll("#btnLayer .held, #btnStrip .held, #btnFire.held");
+        for (const el of held) el.dispatchEvent(new Event("pointercancel"));
+      }
+
+      // Edge/pad assignments live on ANY button, visible or not — an
+      // off-screen reload button never needs a spot on the screen.
+      function rebuildTriggerMaps(buttonDefs) {
+        releaseVirtual();
+        edgeMap = {};
+        padMap = new Map();
+        padAny = [];
+        for (const b of buttonDefs) {
+          if (typeof b.id !== "string" || !b.id) continue;
+          const t = { id: b.id, vibrateMs: normalizeVibrate(b.vibrate, VIBRATE_MS) };
+          const edge = normalizeEdge(b.edge);
+          if (edge && !edgeMap[edge]) edgeMap[edge] = t; // first wins, like the server says
+          const pad = normalizePad(b.pad);
+          if (pad === "any") padAny.push(t);
+          else if (pad !== null) padMap.set(pad, [...(padMap.get(pad) ?? []), t]);
+        }
+      }
+
+      // Builds one on-screen button and puts it where its config says:
+      // rect => #btnLayer, fire without a rect => the big red slot, else the
+      // strip. Trigger-click haptics stay VERY short on purpose (rapid fire
+      // must stay crisp, and the motor shakes the IMU ARCore is tracking).
+      function placeButton(b, strip, layer) {
+        const isFire = b.id === "fire";
+        const rect = normalizeButtonRect(b.rect);
+        const vibrateMs = normalizeVibrate(b.vibrate, VIBRATE_MS);
+        const el = document.createElement("button");
+        if (isFire) el.id = "btnFire";
+        if (rect) {
+          el.className = "posbtn";
+          el.style.left = rect.x + "%";
+          el.style.top = rect.y + "%";
+          el.style.width = rect.w + "%";
+          el.style.height = rect.h + "%";
+        } else if (isFire) {
+          el.style.display = "none"; // revealed after calibration
+        } else {
+          el.className = "pbtn";
+        }
+        el.textContent = b.label || b.id;
+        const release = () => {
+          if (!el.classList.contains("held")) return;
+          el.classList.remove("held");
+          send({ type: "button", id: b.id, down: false });
+        };
+        el.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          el.classList.add("held");
+          // press only, never release; a new pulse cancels the previous
+          // one, so holding or hammering the trigger never smears
+          if (vibrateMs) navigator.vibrate?.(vibrateMs);
+          send({ type: "button", id: b.id, down: true });
+        });
+        el.addEventListener("pointerup", release);
+        el.addEventListener("pointercancel", release);
+        el.addEventListener("pointerleave", release);
+        if (rect) layer.appendChild(el);
+        else if (isFire)
+          document
+            .getElementById("controls")
+            .insertBefore(el, document.getElementById("btnRestart"));
+        else strip.appendChild(el);
+      }
+
       async function renderButtons() {
         try {
           // Remote mode reads the PC's buttons.json (the customer's local
@@ -517,78 +604,13 @@
           const cfg = await fetchButtons(hosts, (u, i) => fetch(u, i), transport.connectedHost());
           const strip = document.getElementById("btnStrip");
           const layer = document.getElementById("btnLayer");
-          // A held button about to be re-rendered must release FIRST — its
-          // pointercancel listener sends the button-up, so nothing on the PC
-          // stays stuck down when the element is thrown away.
-          for (const held of document.querySelectorAll("#btnLayer .held, #btnStrip .held"))
-            held.dispatchEvent(new Event("pointercancel"));
-          const oldFire = document.getElementById("btnFire");
-          if (oldFire?.classList.contains("held"))
-            oldFire.dispatchEvent(new Event("pointercancel"));
+          releaseHeldDom();
           strip.replaceChildren();
           layer.replaceChildren();
-          oldFire?.remove(); // never two #btnFire ids
-          // Edge/pad assignments live on ANY button, visible or not — an
-          // off-screen reload button never needs a spot on the screen.
-          releaseVirtual();
-          edgeMap = {};
-          padMap = new Map();
-          padAny = [];
-          for (const b of cfg.buttons ?? []) {
-            if (typeof b.id !== "string" || !b.id) continue;
-            const t = { id: b.id, vibrateMs: normalizeVibrate(b.vibrate, VIBRATE_MS) };
-            const edge = normalizeEdge(b.edge);
-            if (edge && !edgeMap[edge]) edgeMap[edge] = t; // first wins, like the server says
-            const pad = normalizePad(b.pad);
-            if (pad === "any") padAny.push(t);
-            else if (pad !== null) padMap.set(pad, [...(padMap.get(pad) ?? []), t]);
-          }
-          for (const b of (cfg.buttons ?? []).filter((b) => b.visible)) {
-            const isFire = b.id === "fire";
-            const rect = normalizeButtonRect(b.rect);
-            // Trigger-click haptics: VERY short on purpose (rapid fire must
-            // stay crisp, and the motor shakes the IMU ARCore is tracking).
-            // Per-button off/tune via "vibrate": false | <ms> in buttons.json.
-            const vibrateMs = normalizeVibrate(b.vibrate, VIBRATE_MS);
-            const el = document.createElement("button");
-            if (isFire) el.id = "btnFire";
-            if (rect) {
-              el.className = "posbtn";
-              el.style.left = rect.x + "%";
-              el.style.top = rect.y + "%";
-              el.style.width = rect.w + "%";
-              el.style.height = rect.h + "%";
-            } else if (isFire) {
-              el.style.display = "none"; // revealed after calibration
-            } else {
-              el.className = "pbtn";
-            }
-            el.textContent = b.label || b.id;
-            const release = () => {
-              if (!el.classList.contains("held")) return;
-              el.classList.remove("held");
-              send({ type: "button", id: b.id, down: false });
-            };
-            el.addEventListener("pointerdown", (e) => {
-              e.preventDefault();
-              el.classList.add("held");
-              // press only, never release; a new pulse cancels the previous
-              // one, so holding or hammering the trigger never smears
-              if (vibrateMs) navigator.vibrate?.(vibrateMs);
-              send({ type: "button", id: b.id, down: true });
-            });
-            el.addEventListener("pointerup", release);
-            el.addEventListener("pointercancel", release);
-            el.addEventListener("pointerleave", release);
-            if (rect) {
-              layer.appendChild(el);
-            } else if (isFire) {
-              const controls = document.getElementById("controls");
-              controls.insertBefore(el, document.getElementById("btnRestart"));
-            } else {
-              strip.appendChild(el);
-            }
-          }
+          document.getElementById("btnFire")?.remove(); // never two #btnFire ids
+          rebuildTriggerMaps(cfg.buttons ?? []);
+          for (const b of (cfg.buttons ?? []).filter((x) => x.visible))
+            placeButton(b, strip, layer);
           // A fire button rebuilt mid-session must not stay at its inline
           // display:none — the session already revealed the controls.
           if (calibrated) show("btnFire", true);

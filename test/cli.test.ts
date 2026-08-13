@@ -106,10 +106,14 @@ describe("serve flags", () => {
     expect(seen()!.screen).toBeUndefined();
   });
 
-  it("refuses an unparsable --screen instead of booting with a guess", async () => {
+  it.each([
+    ["--screen", "huge"],
+    ["--monitor", "leftmost"],
+    ["--key", "way too short"],
+  ])("refuses an unparsable %s instead of booting with a guess", async (flag, value) => {
     const { deps, errors, seen } = spyDeps();
-    expect(await runCli(["--screen", "huge"], deps)).toBe(1);
-    expect(errors.join("\n")).toContain("--screen");
+    expect(await runCli([flag, value], deps)).toBe(1);
+    expect(errors.join("\n")).toContain(flag);
     expect(seen()).toBeNull();
   });
 
@@ -125,13 +129,6 @@ describe("serve flags", () => {
     const all = spyDeps();
     await runCli(["--monitor", "all"], all.deps);
     expect(all.seen()!.monitor).toEqual({ kind: "all" });
-  });
-
-  it("refuses an unparsable --monitor instead of booting with a guess", async () => {
-    const { deps, errors, seen } = spyDeps();
-    expect(await runCli(["--monitor", "leftmost"], deps)).toBe(1);
-    expect(errors.join("\n")).toContain("--monitor");
-    expect(seen()).toBeNull();
   });
 
   it("supports the -m/-p short flags", async () => {
@@ -154,13 +151,6 @@ describe("serve flags", () => {
     const fixed = spyDeps();
     await runCli(["--key", "my-fixed-key.01"], fixed.deps);
     expect(fixed.seen()!.key).toBe("my-fixed-key.01");
-  });
-
-  it("refuses an unusable --key before booting anything", async () => {
-    const { deps, errors, seen } = spyDeps();
-    expect(await runCli(["--key", "way too short"], deps)).toBe(1);
-    expect(errors.join("\n")).toContain("--key");
-    expect(seen()).toBeNull();
   });
 
   it("runs adb reverse only in adb mode, on the port the server BOUND", async () => {

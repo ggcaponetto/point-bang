@@ -67,7 +67,7 @@ export function createCursorLoop(
     const target = getTarget();
     if (!target) return;
     const { x, y } = scaleToRect(target.u, target.v, getRect());
-    if (last && x === last.x && y === last.y) return;
+    if (x === last?.x && y === last?.y) return;
     applying = true;
     try {
       await mouse.setPosition(x, y);
