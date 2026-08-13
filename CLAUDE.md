@@ -4,10 +4,12 @@ Project brief and working agreement. Read fully before making changes.
 
 ## Commands
 
-Requires Node ≥ 23.6 (native type stripping runs .ts directly — no build).
+Requires Node ≥ 23.6 (native type stripping runs .ts directly — no build for
+the PC side or the phone page; the button editor is the one built artifact,
+see the editor tech decision).
 
 ```
-npm install
+npm install                      # ONE install: npm workspaces (root + editor + site)
 npm start                        # node cli.ts serve — http+ws on :8443
 npm run start:adb                # USB flow only: runs `adb reverse` itself, no WiFi logs
 npm run start:wifi               # WiFi flow only: QR (hosted page + LNA) + Chrome-flag fallback
@@ -21,8 +23,11 @@ npm run monitors                 # list monitors + the indices --monitor takes
 npm start -- --monitor 2         # aim at monitor 2; 'all' spans every monitor
 npm run format / format:check    # prettier (printWidth 100)
 npm run knip                     # unused files/exports/deps — keep it clean
-npm run validate                 # format:check + typecheck + knip + test
-npm run build:sea                # single executable -> dist/point-bang[.exe]
+npm run validate                 # format:check + typecheck + knip + test + editor validate
+npm run build:editor             # editor workspace -> public/editor.html (serve auto-runs it)
+npm run -w editor dev            # editor dev server (proxies /buttons* to :8443)
+npm run -w editor test           # editor vitest (jsdom; model/i18n gated at 90%)
+npm run build:sea                # single executable -> dist/point-bang[.exe] (builds editor first)
 npm run smoke                    # exercise the built executable
 
 node cli.ts --help               # every option is a flag; npm start -- --port 9000
@@ -102,32 +107,38 @@ use this approach; the only prior art is a hobbyist native app
 │   ├── rtc.ts         #   WebRTC intake: offer→answer via werift behind PeerLike; DC→handleMessage
 │   ├── cors.ts        #   allowlist CORS (hosted page + same-origin; NEVER *)
 │   ├── qr.ts          #   setup QR: DEFAULT_PAGE_URL + LAN addrs in the fragment
+│   ├── editorbuild.ts #   serve's editor auto-build: mtime staleness, never fatal
 │   ├── check.ts       #   `point-bang check` self-diagnosis
 │   ├── version.ts     #   VERSION literal (no package.json inside an executable)
 │   ├── net.ts         #   lanIPv4 + report formatting
 │   ├── monitors.ts    #   monitor rects: EnumDisplayDevices (koffi) / xrandr; --monitor + `monitors`
 │   └── wifi.ts        #   band detection: netsh / nmcli / iw, all locale-tolerant
 ├── build/
-│   ├── sea.mjs        # esbuild -> sea-config -> postject. The ONLY core build step.
-│   ├── pages.mjs      # copies PUBLIC_ASSETS + logo -> docs/public/ (docs:build step)
-│   ├── site.mjs       # builds site/ -> docs/public/start/ (docs:build step)
+│   ├── sea.mjs        # esbuild -> sea-config -> postject; builds the editor first
+│   ├── pages.mjs      # copies PHONE_ASSETS + logo -> docs/public/ (docs:build step)
+│   ├── site.mjs       # builds the site workspace -> docs/public/start/ (docs:build)
 │   ├── release.mjs    # semver bump (package.json + lib/version.ts) + validate + tag
 │   └── smoke.mjs      # runs the built binary: --version/--help/ip/check
-├── site/              # hosted start page: React + MUI + i18next (EN/DE/IT) — its own
-│                      #   npm package ON PURPOSE (user request 2026-08-12): the only
-│                      #   place a bundler exists; core stays buildless. WebXR check +
-│                      #   player onboarding, published at /point-bang/start/.
+├── editor/            # the button editor: Vite + React + MUI + i18next WORKSPACE
+│   ├── src/model.ts   #   the pure editor logic (was public/editor.js) — 90% gated
+│   ├── src/locales.ts #   EN/DE/IT catalogs (was editor-i18n.js; flat keys, {param})
+│   ├── src/...        #   components: PhoneCanvas drag/resize, tabbed InspectorPanel
+│   └── test/          #   own vitest (jsdom): model/i18n gated, app smoke-rendered
+├── site/              # hosted start page: React + MUI + i18next (EN/DE/IT) — a
+│                      #   workspace since 2026-08-13 (root lockfile), still excluded
+│                      #   from validate/knip: only docs:build pays for its build.
+│                      #   WebXR check + onboarding, published at /point-bang/start/.
 ├── assets/logo.svg    # crosshair-in-phone mark: docs favicon/brand, README, site hero
 ├── public/
 │   ├── index.html     # phone page: XR/DOM glue only (script type=module)
 │   ├── transport.js   # PC link: RTC-first ladder, WS fallback, LNA fetches (JSDoc,
 │   │                  #   injectable Peer/Socket/fetch — tested like math.js)
 │   ├── buttons.json   # 20 assignable buttons: label/action/visible/rect (phone + PC read it)
-│   ├── editor.html    # PC-browser button editor: DOM glue only (like index.html)
-│   ├── editor.js      # editor logic: drag/resize/hit-test/problem mirror (covered, like math.js)
+│   ├── editor.html    # GENERATED (gitignored): the editor workspace's single-file
+│   │                  #   build output — never edit or commit it; serve rebuilds it
 │   └── math.js        # phone math + the shared button vocabulary: V, OneEuro, intersectUV,
-│                      #   normalizeKey/parseAction… (plain JS + JSDoc, imported by BOTH
-│                      #   Chrome and vitest — keep it dependency-free)
+│                      #   normalizeKey/parseAction… (plain JS + JSDoc, imported by
+│                      #   Chrome, vitest AND the editor bundle — keep it dependency-free)
 ├── test/              # vitest suites
 ├── .gitattributes     # eol=lf everywhere — a CRLF clone breaks husky + prettier
 ├── .husky/            # pre-commit: prettier+typecheck; pre-push: npm run validate
@@ -139,8 +150,11 @@ Served on :8443. Dev transport is `adb reverse tcp:8443 tcp:8443` + phone
 opening http://localhost:8443 (localhost = secure context, so no HTTPS needed;
 USB = near-zero network jitter). Static files must live in `public/` — a past
 bug was files placed flat next to the server causing 404s. They are also the
-SEA asset list in `lib/assets.ts`; adding a file to `public/` means adding it
-there too, or the executable 404s what the checkout serves fine.
+SEA asset list in `lib/assets.ts` (split 2026-08-13: `PHONE_ASSETS` are the
+committed sources that also publish to Pages; `editor.html` is the GENERATED
+editor bundle — never commit or hand-edit it, and never publish it to Pages);
+adding a file to `public/` means adding it to the right list too, or the
+executable 404s what the checkout serves fine.
 
 WiFi (no adb): the QR flow — hosted page + Local Network Access + WebRTC —
 is THE wireless story (see the tech decision below). The only fallback is
@@ -300,18 +314,38 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 ## Tech decisions (already made — with rationale; don't relitigate silently)
 
 - **TypeScript PC-side, no build step** (user decision 2026-08-10, supersedes
-  the original all-JS choice). Node ≥23.6 native type stripping runs .ts
+  the original all-JS choice; AMENDED 2026-08-13 — see the editor decision
+  below: the BUTTON EDITOR is now a built React workspace, everything else
+  keeps this rule). Node ≥23.6 native type stripping runs .ts
   directly — so keep to erasable syntax only (no enums/namespaces/parameter
   properties; `erasableSyntaxOnly` enforces this). Phone page stays buildless:
   inline JS glue + `public/math.js` ES module (plain JS + JSDoc, type-checked
   via `checkJs`, imported by both Chrome and vitest). Don't introduce a
-  bundler or a compile step anywhere; edit + phone reload beats a bundler
-  for tuning.
+  bundler or a compile step into the PHONE page or the PC side; edit + phone
+  reload beats a bundler for tuning.
+- **The button editor is a Vite + React + MUI + i18next workspace** (user
+  decision 2026-08-13, deliberately superseding "no bundler anywhere": the
+  editor will keep growing and needed a solid basis + a better UI than the
+  long scrollable column). Repo is npm workspaces now (root + `editor/` +
+  `site/`, ONE root lockfile; root `overrides` pins ONE react 19 — vitepress
+  drags an optional react-18 peer that would otherwise split MUI and the app
+  across two React copies). vite-plugin-singlefile builds the whole app into
+  the single generated `public/editor.html`, which is why `lib/assets.ts`,
+  the SEA and the `/editor.html` URL needed no structural change. `serve`
+  auto-builds it when missing/stale (`lib/editorbuild.ts`, never fatal);
+  `build/sea.mjs` rebuilds it unconditionally. The editor package owns its
+  tests (jsdom vitest; `src/model.ts` = the old editor.js logic + locales
+  gated at 90%, React glue smoke-tested only) and joins `validate`/CI via
+  `npm run -w editor validate`. Dev loop: `npm run -w editor dev` proxies
+  /buttons* to a running `npm start`. The editor is NOT published to Pages
+  (pages.mjs copies PHONE_ASSETS only — it works only against the local PC).
 - **Vitest, 90% coverage enforced** (same decision). Thresholds live in
   vitest.config.ts; `npm test` fails below 90% on any metric. Logic goes in
-  `lib/` or `public/math.js` where it's unit-testable; entry files stay thin
-  with `isMain` guards. Server behavior is integration-tested with an
-  injected fake MouseLike — tests must never move the real cursor or click.
+  `lib/` or `public/math.js` where it's unit-testable (editor logic:
+  `editor/src/model.ts` under the editor package's own identical gate);
+  entry files stay thin with `isMain` guards. Server behavior is
+  integration-tested with an injected fake MouseLike — tests must never move
+  the real cursor or click.
 - **Cursor injection: the raw libnut addon** (`@nut-tree-fork/libnut-linux` /
   `-win32`), not the nut-js wrapper (user decision 2026-08-11, supersedes the
   original nut-js choice). Three reasons: nut-js's `bindings`-based module
@@ -328,8 +362,11 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   `public/*` and `libnut.node` as SEA assets, and injects with postject. A
   SEA blob cannot hold a native addon, so `lib/native.ts` writes the addon
   (plus the Windows CRT DLLs) to a version-keyed temp dir and `process.dlopen`s
-  it. **This is the only build step and nothing in the dev loop may depend on
-  it** — `node cli.ts` must always run straight from source. Constraints it
+  it. **Nothing in the dev loop may depend on it** — `node cli.ts` must always
+  run straight from source (since 2026-08-13 sea.mjs also runs the editor
+  workspace build first, so release artifacts never bake a stale editor —
+  that build has its own auto-run in `serve` and never blocks the dev loop
+  either). Constraints it
   imposes: no top-level await in `cli.ts` (CJS), `import.meta.url` is rewritten
   by a define, and no cross-compiling (build on the OS you ship for).
 - **Pause hotkey: poll global key state via koffi FFI** (user request
