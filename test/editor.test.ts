@@ -9,6 +9,9 @@ import {
   parseVibrateField,
   parsePadField,
   nextFreeRect,
+  composeAction,
+  decomposeAction,
+  decomposeVibrate,
 } from "../public/editor.js";
 
 const R = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
@@ -167,6 +170,75 @@ describe("parseVibrateField", () => {
     expect(parseVibrateField(" 25 ")).toEqual({ vibrate: 25 });
     expect(parseVibrateField("loud")).toBeNull();
     expect(parseVibrateField("-3")).toBeNull();
+  });
+});
+
+describe("composeAction", () => {
+  it("composes the three kinds", () => {
+    expect(composeAction("none", "left", [], "")).toBe("");
+    expect(composeAction("mouse", "right", [], "")).toBe("mouse:right");
+    expect(composeAction("key", "left", [], "r")).toBe("key:r");
+  });
+  it("orders modifiers ctrl,shift,alt,win regardless of input order", () => {
+    expect(composeAction("key", "left", ["win", "ctrl", "shift"], "f")).toBe(
+      "key:ctrl+shift+win+f",
+    );
+  });
+  it("supports mods-only combos and returns empty for nothing pressed", () => {
+    expect(composeAction("key", "left", ["ctrl", "shift"], "")).toBe("key:ctrl+shift");
+    expect(composeAction("key", "left", [], "")).toBe("");
+  });
+});
+
+describe("decomposeAction", () => {
+  it("handles none and mouse", () => {
+    expect(decomposeAction(undefined)).toEqual({ kind: "none" });
+    expect(decomposeAction("")).toEqual({ kind: "none" });
+    expect(decomposeAction("mouse:middle")).toEqual({ kind: "mouse", button: "middle" });
+  });
+  it("decomposes combos into builder spellings", () => {
+    expect(decomposeAction("key:ctrl+shift+f")).toEqual({
+      kind: "key",
+      mods: ["ctrl", "shift"],
+      key: "f",
+    });
+    expect(decomposeAction("key:control+a")).toEqual({ kind: "key", mods: ["ctrl"], key: "a" });
+    expect(decomposeAction("key:pgup")).toEqual({ kind: "key", mods: [], key: "pageup" });
+  });
+  it("round-trips the canonical-spelling traps", () => {
+    expect(decomposeAction("key:capslock")).toEqual({ kind: "key", mods: [], key: "capslock" });
+    expect(decomposeAction("key:numpad7")).toEqual({ kind: "key", mods: [], key: "numpad7" });
+  });
+  it("supports mods-only combos", () => {
+    expect(decomposeAction("key:ctrl+shift")).toEqual({
+      kind: "key",
+      mods: ["ctrl", "shift"],
+      key: "",
+    });
+  });
+  it("marks the unrepresentable as raw (advanced text row)", () => {
+    expect(decomposeAction("key:a+b")).toEqual({ kind: "raw" }); // two main keys
+    expect(decomposeAction("key:cmd+c")).toEqual({ kind: "raw" }); // cmd is not a checkbox
+    expect(decomposeAction("key:nope")).toEqual({ kind: "raw" }); // unknown key
+    expect(decomposeAction("gamepad:a")).toEqual({ kind: "raw" }); // unparseable
+  });
+  it("round-trips through composeAction for representable specs", () => {
+    for (const spec of ["mouse:left", "key:r", "key:ctrl+shift+f", "key:ctrl+shift"]) {
+      const d = decomposeAction(spec);
+      if (d.kind === "mouse") expect(composeAction("mouse", d.button, [], "")).toBe(spec);
+      if (d.kind === "key") expect(composeAction("key", "left", d.mods, d.key)).toBe(spec);
+    }
+  });
+});
+
+describe("decomposeVibrate", () => {
+  it("maps config values to the feedback form state", () => {
+    expect(decomposeVibrate(undefined)).toEqual({ mode: "default", ms: 10 });
+    expect(decomposeVibrate(true)).toEqual({ mode: "default", ms: 10 });
+    expect(decomposeVibrate(false)).toEqual({ mode: "off", ms: 10 });
+    expect(decomposeVibrate(0)).toEqual({ mode: "off", ms: 10 });
+    expect(decomposeVibrate(25)).toEqual({ mode: "custom", ms: 25 });
+    expect(decomposeVibrate("loud")).toEqual({ mode: "default", ms: 10 });
   });
 });
 
