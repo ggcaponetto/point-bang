@@ -26,6 +26,8 @@ npm run build:sea                # single executable -> dist/point-bang[.exe]
 npm run smoke                    # exercise the built executable
 
 node cli.ts --help               # every option is a flag; npm start -- --port 9000
+                                 # a busy DEFAULT port falls back to a free one (all
+                                 # printed URLs follow); a busy EXPLICIT --port refuses
 npm start -- --input none        # headless: print the aim, never touch the cursor
 npm start -- --screen 2560x1440  # screen assumed when there is none to measure
 npm start -- --pause-combo alt+p # tracking-pause hotkey (default shift+space; off = none)
@@ -533,6 +535,15 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   records too, so only `eror`/`crit` levels may be reported as a failure — and
   its real errors are multi-line with CRLF, so flatten before logging.
 - Static files must be in `public/`; path traversal guard exists in server.
+- Port semantics follow the --monitor precedent (2026-08-13): a busy DEFAULT
+  port degrades to an OS-assigned free one (bind 0 — every printed URL/QR uses
+  the RESOLVED port, and adb reverse runs AFTER the bind on that port); a busy
+  explicit `--port`/`PORT` refuses with a clean one-liner (code EADDRINUSE, the
+  CLI prints message-only). Don't relitigate. Also: ws's WebSocketServer
+  FORWARDS the attached http server's 'error' events — a WSS without an
+  'error' listener turns a bind failure into an unhandled throw mid-emit that
+  aborts the server's own error handling; the no-op listeners in startServer
+  are what keep EADDRINUSE catchable.
 - **LNA covers `fetch()` only — never WebSockets.** From the Pages origin,
   `ws://<lan-ip>` is mixed content with no exemption; the only data path is
   the DataChannel, and transport.js deliberately never constructs a WS in

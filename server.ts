@@ -114,6 +114,14 @@ export interface ServerOptions {
   mode?: ServerMode;
   port?: number;
   httpsPort?: number;
+  /**
+   * Degrade to an OS-assigned free port when `port` is busy (EADDRINUSE).
+   * Default false: embedded callers and tests keep exact-port semantics; the
+   * CLI sets it when the user did NOT pin --port/PORT themselves.
+   */
+  portFallback?: boolean;
+  /** Same, for the HTTPS port. */
+  httpsPortFallback?: boolean;
   certsDir?: string;
   publicDir?: string;
   /** Overrides `publicDir` — how the single executable serves embedded files. */
@@ -609,6 +617,38 @@ const listen = (srv: http.Server | https.Server, port: number): Promise<number> 
     });
   });
 
+/**
+ * Binds `port`, handling EADDRINUSE by the --monitor precedent: a busy
+ * DEFAULT port degrades to an OS-assigned free one (bind 0 — the standard
+ * mechanism; every printed URL/QR already carries the RESOLVED port, so the
+ * phone follows automatically), while a busy EXPLICIT --port/PORT refuses
+ * with a clean one-liner — the user pinned it, and silently moving would
+ * break their adb mapping or bookmark. Other errors pass through untouched.
+ */
+const listenOrFallback = async (
+  srv: http.Server | https.Server,
+  port: number,
+  fallback: boolean,
+  label: "http" | "https",
+  log: Log,
+): Promise<number> => {
+  try {
+    return await listen(srv, port);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
+    const flag = label === "http" ? "--port" : "--https-port";
+    if (!fallback)
+      throw Object.assign(
+        new Error(
+          `port ${port} (${label}) is already in use — is another point-bang running? (${flag} picks a different one, ${flag} 0 lets the OS choose)`,
+        ),
+        { code: "EADDRINUSE" },
+      );
+    log(`${label}: port ${port} is busy — using a free port instead (${flag} pins one)`);
+    return await listen(srv, 0);
+  }
+};
+
 interface ReportCtx {
   mode: ServerMode;
   qr: boolean;
@@ -875,27 +915,17 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   wss.on("connection", onConnection);
   const wssTls = httpsServer ? new WebSocketServer({ server: httpsServer }) : null;
   wssTls?.on("connection", onConnection);
+  // ws FORWARDS the attached http server's 'error' events onto the WSS
+  // emitter. Without a listener there, an EADDRINUSE at listen time becomes
+  // an unhandled 'error' THROW mid-emit — aborting the http server's own
+  // error listeners, so listenOrFallback would never see the failure. The
+  // http-level handler owns bind errors; the WSS copy is deliberately eaten.
+  wss.on("error", () => {});
+  wssTls?.on("error", () => {});
 
-  const httpPort = await listen(httpServer, opts.port ?? 8443);
-  log(`http+ws on :${httpPort}`);
-  const report: ReportCtx = {
-    mode,
-    qr: opts.qr !== false,
-    httpPort,
-    lanFrag: gate.key ? `#key=${gate.key}` : "",
-    localFrag: gate.required("127.0.0.1") && gate.key ? `#key=${gate.key}` : "",
-    log,
-  };
-  await printKeyAndUsbLines(report, gate.key);
-
-  let httpsPort: number | null = null;
-  if (httpsServer) {
-    httpsPort = await listen(httpsServer, opts.httpsPort ?? 8444);
-    log(`https+wss on :${httpsPort}`);
-  }
-  printWifiLines(report, httpsPort);
-  await printSetupQr(report, opts.pageUrl ?? DEFAULT_PAGE_URL, gate.key);
-
+  // Built BEFORE anything binds: a failed listen (busy explicit port) must
+  // tear down the cursor loop, the hotkey watcher, the timers and whichever
+  // server DID bind — a half-started instance must never linger.
   const close = (): Promise<void> => {
     cursor.stop();
     hotkey?.stop();
@@ -909,6 +939,44 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       () => {},
     );
   };
+
+  let httpPort: number;
+  let httpsPort: number | null = null;
+  try {
+    httpPort = await listenOrFallback(
+      httpServer,
+      opts.port ?? 8443,
+      opts.portFallback ?? false,
+      "http",
+      log,
+    );
+    log(`http+ws on :${httpPort}`);
+    const report: ReportCtx = {
+      mode,
+      qr: opts.qr !== false,
+      httpPort,
+      lanFrag: gate.key ? `#key=${gate.key}` : "",
+      localFrag: gate.required("127.0.0.1") && gate.key ? `#key=${gate.key}` : "",
+      log,
+    };
+    await printKeyAndUsbLines(report, gate.key);
+
+    if (httpsServer) {
+      httpsPort = await listenOrFallback(
+        httpsServer,
+        opts.httpsPort ?? 8444,
+        opts.httpsPortFallback ?? false,
+        "https",
+        log,
+      );
+      log(`https+wss on :${httpsPort}`);
+    }
+    printWifiLines(report, httpsPort);
+    await printSetupQr(report, opts.pageUrl ?? DEFAULT_PAGE_URL, gate.key);
+  } catch (e) {
+    await close();
+    throw e;
+  }
 
   return { httpPort, httpsPort, key: gate.key, close };
 }

@@ -16,7 +16,9 @@ function spyDeps(extra: CliDeps = {}) {
   const deps: CliDeps = {
     start: (async (o: ServerOptions) => {
       opts = o;
-      return { httpPort: 1, httpsPort: null, close: async () => {} } as RunningServer;
+      // Echo the requested port as the bound one — post-bind consumers (adb)
+      // must use the RESOLVED port, and this keeps their assertions natural.
+      return { httpPort: o.port ?? 1, httpsPort: null, close: async () => {} } as RunningServer;
     }) as CliDeps["start"],
     log: (l) => logs.push(l),
     error: (l) => errors.push(l),
@@ -36,6 +38,9 @@ describe("serve defaults", () => {
     expect(o.mode).toBe("all");
     expect(o.port).toBe(8443);
     expect(o.httpsPort).toBe(8444);
+    // default ports may degrade to a free one when busy…
+    expect(o.portFallback).toBe(true);
+    expect(o.httpsPortFallback).toBe(true);
     expect(o.predictMs).toBe(0);
     expect(o.pauseCombo).toBe("shift+space");
     expect(o.certsDir).toBe(path.join("/app", "certs"));
@@ -78,6 +83,9 @@ describe("serve flags", () => {
       mode: "wifi",
       port: 9000,
       httpsPort: 9001,
+      // …but explicitly pinned ones refuse instead of moving
+      portFallback: false,
+      httpsPortFallback: false,
       predictMs: 35,
       pauseCombo: "ctrl+f9",
       certsDir: "/c",
@@ -155,19 +163,36 @@ describe("serve flags", () => {
     expect(seen()).toBeNull();
   });
 
-  it("runs adb reverse only in adb mode, on the chosen port", async () => {
+  it("runs adb reverse only in adb mode, on the port the server BOUND", async () => {
     const ports: number[] = [];
-    const { deps, logs } = spyDeps({
-      adb: (p: number) => {
-        ports.push(p);
-        return { ok: true, detail: `adb ${p}` };
-      },
-    });
+    const adb = (p: number) => {
+      ports.push(p);
+      return { ok: true, detail: `adb ${p}` };
+    };
+    const { deps, logs } = spyDeps({ adb });
     await runCli(["--mode", "adb", "--port", "7000"], deps);
-    expect(ports).toEqual([7000]);
+    expect(ports).toEqual([7000]); // spyDeps echoes the requested port back
     expect(logs).toContain("adb 7000");
 
-    const wifi = spyDeps();
+    // busy-port fallback: the server bound elsewhere — adb must follow it
+    const fell = spyDeps({
+      adb,
+      start: (async () => ({ httpPort: 9999, httpsPort: null, close: async () => {} })) as never,
+    });
+    await runCli(["--mode", "adb"], fell.deps);
+    expect(ports).toEqual([7000, 9999]);
+
+    // a server that never bound must not get an adb mapping
+    const dead = spyDeps({
+      adb,
+      start: (async () => {
+        throw new Error("nope");
+      }) as never,
+    });
+    await runCli(["--mode", "adb"], dead.deps);
+    expect(ports).toEqual([7000, 9999]);
+
+    const wifi = spyDeps({ adb });
     await runCli(["--mode", "wifi"], wifi.deps);
     expect(wifi.logs.some((l) => l.startsWith("adb"))).toBe(false);
   });
@@ -348,6 +373,9 @@ describe("environment fallbacks", () => {
     expect(seen()).toMatchObject({
       port: 8000,
       httpsPort: 8001,
+      // env-pinned counts as explicit: busy = refuse, never silently move
+      portFallback: false,
+      httpsPortFallback: false,
       predictMs: 5,
       pauseCombo: "alt+p",
     });
@@ -404,6 +432,19 @@ describe("failure handling", () => {
     });
     expect(await runCli([], deps)).toBe(1);
     expect(errors.join("\n")).toContain("EADDRINUSE");
+  });
+
+  it("prints a busy pinned port as one line, not a stack trace", async () => {
+    const { deps, errors } = spyDeps({
+      start: (async () => {
+        throw Object.assign(new Error("port 9000 (http) is already in use — is another …"), {
+          code: "EADDRINUSE",
+        });
+      }) as CliDeps["start"],
+    });
+    expect(await runCli(["--port", "9000"], deps)).toBe(1);
+    expect(errors.join("\n")).toContain("already in use");
+    expect(errors.join("\n")).not.toContain(" at "); // no stack frames
   });
 });
 

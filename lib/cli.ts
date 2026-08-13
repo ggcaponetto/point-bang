@@ -74,8 +74,10 @@ const onSignals = (fn: () => void): void => {
 /** Parsed `serve` options, after defaults and env fallbacks are applied. */
 interface ServeArgs {
   mode: ServerMode;
-  port: number;
-  httpsPort: number;
+  /** Undefined = neither --port nor PORT set — the default 8443 may fall back. */
+  port?: number;
+  /** Undefined = neither --https-port nor HTTPS_PORT set — 8444 may fall back. */
+  httpsPort?: number;
   predictMs: number;
   pauseCombo: string;
   input: InputMode;
@@ -129,15 +131,21 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
             default: "all" as const,
             describe: "adb = USB tunnel only, wifi = LAN only, all = both",
           })
+          // No baked-in numeric default: an unset --port/PORT stays undefined
+          // so serve knows the 8443 default may FALL BACK to a free port when
+          // busy — an explicitly pinned port refuses instead (the --monitor
+          // precedent: explicit refuses, default degrades).
           .option("port", {
             alias: "p",
             type: "number",
-            default: numFromEnv(env.PORT) ?? 8443,
+            default: numFromEnv(env.PORT),
+            defaultDescription: "8443 ($PORT); a busy default falls back to a free port",
             describe: "http + ws port",
           })
           .option("https-port", {
             type: "number",
-            default: numFromEnv(env.HTTPS_PORT) ?? 8444,
+            default: numFromEnv(env.HTTPS_PORT),
+            defaultDescription: "8444 ($HTTPS_PORT); a busy default falls back to a free port",
             describe: "https + wss port (only used when certs exist)",
           })
           .option("predict-ms", {
@@ -246,13 +254,16 @@ async function runTunnelCommand(
   log: Log,
   error: Log,
 ): Promise<number> {
-  log(`TUNNEL: exposing local :${a.port} — start the server separately if it is not up yet`);
+  // The tunnel command declares its own --port default (8443), so the ?? arm
+  // is unreachable at runtime — it only satisfies the now-optional type.
+  const port = a.port ?? 8443;
+  log(`TUNNEL: exposing local :${port} — start the server separately if it is not up yet`);
   // This process cannot know the server's session key, and the server sees
   // tunnel traffic as loopback (exempt). Prefer `serve --tunnel ngrok`.
   log("TUNNEL: NOTE — a separately-started server treats tunnel traffic as local and");
   log("TUNNEL: will NOT require its session key; use `serve --tunnel ngrok` for that.");
   try {
-    const tunnel = await (deps.tunnel ?? startNgrok)(a.port, { url: a.url });
+    const tunnel = await (deps.tunnel ?? startNgrok)(port, { url: a.url });
     for (const line of formatTunnelReport(tunnel.url, tunnel.adopted)) log(line);
     // The agent's piped stdio keeps this process alive; Ctrl+C reaps it.
     (deps.onShutdown ?? onSignals)(() => tunnel.stop());
@@ -320,12 +331,15 @@ async function runServeCommand(
     error(resolvedKey.problem);
     return 1;
   }
-  if (a.mode === "adb") log((deps.adb ?? adbReverse)(a.port).detail);
   try {
     const server = await (deps.start ?? startServer)({
       mode: a.mode,
-      port: a.port,
-      httpsPort: a.httpsPort,
+      port: a.port ?? 8443,
+      httpsPort: a.httpsPort ?? 8444,
+      // Unset --port/PORT = the default may degrade to a free port when
+      // busy; a pinned one refuses instead (the --monitor precedent).
+      portFallback: a.port === undefined,
+      httpsPortFallback: a.httpsPort === undefined,
       predictMs: a.predictMs,
       pauseCombo: a.pauseCombo,
       input: a.input,
@@ -345,10 +359,16 @@ async function runServeCommand(
       keyLoopbackExempt: a.tunnel !== "ngrok",
       log,
     });
+    // AFTER the bind, with the port that actually bound: under a busy-port
+    // fallback the mapping must follow the server (also makes --port 0 work).
+    if (a.mode === "adb") log((deps.adb ?? adbReverse)(server.httpPort).detail);
     if (a.tunnel === "ngrok") await openServeTunnel(a, deps, server, log, error);
     return 0;
   } catch (e) {
-    error(String((e as Error).stack ?? e));
+    // A busy pinned port is an expected condition, not a bug — one line, no
+    // stack. Everything else keeps the full trace.
+    const err = e as NodeJS.ErrnoException;
+    error(err.code === "EADDRINUSE" ? err.message : String(err.stack ?? e));
     return 1;
   }
 }

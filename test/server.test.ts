@@ -920,6 +920,104 @@ describe("startServer rtc signaling", () => {
   });
 });
 
+describe("startServer port collisions", () => {
+  // The server binds 0.0.0.0 — the blocker must too, or the collision is
+  // OS-dependent (a 127.0.0.1 blocker does not conflict on every platform).
+  const block = (): Promise<{ port: number; close(): Promise<void> }> =>
+    new Promise((resolve, reject) => {
+      const srv = net.createServer();
+      srv.once("error", reject);
+      srv.listen(0, "0.0.0.0", () => {
+        resolve({
+          port: (srv.address() as { port: number }).port,
+          close: () => new Promise((r) => srv.close(() => r(undefined))),
+        });
+      });
+    });
+
+  const base = (logs: string[]) => ({
+    certsDir: path.join(HERE, "no-such-dir"),
+    publicDir: PUBLIC,
+    mouse: fakeMouse().mouse,
+    keyboard: fakeKeyboard().keyboard,
+    log: (l: string) => logs.push(l),
+    pauseCombo: "off" as const,
+  });
+
+  it("default port busy + fallback: binds a free one, every printed URL follows", async () => {
+    const b = await block();
+    const logs: string[] = [];
+    try {
+      running = await startServer({ ...base(logs), port: b.port, portFallback: true });
+      expect(running.httpPort).not.toBe(b.port);
+      expect(logs.join("\n")).toMatch(/busy — using a free port instead/);
+      // the report layer prints the RESOLVED port, so the phone follows
+      expect(logs.join("\n")).toContain(`http://localhost:${running.httpPort}`);
+    } finally {
+      await b.close();
+    }
+  });
+
+  it("explicit busy port refuses with a clean coded error, no fallback", async () => {
+    const b = await block();
+    const logs: string[] = [];
+    try {
+      const err = await startServer({ ...base(logs), port: b.port }).then(
+        () => null,
+        (e: NodeJS.ErrnoException) => e,
+      );
+      expect(err?.message).toMatch(/already in use/);
+      expect(err?.code).toBe("EADDRINUSE");
+    } finally {
+      await b.close();
+    }
+  });
+
+  it("https port busy + fallback: https binds elsewhere too", async () => {
+    const b = await block();
+    const logs: string[] = [];
+    try {
+      running = await startServer({
+        ...base(logs),
+        certsDir: FIXTURES,
+        port: 0,
+        httpsPort: b.port,
+        httpsPortFallback: true,
+      });
+      expect(running.httpsPort).not.toBeNull();
+      expect(running.httpsPort).not.toBe(b.port);
+      expect(logs.join("\n")).toMatch(/https: port \d+ is busy/);
+    } finally {
+      await b.close();
+    }
+  });
+
+  it("a failed https bind tears the whole half-started server down", async () => {
+    // probe a free port for http (accepted tiny race), then make https fail
+    const probe = await block();
+    const P = probe.port;
+    await probe.close();
+    const b = await block();
+    try {
+      await expect(
+        startServer({ ...base([]), certsDir: FIXTURES, port: P, httpsPort: b.port }),
+      ).rejects.toThrow(/already in use/);
+      // P was released by the failure-path teardown — rebinding it proves it
+      running = await startServer({ ...base([]), port: P });
+      expect(running.httpPort).toBe(P);
+    } finally {
+      await b.close();
+    }
+  });
+
+  it("non-EADDRINUSE listen errors pass through untouched", async () => {
+    await expect(startServer({ ...base([]), port: 65536 })).rejects.toThrow(
+      /^(?!.*already in use).*$/s,
+    );
+    running = null;
+  });
+});
+
 describe("startServer live button config (editor save + push)", () => {
   const cfgWith = (action: string): object => ({
     buttons: [{ id: "b1", label: "B1", action, visible: true }],

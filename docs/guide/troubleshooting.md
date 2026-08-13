@@ -104,6 +104,25 @@ handy for watching what the phone sends without your cursor running away.
 that still ends in the crash above, which is why `auto` is the default. A
 machine with no display cannot drive a real cursor at any price.
 
+## Port already in use
+
+The server never fights another program for its port:
+
+- **Default port (8443/8444) busy** → it logs
+  `http: port 8443 is busy — using a free port instead` and starts on an
+  OS-assigned free port. Nothing else to do: the banner, QR and every printed
+  URL carry the port it actually bound, and the phone connects through those
+  — in adb mode the `adb reverse` mapping follows the real port too.
+- **Explicit `--port`/`PORT` (or `--https-port`/`HTTPS_PORT`) busy** → it
+  refuses with a one-line error instead of silently moving off the port you
+  pinned. Close the other program (often a second point-bang), pick another
+  port, or use `--port 0` to let the OS choose every run.
+
+One caveat: the standalone `tunnel` command cannot see which port a
+fallen-back server chose — pass it the port from the server's banner
+(`tunnel --port <n>`), or prefer `serve --tunnel ngrok`, which always
+tunnels the bound port.
+
 ## "session key required" / the server logs "connection refused (missing/wrong session key)"
 
 The phone tried to connect without this run's session key. The key is minted
