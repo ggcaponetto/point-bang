@@ -215,6 +215,24 @@ VERY short by user requirement (Time-Crisis rapid fire) and because the motor
 shakes the IMU ARCore tracks; per-button `false` is the escape hatch if aim
 wobbles on fire. iOS has no vibration API — silent no-op.
 
+Edge + gamepad triggers (2026-08-13, additive buttons.json fields — the wire
+messages are ordinary `button` down/up, so servers need nothing): optional
+per-button `edge` ("left"|"right"|"top"|"bottom") presses the button when aim
+is held past that screen edge >150ms and releases the INSTANT aim comes back
+on screen / is lost / crosses to another edge — the Time Crisis reload/duck,
+generalized to all four edges (`EdgeGesture` in math.js; fed RAW pre-filter
+aim so smoothing lag can never delay the release; margin 0.1 so ordinary
+edge-of-screen play and typical inter-monitor bezels don't false-trigger; one
+button per edge, first wins, duplicates reported at config load). Optional
+per-button `pad` (gamepad button index, or "any" for one-button BT clickers)
+presses it from a physical Bluetooth control via the poll-only Gamepad API
+(`diffPressed` in math.js, sampled every XR frame across all connected pads);
+the HUD shows the index of the last physical press so any device's layout is
+discoverable. Edge/pad assignments work on INVISIBLE buttons too — a reload
+button needs no on-screen spot. Both release forcibly on recalibrate and on a
+live config reload (nothing sticks down); the editor exposes an edge dropdown
+and a pad field per button. Volume-key capture during XR remains untested.
+
 v2 (IMPLEMENTED 2026-08-12, additive): `aim`/`calib` gain optional `m` = 1-based
 monitor index (per-monitor calibration). The phone learns the aim targets via
 `GET /monitors` → `{"monitors":[{"i","label","w","h","primary"}]}` (labels +
@@ -403,12 +421,13 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 
 ## Roadmap (each phase has an exit criterion; finish one before the next)
 
-1. **Buttons & gestures.** On-screen FIRE already exists; add: volume-key
-   capture as trigger if the browser allows it in-session (test; may not
-   fire during XR), reload = u,v outside [−0.1..1.1] for >150ms emits
-   `button reload` (classic Time Crisis duck/hide), plus start/coin buttons
-   in the overlay. Exit: play a browser duck-hunt clone with off-screen
-   reload working.
+1. **Buttons & gestures.** MOSTLY DONE 2026-08-13: off-screen edge gestures
+   (any edge → any configured button, hold semantics) and physical triggers
+   via the Gamepad API (`edge`/`pad` in buttons.json, see Protocol v2) are
+   implemented; start/coin are just buttons.json entries via the editor.
+   Still open: volume-key capture as trigger if the browser allows it
+   in-session (test; may not fire during XR), and the phase exit criterion:
+   play a browser duck-hunt clone with off-screen reload working.
 2. **Measurement harness.** PC test page (fullscreen grid of dots) + logging:
    click each dot's aim, output px error table; RTT ping/pong; drift check
    (aim center at t=0 and t=10min). Exit: a written accuracy/jitter/drift

@@ -118,6 +118,11 @@ node cli.ts --help   # every option is a flag
   key combo or mouse button, press-and-hold included, places each one
   anywhere on the screen, and gives each a tunable haptic tick on press.
   FIRE itself is just a remappable button.
+- **Off-screen gestures & real triggers** — assign any button to a screen
+  edge (aim past it to press, back on screen to release — the classic
+  Time Crisis reload/duck), and map Bluetooth gamepad or clicker buttons
+  to any action via the Gamepad API; the HUD shows each physical press's
+  button index so any device is easy to map.
 - **Live button editor** — the server hosts a drag-and-drop editor
   (`/editor.html`, URL in the startup banner): move and resize buttons on a
   phone-shaped canvas, remap keys, tune haptics — Save applies instantly,

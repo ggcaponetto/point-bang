@@ -1,4 +1,4 @@
-import { normalizeButtonRect, parseAction } from "../public/math.js";
+import { normalizeButtonRect, normalizeEdge, normalizePad, parseAction } from "../public/math.js";
 import type { MouseButton, MouseLike } from "./cursor.ts";
 
 /**
@@ -43,6 +43,10 @@ interface ButtonDef {
   rect?: unknown;
   /** Phone-side haptics: absent/true = default tick, false/0 = off, number = ms. */
   vibrate?: unknown;
+  /** Phone-side edge gesture: aiming past this screen edge presses the button. */
+  edge?: unknown;
+  /** Phone-side physical trigger: a gamepad button index, or "any". */
+  pad?: unknown;
 }
 
 /** Whether a `vibrate` config value is one of the shapes the phone accepts. */
@@ -71,6 +75,7 @@ export function parseButtonConfig(text: string): ButtonConfig {
       problems: [`buttons.json unreadable (${(e as Error).message}) — buttons disabled`],
     };
   }
+  const edgesSeen = new Set<string>();
   for (const d of defs) {
     if (typeof d.id !== "string" || !d.id) {
       problems.push(`button without id skipped`);
@@ -78,10 +83,18 @@ export function parseButtonConfig(text: string): ButtonConfig {
     }
     if (d.rect !== undefined && !normalizeButtonRect(d.rect))
       problems.push(`button ${d.id}: bad rect ignored (need {x,y,w,h} in % of the screen)`);
-    // Like rects, vibrate is phone-side config — validated here so a typo
-    // shows up at server start instead of silently changing the feel.
+    // Like rects, vibrate/edge/pad are phone-side config — validated here so
+    // a typo shows up at server start instead of silently changing the feel.
     if (d.vibrate !== undefined && !usableVibrate(d.vibrate))
       problems.push(`button ${d.id}: bad vibrate ignored (need true/false or a pulse in ms)`);
+    if (d.edge !== undefined) {
+      const edge = normalizeEdge(d.edge);
+      if (!edge) problems.push(`button ${d.id}: bad edge ignored (need left/right/top/bottom)`);
+      else if (edgesSeen.has(edge)) problems.push(`button ${d.id}: edge ${edge} already assigned`);
+      else edgesSeen.add(edge);
+    }
+    if (d.pad !== undefined && normalizePad(d.pad) === null)
+      problems.push(`button ${d.id}: bad pad ignored (need a gamepad button index or "any")`);
     if (!d.action) continue; // unassigned on purpose
     const action = parseAction(d.action);
     if (!action) {

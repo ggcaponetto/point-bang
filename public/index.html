@@ -291,6 +291,7 @@
         <span>v <b id="hV">—</b></span>
         <span>aspect <b id="hAsp">—</b></span>
         <span id="hMonWrap" style="display: none">mon <b id="hMon">—</b></span>
+        <span id="hPadWrap" style="display: none">pad <b id="hPad">—</b></span>
         <span>fps <b id="hFps">—</b></span>
       </div>
       <div id="cross"></div>
@@ -352,6 +353,10 @@
         swapMonitorSlots,
         normalizeButtonRect,
         normalizeVibrate,
+        normalizeEdge,
+        normalizePad,
+        EdgeGesture,
+        diffPressed,
         OneEuro,
       } from "./math.js";
       import { parseFragment, createTransport, fetchButtons, fetchMonitors } from "./transport.js";
@@ -422,6 +427,76 @@
       // trigger click, not a notification buzz.
       const VIBRATE_MS = 10;
 
+      // ============================== edge & gamepad triggers ==============================
+      // Two extra ways to press a configured button, both feeding the SAME
+      // {"type":"button"} messages the on-screen buttons send (no protocol
+      // change, old servers just see buttons):
+      // - edge: aim held past a screen edge >150ms (buttons.json `edge`) —
+      //   the classic off-screen reload/duck. Released the moment aim comes
+      //   back on screen (or is lost), so holds work.
+      // - pad:  a Bluetooth gamepad/clicker button via the Gamepad API
+      //   (buttons.json `pad` = button index, or "any" for one-button
+      //   clickers). The HUD shows the index of the last physical press so
+      //   any device's layout is discoverable.
+      const edgeGesture = new EdgeGesture();
+      let edgeMap = {}; // edge -> { id, vibrateMs }, rebuilt with the buttons
+      let padMap = new Map(); // index -> [{ id, vibrateMs }]
+      let padAny = []; // fire on EVERY physical button
+      let padHeld = new Map(); // index -> ids sent down (release exactly those)
+      let padPrev = [];
+
+      function pressVirtual(t, down) {
+        if (down && t.vibrateMs) navigator.vibrate?.(t.vibrateMs);
+        send({ type: "button", id: t.id, down });
+      }
+
+      // Force-release everything edge/pad-held (recalibrate, config reload).
+      function releaseVirtual() {
+        for (const e of edgeGesture.flush()) {
+          const t = edgeMap[e.edge];
+          if (t) pressVirtual(t, false);
+        }
+        for (const ids of padHeld.values())
+          for (const id of ids) send({ type: "button", id, down: false });
+        padHeld = new Map();
+      }
+
+      function edgeTick(aim, now) {
+        if (!calibrated) return;
+        for (const e of edgeGesture.update(aim ? { u: aim.u, v: aim.v } : null, now)) {
+          const t = edgeMap[e.edge];
+          if (t) pressVirtual(t, e.down);
+        }
+      }
+
+      function padTick() {
+        const pads = navigator.getGamepads?.() ?? [];
+        const curr = [];
+        for (const p of pads) {
+          if (!p) continue;
+          p.buttons.forEach((b, i) => {
+            if (b.pressed) curr[i] = true;
+          });
+        }
+        for (const ev of diffPressed(padPrev, curr)) {
+          if (ev.down) {
+            show("hPadWrap", true);
+            setHud("hPad", String(ev.index));
+            const targets = [...(padMap.get(ev.index) ?? []), ...padAny];
+            for (const t of targets) pressVirtual(t, true);
+            if (targets.length)
+              padHeld.set(
+                ev.index,
+                targets.map((t) => t.id),
+              );
+          } else {
+            for (const id of padHeld.get(ev.index) ?? []) send({ type: "button", id, down: false });
+            padHeld.delete(ev.index);
+          }
+        }
+        padPrev = curr;
+      }
+
       // ============================== configurable buttons ==============================
       // Rendered from buttons.json (same file maps ids to PC actions).
       // pointerdown/up => {"type":"button",id,down} so press-and-hold works.
@@ -453,6 +528,21 @@
           strip.replaceChildren();
           layer.replaceChildren();
           oldFire?.remove(); // never two #btnFire ids
+          // Edge/pad assignments live on ANY button, visible or not — an
+          // off-screen reload button never needs a spot on the screen.
+          releaseVirtual();
+          edgeMap = {};
+          padMap = new Map();
+          padAny = [];
+          for (const b of cfg.buttons ?? []) {
+            if (typeof b.id !== "string" || !b.id) continue;
+            const t = { id: b.id, vibrateMs: normalizeVibrate(b.vibrate, VIBRATE_MS) };
+            const edge = normalizeEdge(b.edge);
+            if (edge && !edgeMap[edge]) edgeMap[edge] = t; // first wins, like the server says
+            const pad = normalizePad(b.pad);
+            if (pad === "any") padAny.push(t);
+            else if (pad !== null) padMap.set(pad, [...(padMap.get(pad) ?? []), t]);
+          }
           for (const b of (cfg.buttons ?? []).filter((b) => b.visible)) {
             const isFire = b.id === "fire";
             const rect = normalizeButtonRect(b.rect);
@@ -592,6 +682,7 @@
         setHud("hMon", "—");
         show("hMonWrap", multi);
         calibrated = false;
+        releaseVirtual(); // an edge/pad hold must not survive a recalibration
         $("btnCapture").style.display = "";
         show("btnFire", false);
         show("aimAdj", false);
@@ -844,8 +935,10 @@
 
       // aim -> plane pick -> u,v -> send
       function sendAim(time, trackState) {
-        if (!lastPose) return;
-        const aim = computeAim();
+        const aim = lastPose ? computeAim() : null;
+        // RAW aim, every frame (null included): the edge gesture must see
+        // off-screen values unfiltered and release the instant aim is lost.
+        edgeTick(aim, time);
         if (!aim) return;
         if (multi && aim.m !== activeMon) {
           // fresh filter on the monitor being entered — smoothing must not
@@ -895,11 +988,13 @@
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
+        padTick(); // the physical trigger works regardless of tracking
         const pose = frame.getViewerPose(refSpace);
         const trackState = trackStateOf(pose);
         updateTrackingHud(trackState);
         if (!pose) {
           lastPose = null;
+          edgeTick(null, time); // aim lost releases a held edge button
           return;
         }
         const p = pose.transform.position,
