@@ -15,7 +15,7 @@
 ```
 
 The phone runs a WebXR `immersive-ar` session: ARCore's visual-inertial
-tracking provides absolute, drift-corrected 6DoF pose at gyro-class latency.
+tracking provides absolute, drift-corrected 6DoF pose at top-class latency.
 The aim ray is intersected with a screen plane calibrated once per session
 from three corner captures (each pinned to a WebXR anchor that keeps
 self-correcting as ARCore refines its map). Normalized coordinates stream
@@ -25,7 +25,7 @@ mouse input.
 ## Why this approach
 
 Camera+marker tracking in the browser costs 60–120ms. Pure gyro drifts in
-yaw and needs constant recentering. WebXR gives gyro-class latency
+yaw and needs constant recentering. WebXR gives top-class latency
 (~15–30ms phone-side) **with** absolute aim, because ARCore fuses IMU at
 high rate and only corrects with the camera. Commercial guns (Sinden's
 camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.

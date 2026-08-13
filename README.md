@@ -122,7 +122,7 @@ flowchart LR
 ```
 
 ARCore's visual-inertial tracking gives **absolute, drift-corrected aim at
-gyro-class latency** (~15–30ms phone-side) — the camera corrects the IMU, so
+top-class latency** (~15–30ms phone-side) — the camera corrects the IMU, so
 there's no yaw drift and no recentering. You calibrate once per session by
 pointing at three screen corners; WebXR anchors keep the calibration
 self-correcting as ARCore refines its map of your room. The wireless setup

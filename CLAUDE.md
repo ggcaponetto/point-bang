@@ -78,7 +78,8 @@ injects absolute mouse input. No custom hardware, no markers, no sensor bars.
 
 Why this beats the alternatives we evaluated: camera+marker tracking in the
 browser costs 60–120ms; pure gyro drifts in yaw and needs constant recentering;
-WebXR gives gyro-class latency (~15–30ms phone-side) WITH absolute aim, because
+WebXR gives top-class latency (~15–30ms phone-side; the user-facing wording —
+"gyro" has a bad reputation) WITH absolute aim, because
 ARCore fuses IMU at high rate and only corrects with the camera. Commercial
 guns (Sinden = camera + white screen border, Gun4IR/AimTrak = IR beacons) don't
 use this approach; the only prior art is a hobbyist native app

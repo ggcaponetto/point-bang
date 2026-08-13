@@ -17,16 +17,17 @@ hero:
 
 features:
   - icon: 🎯
-    title: Absolute aim, gyro-class latency
+    title: Absolute aim, top-class latency
     details: >
-      ARCore's visual-inertial tracking fuses IMU at high rate and corrects with
-      the camera — drift-free 6DoF aim at ~15–30ms phone-side, intersected with
-      a one-time-calibrated screen plane.
+      ARCore's visual-inertial tracking gives drift-free 6DoF aim,
+      intersected with a one-time-calibrated screen plane and delivered
+      through a 2ms newest-wins cursor loop — with live p50/p95 jitter
+      stats to prove it.
   - icon: 🔌
     title: Zero hardware
     details: >
-      A Node server and your Android phone's Chrome. USB cable for the lowest
-      jitter, or the same WiFi network — both first-class, one command each.
+      A Node server and your Android phone's Chrome. USB cable or the same
+      WiFi network — both first-class, one command each.
   - icon: 🕹️
     title: 20 assignable buttons, edited live
     details: >
@@ -34,12 +35,12 @@ features:
       applied to the PC and phone instantly, mid-session. Assign a screen
       edge (aim off-screen to reload, arcade-style) or a Bluetooth trigger
       to any of them.
-  - icon: ⚡
-    title: Latency-obsessed
+  - icon: 🖥️
+    title: Multi-monitor support
     details: >
-      One Euro filtering phone-side, a 2ms newest-wins cursor loop, and
-      p50/p95 jitter stats printed live. Every stage measured, every
-      default justified.
+      Aim at one display or span them all — each monitor is calibrated as
+      its own plane, so bezels and angled panels stay pixel-accurate, with
+      independent aim correction per screen.
   - icon: 🧪
     title: Tested to 90%+
     details: >
