@@ -7,6 +7,7 @@ import {
   updateButton,
   configProblems,
   parseVibrateField,
+  parsePadField,
   nextFreeRect,
 } from "../public/editor.js";
 
@@ -115,6 +116,22 @@ describe("configProblems", () => {
       "button b1: duplicate id",
     ]);
   });
+  it("mirrors the edge/pad verdicts (same strings as the server)", () => {
+    expect(
+      configProblems({
+        buttons: [
+          { id: "b1", edge: "bottom", pad: 0 },
+          { id: "b2", edge: "up" },
+          { id: "b3", edge: "bottom" },
+          { id: "b4", pad: "sometimes" },
+        ],
+      }),
+    ).toEqual([
+      "button b2: bad edge ignored (need left/right/top/bottom)",
+      "button b3: edge bottom already assigned",
+      'button b4: bad pad ignored (need a gamepad button index or "any")',
+    ]);
+  });
   it("rejects a config without a buttons array", () => {
     expect(configProblems(null)).toEqual(['config must be {"buttons": [...]}']);
     expect(configProblems({})).toEqual(['config must be {"buttons": [...]}']);
@@ -150,5 +167,18 @@ describe("parseVibrateField", () => {
     expect(parseVibrateField(" 25 ")).toEqual({ vibrate: 25 });
     expect(parseVibrateField("loud")).toBeNull();
     expect(parseVibrateField("-3")).toBeNull();
+  });
+});
+
+describe("parsePadField", () => {
+  it("maps the inspector text to config values", () => {
+    expect(parsePadField("")).toEqual({ pad: undefined });
+    expect(parsePadField("any")).toEqual({ pad: "any" });
+    expect(parsePadField(" ANY ")).toEqual({ pad: "any" });
+    expect(parsePadField("7")).toEqual({ pad: 7 });
+    expect(parsePadField("0")).toEqual({ pad: 0 });
+    expect(parsePadField("-1")).toBeNull();
+    expect(parsePadField("1.5")).toBeNull();
+    expect(parsePadField("trigger")).toBeNull();
   });
 });

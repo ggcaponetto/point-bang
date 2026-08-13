@@ -173,7 +173,8 @@
         margin: 8px 0 2px;
         color: var(--dim);
       }
-      #inspector input[type="text"] {
+      #inspector input[type="text"],
+      #inspector select {
         width: 100%;
         padding: 6px 8px;
         background: #111;
@@ -256,6 +257,20 @@
           <label
             >vibrate (blank = default, false = off, or ms) <input type="text" id="fVibrate"
           /></label>
+          <label>
+            off-screen edge (aim past it &gt;150ms = press, back on screen = release)
+            <select id="fEdge">
+              <option value="">none</option>
+              <option value="left">left</option>
+              <option value="right">right</option>
+              <option value="top">top</option>
+              <option value="bottom">bottom</option>
+            </select>
+          </label>
+          <label
+            >gamepad button (blank = none, "any" = every button, or an index)
+            <input type="text" id="fPad" placeholder="any / 0 / 7 — HUD shows the index"
+          /></label>
           <label><input type="checkbox" id="fVisible" /> visible on the phone</label>
           <button id="rmRect">remove rect (back to the strip)</button>
         </div>
@@ -270,7 +285,7 @@
       // (needed when the page is opened via a LAN URL) rides in the fragment,
       // same as the phone page.
       import { parseFragment } from "./transport.js";
-      import { parseAction, normalizeButtonRect } from "./math.js";
+      import { parseAction, normalizeButtonRect, normalizeEdge, normalizePad } from "./math.js";
       import {
         clampRectMove,
         resizeRect,
@@ -279,6 +294,7 @@
         updateButton,
         configProblems,
         parseVibrateField,
+        parsePadField,
         nextFreeRect,
       } from "./editor.js";
 
@@ -398,6 +414,9 @@
         $("fAction").value = b.action ?? "";
         $("fAction").classList.toggle("bad", Boolean(b.action) && !parseAction(b.action));
         $("fVibrate").value = b.vibrate === undefined ? "" : String(b.vibrate);
+        $("fEdge").value = normalizeEdge(b.edge) ?? "";
+        $("fPad").value = b.pad === undefined ? "" : String(b.pad);
+        $("fPad").classList.toggle("bad", b.pad !== undefined && normalizePad(b.pad) === null);
         $("fVisible").checked = Boolean(b.visible);
         $("rmRect").hidden = !normalizeButtonRect(b.rect);
       }
@@ -469,6 +488,12 @@
       };
       $("fVibrate").oninput = (e) => {
         const parsed = parseVibrateField(e.target.value);
+        e.target.classList.toggle("bad", parsed === null);
+        if (parsed) patchSelected(parsed);
+      };
+      $("fEdge").onchange = (e) => patchSelected({ edge: e.target.value || undefined });
+      $("fPad").oninput = (e) => {
+        const parsed = parsePadField(e.target.value);
         e.target.classList.toggle("bad", parsed === null);
         if (parsed) patchSelected(parsed);
       };

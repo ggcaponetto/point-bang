@@ -11,6 +11,10 @@ import {
   swapMonitorSlots,
   normalizeButtonRect,
   normalizeVibrate,
+  normalizeEdge,
+  normalizePad,
+  EdgeGesture,
+  diffPressed,
   OneEuro,
 } from "../public/math.js";
 
@@ -189,6 +193,105 @@ describe("swapMonitorSlots", () => {
       expect(arrays).toEqual(fresh());
     }
     expect(swapMonitorSlots([], 0, 1, 1)).toBe(1); // no arrays at all
+  });
+});
+
+describe("normalizeEdge / normalizePad", () => {
+  it("canonicalizes edges, rejects everything else", () => {
+    for (const e of ["left", "right", "top", "bottom"]) expect(normalizeEdge(e)).toBe(e);
+    for (const bad of ["up", "LEFT", "", 1, null, undefined, {}])
+      expect(normalizeEdge(bad)).toBeNull();
+  });
+  it("accepts a button index or any, rejects everything else", () => {
+    expect(normalizePad(0)).toBe(0);
+    expect(normalizePad(7)).toBe(7);
+    expect(normalizePad("any")).toBe("any");
+    for (const bad of [-1, 1.5, "0", "ANY", true, null, undefined])
+      expect(normalizePad(bad)).toBeNull();
+  });
+});
+
+describe("EdgeGesture", () => {
+  const uv = (u: number, v: number) => ({ u, v });
+
+  it("fires after the hold, releases the instant aim comes back", () => {
+    const g = new EdgeGesture(150, 0.1);
+    expect(g.update(uv(0.5, 0.5), 0)).toEqual([]);
+    expect(g.update(uv(1.2, 0.5), 10)).toEqual([]); // candidate starts
+    expect(g.update(uv(1.25, 0.5), 100)).toEqual([]); // still holding
+    expect(g.update(uv(1.2, 0.5), 170)).toEqual([{ edge: "right", down: true }]);
+    expect(g.update(uv(1.3, 0.5), 300)).toEqual([]); // held, no repeat
+    expect(g.update(uv(0.9, 0.5), 310)).toEqual([{ edge: "right", down: false }]);
+  });
+
+  it("does not fire on a brush past the edge shorter than the hold", () => {
+    const g = new EdgeGesture(150, 0.1);
+    g.update(uv(-0.2, 0.5), 0);
+    expect(g.update(uv(0.5, 0.5), 100)).toEqual([]); // back inside before 150ms
+    expect(g.update(uv(-0.2, 0.5), 110)).toEqual([]); // timer restarted
+    expect(g.update(uv(-0.2, 0.5), 200)).toEqual([]);
+    expect(g.update(uv(-0.2, 0.5), 270)).toEqual([{ edge: "left", down: true }]);
+  });
+
+  it("stays quiet inside the margin (ordinary edge-of-screen play)", () => {
+    const g = new EdgeGesture(150, 0.1);
+    for (const [u, v, t] of [
+      [1.05, 0.5, 0],
+      [-0.1, 0.5, 100],
+      [0.5, 1.09, 200],
+      [1.05, 0.5, 400],
+    ])
+      expect(g.update(uv(u, v), t)).toEqual([]);
+  });
+
+  it("picks the dominant axis on a corner", () => {
+    const g = new EdgeGesture(0, 0.1); // no hold, classification only
+    expect(g.update(uv(1.5, 1.2), 0)).toEqual([{ edge: "right", down: true }]);
+    const g2 = new EdgeGesture(0, 0.1);
+    expect(g2.update(uv(0.5, -0.9), 0)).toEqual([{ edge: "top", down: true }]);
+  });
+
+  it("crossing to another edge releases, then re-arms with a fresh hold", () => {
+    const g = new EdgeGesture(150, 0.1);
+    g.update(uv(1.2, 0.5), 0);
+    g.update(uv(1.2, 0.5), 200); // right is down
+    expect(g.update(uv(-0.3, 0.5), 210)).toEqual([{ edge: "right", down: false }]);
+    expect(g.update(uv(-0.3, 0.5), 300)).toEqual([]); // left still holding
+    expect(g.update(uv(-0.3, 0.5), 400)).toEqual([{ edge: "left", down: true }]);
+  });
+
+  it("losing aim releases, and flush releases whatever is held", () => {
+    const g = new EdgeGesture(150, 0.1);
+    g.update(uv(0.5, 1.3), 0);
+    g.update(uv(0.5, 1.3), 200); // bottom is down
+    expect(g.update(null, 210)).toEqual([{ edge: "bottom", down: false }]);
+
+    const g2 = new EdgeGesture(150, 0.1);
+    g2.update(uv(0.5, 1.3), 0);
+    g2.update(uv(0.5, 1.3), 200);
+    expect(g2.flush()).toEqual([{ edge: "bottom", down: false }]);
+    expect(g2.flush()).toEqual([]); // idempotent
+  });
+});
+
+describe("diffPressed", () => {
+  it("emits transitions only, in index order", () => {
+    expect(diffPressed([], [])).toEqual([]);
+    expect(diffPressed([false, false], [true, false])).toEqual([{ index: 0, down: true }]);
+    expect(diffPressed([true, true], [true, false])).toEqual([{ index: 1, down: false }]);
+    expect(diffPressed([false, true], [true, false])).toEqual([
+      { index: 0, down: true },
+      { index: 1, down: false },
+    ]);
+  });
+  it("treats a vanished device's buttons as released (length mismatch)", () => {
+    expect(diffPressed([true, true], [])).toEqual([
+      { index: 0, down: false },
+      { index: 1, down: false },
+    ]);
+    expect(diffPressed([], [undefined as unknown as boolean, true])).toEqual([
+      { index: 1, down: true },
+    ]);
   });
 });
 

@@ -210,6 +210,141 @@ export function normalizeVibrate(v, defaultMs = 10) {
   return Math.min(Math.round(v), 100);
 }
 
+// ==================== edge & gamepad triggers ====================
+
+/** The four assignable screen edges. */
+const EDGES = new Set(["left", "right", "top", "bottom"]);
+
+/**
+ * A button's `edge` config value, canonicalized — or null for anything that
+ * is not an assignable edge.
+ * @param {unknown} v
+ * @returns {"left" | "right" | "top" | "bottom" | null}
+ */
+export function normalizeEdge(v) {
+  return typeof v === "string" && EDGES.has(v)
+    ? /** @type {"left" | "right" | "top" | "bottom"} */ (v)
+    : null;
+}
+
+/**
+ * A button's `pad` config value: a gamepad button index, or "any" (fires on
+ * every physical button — the one-button-clicker case). Null = unusable.
+ * @param {unknown} v
+ * @returns {number | "any" | null}
+ */
+export function normalizePad(v) {
+  if (v === "any") return "any";
+  if (typeof v === "number" && Number.isInteger(v) && v >= 0) return v;
+  return null;
+}
+
+/**
+ * Off-screen edge gesture (the Time Crisis reload/duck): aim held past one
+ * screen edge for `holdMs` fires a DOWN for that edge; coming back on screen
+ * (or losing aim, or crossing to a different edge) releases immediately, so
+ * press-and-hold semantics work. `margin` keeps ordinary edge-of-screen play
+ * (and typical inter-monitor bezels) from false-triggering — only aim outside
+ * [-margin .. 1+margin] counts, and on a corner the dominant axis wins.
+ *
+ * Feed it the RAW aim u,v every frame (pre-filter, pre-nudge — the gesture is
+ * geometric, smoothing lag must not delay the release), null when there is no
+ * aim. Events come back as {edge, down} pairs, at most one release + one
+ * press per update.
+ */
+export class EdgeGesture {
+  /** @param {number} [holdMs] @param {number} [margin] */
+  constructor(holdMs = 150, margin = 0.1) {
+    this.holdMs = holdMs;
+    this.margin = margin;
+    /** @type {"left" | "right" | "top" | "bottom" | null} */ this.active = null;
+    /** @type {"left" | "right" | "top" | "bottom" | null} */ this.candidate = null;
+    this.since = 0;
+  }
+
+  /**
+   * Which edge (if any) the aim is past.
+   * @param {{ u: number, v: number } | null} uv
+   * @returns {"left" | "right" | "top" | "bottom" | null}
+   */
+  classify(uv) {
+    if (!uv) return null;
+    const du =
+      uv.u < -this.margin
+        ? -this.margin - uv.u
+        : uv.u > 1 + this.margin
+          ? uv.u - 1 - this.margin
+          : 0;
+    const dv =
+      uv.v < -this.margin
+        ? -this.margin - uv.v
+        : uv.v > 1 + this.margin
+          ? uv.v - 1 - this.margin
+          : 0;
+    if (du === 0 && dv === 0) return null;
+    if (du >= dv) return uv.u < 0 ? "left" : "right";
+    return uv.v < 0 ? "top" : "bottom";
+  }
+
+  /**
+   * Releases whatever is held (recalibration, config reload, session end).
+   * @returns {{ edge: "left" | "right" | "top" | "bottom", down: boolean }[]}
+   */
+  flush() {
+    const events = this.active ? [{ edge: this.active, down: false }] : [];
+    this.active = null;
+    this.candidate = null;
+    return events;
+  }
+
+  /**
+   * @param {{ u: number, v: number } | null} uv @param {number} now ms
+   * @returns {{ edge: "left" | "right" | "top" | "bottom", down: boolean }[]}
+   */
+  update(uv, now) {
+    const edge = this.classify(uv);
+    /** @type {{ edge: "left" | "right" | "top" | "bottom", down: boolean }[]} */
+    const events = [];
+    if (this.active && edge !== this.active) {
+      // back on screen, aim lost, or crossed to another edge — release NOW
+      events.push({ edge: this.active, down: false });
+      this.active = null;
+    }
+    if (!edge || this.active) {
+      this.candidate = edge;
+      this.since = now;
+      return events;
+    }
+    if (edge !== this.candidate) {
+      this.candidate = edge;
+      this.since = now;
+    }
+    if (now - this.since >= this.holdMs) {
+      this.active = edge;
+      events.push({ edge, down: true });
+    }
+    return events;
+  }
+}
+
+/**
+ * Diffs two gamepad pressed-state snapshots into press/release events —
+ * the Gamepad API is poll-only, so the caller samples every frame. Arrays
+ * may differ in length (device hot-plug): a vanished index releases.
+ * @param {boolean[]} prev @param {boolean[]} curr
+ * @returns {{ index: number, down: boolean }[]}
+ */
+export function diffPressed(prev, curr) {
+  const events = [];
+  const n = Math.max(prev.length, curr.length);
+  for (let i = 0; i < n; i++) {
+    const was = prev[i] === true;
+    const is = curr[i] === true;
+    if (was !== is) events.push({ index: i, down: is });
+  }
+  return events;
+}
+
 // ==================== button actions ====================
 // Shared vocabulary: the PC executor (lib/buttons) and the button editor page
 // validate action specs with the SAME functions, so a combo the editor accepts

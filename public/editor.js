@@ -3,7 +3,7 @@
 // tests, JSDoc types are checked by `npm run typecheck`. The DOM glue stays in
 // editor.html — everything with behavior worth testing lives here.
 
-import { parseAction, normalizeButtonRect } from "./math.js";
+import { parseAction, normalizeButtonRect, normalizeEdge, normalizePad } from "./math.js";
 
 /** @typedef {{ x: number, y: number, w: number, h: number }} Rect */
 /** @typedef {"nw" | "ne" | "sw" | "se"} Handle */
@@ -144,6 +144,8 @@ function entryProblems(d, id) {
     problems.push(`button ${id}: bad rect ignored (need {x,y,w,h} in % of the screen)`);
   if (d.vibrate !== undefined && !usableVibrate(d.vibrate))
     problems.push(`button ${id}: bad vibrate ignored (need true/false or a pulse in ms)`);
+  if (d.pad !== undefined && normalizePad(d.pad) === null)
+    problems.push(`button ${id}: bad pad ignored (need a gamepad button index or "any")`);
   if (!d.action) return problems;
   if (typeof d.action !== "string") {
     problems.push(`button ${id}: unknown action ${JSON.stringify(d.action)}`);
@@ -151,6 +153,20 @@ function entryProblems(d, id) {
     problems.push(`button ${id}: unknown action "${d.action}"`);
   }
   return problems;
+}
+
+/**
+ * Edge assignment verdict for one entry — same strings the server produces.
+ * @param {Record<string, unknown>} d @param {string} id @param {Set<string>} seen
+ * @returns {string | null}
+ */
+function edgeProblem(d, id, seen) {
+  if (d.edge === undefined) return null;
+  const edge = normalizeEdge(d.edge);
+  if (!edge) return `button ${id}: bad edge ignored (need left/right/top/bottom)`;
+  if (seen.has(edge)) return `button ${id}: edge ${edge} already assigned`;
+  seen.add(edge);
+  return null;
 }
 
 /**
@@ -167,6 +183,7 @@ export function configProblems(config) {
     return ['config must be {"buttons": [...]}'];
   const problems = [];
   const seen = new Set();
+  const edgesSeen = new Set();
   for (const entry of /** @type {unknown[]} */ (c.buttons)) {
     const d = /** @type {Record<string, unknown>} */ (entry ?? {});
     if (typeof d.id !== "string" || !d.id) {
@@ -175,6 +192,8 @@ export function configProblems(config) {
     }
     if (seen.has(d.id)) problems.push(`button ${d.id}: duplicate id`);
     seen.add(d.id);
+    const ep = edgeProblem(d, d.id, edgesSeen);
+    if (ep) problems.push(ep);
     problems.push(...entryProblems(d, d.id));
   }
   return problems;
@@ -194,5 +213,20 @@ export function parseVibrateField(text) {
   if (t === "false") return { vibrate: false };
   const n = Number(t);
   if (Number.isFinite(n) && n >= 0) return { vibrate: n };
+  return null;
+}
+
+/**
+ * Parses the gamepad-button inspector field: "" = none (key removed), "any"
+ * = every physical button, or a button index. Null for unusable input.
+ * @param {string} text
+ * @returns {{ pad?: unknown } | null}
+ */
+export function parsePadField(text) {
+  const t = text.trim().toLowerCase();
+  if (t === "") return { pad: undefined };
+  if (t === "any") return { pad: "any" };
+  const n = Number(t);
+  if (Number.isInteger(n) && n >= 0) return { pad: n };
   return null;
 }
