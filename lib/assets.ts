@@ -20,6 +20,7 @@ export const PUBLIC_ASSETS = [
   "transport.js",
   "editor.html",
   "editor.js",
+  "editor-i18n.js",
 ];
 
 /** A read-only bundle of named files. */

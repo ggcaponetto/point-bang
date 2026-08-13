@@ -118,7 +118,7 @@ node cli.ts --help   # every option is a flag
 - **20 assignable buttons** — one JSON file maps on-screen buttons to any
   key combo or mouse button, press-and-hold included, places each one
   anywhere on the screen, and gives each a tunable haptic tick on press.
-  FIRE itself is just a remappable button.
+  The trigger is just button `b0` — remappable like everything else.
 - **Off-screen gestures & real triggers** — assign any button to a screen
   edge (aim past it to press, back on screen to release — the classic
   Time Crisis reload/duck), and map Bluetooth gamepad or clicker buttons

@@ -15,6 +15,9 @@ import {
   normalizePad,
   EdgeGesture,
   diffPressed,
+  normalizeKey,
+  parseAction,
+  listKeys,
   OneEuro,
 } from "../public/math.js";
 
@@ -196,10 +199,42 @@ describe("swapMonitorSlots", () => {
   });
 });
 
+describe("listKeys", () => {
+  const groups = listKeys();
+  const all = groups.flatMap((g) => g.keys);
+
+  it("every spelling round-trips the parser (the canonical-spelling trap)", () => {
+    for (const k of all) {
+      expect(normalizeKey(k), k).not.toBeNull();
+      expect(parseAction(`key:${k}`), k).not.toBeNull();
+    }
+  });
+
+  it("one spelling per canonical key — no duplicates after normalization", () => {
+    const canonicals = all.map((k) => normalizeKey(k));
+    expect(new Set(canonicals).size).toBe(canonicals.length);
+  });
+
+  it("pins the vocabulary size and the stable group ids", () => {
+    expect(all).toHaveLength(108);
+    expect(groups.map((g) => g.group)).toEqual([
+      "modifiers",
+      "letters",
+      "digits",
+      "function",
+      "numpad",
+      "navigation",
+      "editing",
+      "punctuation",
+      "system",
+    ]);
+  });
+});
+
 describe("normalizeEdge / normalizePad", () => {
-  it("canonicalizes edges, rejects everything else", () => {
-    for (const e of ["left", "right", "top", "bottom"]) expect(normalizeEdge(e)).toBe(e);
-    for (const bad of ["up", "LEFT", "", 1, null, undefined, {}])
+  it("canonicalizes edges (incl. any), rejects everything else", () => {
+    for (const e of ["left", "right", "top", "bottom", "any"]) expect(normalizeEdge(e)).toBe(e);
+    for (const bad of ["up", "LEFT", "ANY", "", 1, null, undefined, {}])
       expect(normalizeEdge(bad)).toBeNull();
   });
   it("accepts a button index or any, rejects everything else", () => {

@@ -9,6 +9,10 @@ import {
   parseVibrateField,
   parsePadField,
   nextFreeRect,
+  composeAction,
+  decomposeAction,
+  decomposeVibrate,
+  resetButton,
 } from "../public/editor.js";
 
 const R = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
@@ -122,14 +126,14 @@ describe("configProblems", () => {
         buttons: [
           { id: "b1", edge: "bottom", pad: 0 },
           { id: "b2", edge: "up" },
-          { id: "b3", edge: "bottom" },
-          { id: "b4", pad: "sometimes" },
+          { id: "b3", edge: "bottom" }, // shared edge is fine — both fire
+          { id: "b4", edge: "any" }, // any edge is fine
+          { id: "b5", pad: "sometimes" },
         ],
       }),
     ).toEqual([
-      "button b2: bad edge ignored (need left/right/top/bottom)",
-      "button b3: edge bottom already assigned",
-      'button b4: bad pad ignored (need a gamepad button index or "any")',
+      "button b2: bad edge ignored (need left/right/top/bottom/any)",
+      'button b5: bad pad ignored (need a gamepad button index or "any")',
     ]);
   });
   it("rejects a config without a buttons array", () => {
@@ -167,6 +171,101 @@ describe("parseVibrateField", () => {
     expect(parseVibrateField(" 25 ")).toEqual({ vibrate: 25 });
     expect(parseVibrateField("loud")).toBeNull();
     expect(parseVibrateField("-3")).toBeNull();
+  });
+});
+
+describe("composeAction", () => {
+  it("composes the three kinds", () => {
+    expect(composeAction("none", "left", [], "")).toBe("");
+    expect(composeAction("mouse", "right", [], "")).toBe("mouse:right");
+    expect(composeAction("key", "left", [], "r")).toBe("key:r");
+  });
+  it("orders modifiers ctrl,shift,alt,win regardless of input order", () => {
+    expect(composeAction("key", "left", ["win", "ctrl", "shift"], "f")).toBe(
+      "key:ctrl+shift+win+f",
+    );
+  });
+  it("supports mods-only combos and returns empty for nothing pressed", () => {
+    expect(composeAction("key", "left", ["ctrl", "shift"], "")).toBe("key:ctrl+shift");
+    expect(composeAction("key", "left", [], "")).toBe("");
+  });
+});
+
+describe("decomposeAction", () => {
+  it("handles none and mouse", () => {
+    expect(decomposeAction(undefined)).toEqual({ kind: "none" });
+    expect(decomposeAction("")).toEqual({ kind: "none" });
+    expect(decomposeAction("mouse:middle")).toEqual({ kind: "mouse", button: "middle" });
+  });
+  it("decomposes combos into builder spellings", () => {
+    expect(decomposeAction("key:ctrl+shift+f")).toEqual({
+      kind: "key",
+      mods: ["ctrl", "shift"],
+      key: "f",
+    });
+    expect(decomposeAction("key:control+a")).toEqual({ kind: "key", mods: ["ctrl"], key: "a" });
+    expect(decomposeAction("key:pgup")).toEqual({ kind: "key", mods: [], key: "pageup" });
+  });
+  it("round-trips the canonical-spelling traps", () => {
+    expect(decomposeAction("key:capslock")).toEqual({ kind: "key", mods: [], key: "capslock" });
+    expect(decomposeAction("key:numpad7")).toEqual({ kind: "key", mods: [], key: "numpad7" });
+  });
+  it("supports mods-only combos", () => {
+    expect(decomposeAction("key:ctrl+shift")).toEqual({
+      kind: "key",
+      mods: ["ctrl", "shift"],
+      key: "",
+    });
+  });
+  it("marks the unrepresentable as raw (advanced text row)", () => {
+    expect(decomposeAction("key:a+b")).toEqual({ kind: "raw" }); // two main keys
+    expect(decomposeAction("key:cmd+c")).toEqual({ kind: "raw" }); // cmd is not a checkbox
+    expect(decomposeAction("key:nope")).toEqual({ kind: "raw" }); // unknown key
+    expect(decomposeAction("gamepad:a")).toEqual({ kind: "raw" }); // unparseable
+  });
+  it("round-trips through composeAction for representable specs", () => {
+    for (const spec of ["mouse:left", "key:r", "key:ctrl+shift+f", "key:ctrl+shift"]) {
+      const d = decomposeAction(spec);
+      if (d.kind === "mouse") expect(composeAction("mouse", d.button, [], "")).toBe(spec);
+      if (d.kind === "key") expect(composeAction("key", "left", d.mods, d.key)).toBe(spec);
+    }
+  });
+});
+
+describe("resetButton", () => {
+  it("returns the slot to factory empty, dropping every optional field", () => {
+    const cfg = {
+      "//": "doc",
+      buttons: [
+        {
+          id: "b4",
+          label: "DUCK",
+          action: "key:r",
+          visible: true,
+          rect: { x: 1, y: 2, w: 3, h: 4 },
+          vibrate: 5,
+          edge: "any",
+          pad: 0,
+        },
+        { id: "b5", label: "B5", action: "", visible: false },
+      ],
+    };
+    const next = resetButton(cfg, "b4");
+    expect(next.buttons[0]).toEqual({ id: "b4", label: "B4", action: "", visible: false });
+    expect(next.buttons[1]).toBe(cfg.buttons[1]); // others by reference
+    expect((next as unknown as { "//": string })["//"]).toBe("doc"); // config keys survive
+    expect(cfg.buttons[0].label).toBe("DUCK"); // original untouched
+  });
+});
+
+describe("decomposeVibrate", () => {
+  it("maps config values to the feedback form state", () => {
+    expect(decomposeVibrate(undefined)).toEqual({ mode: "default", ms: 10 });
+    expect(decomposeVibrate(true)).toEqual({ mode: "default", ms: 10 });
+    expect(decomposeVibrate(false)).toEqual({ mode: "off", ms: 10 });
+    expect(decomposeVibrate(0)).toEqual({ mode: "off", ms: 10 });
+    expect(decomposeVibrate(25)).toEqual({ mode: "custom", ms: 25 });
+    expect(decomposeVibrate("loud")).toEqual({ mode: "default", ms: 10 });
   });
 });
 

@@ -3,7 +3,14 @@
 // tests, JSDoc types are checked by `npm run typecheck`. The DOM glue stays in
 // editor.html — everything with behavior worth testing lives here.
 
-import { parseAction, normalizeButtonRect, normalizeEdge, normalizePad } from "./math.js";
+import {
+  parseAction,
+  normalizeButtonRect,
+  normalizeEdge,
+  normalizePad,
+  normalizeKey,
+  listKeys,
+} from "./math.js";
 
 /** @typedef {{ x: number, y: number, w: number, h: number }} Rect */
 /** @typedef {"nw" | "ne" | "sw" | "se"} Handle */
@@ -144,6 +151,8 @@ function entryProblems(d, id) {
     problems.push(`button ${id}: bad rect ignored (need {x,y,w,h} in % of the screen)`);
   if (d.vibrate !== undefined && !usableVibrate(d.vibrate))
     problems.push(`button ${id}: bad vibrate ignored (need true/false or a pulse in ms)`);
+  if (d.edge !== undefined && !normalizeEdge(d.edge))
+    problems.push(`button ${id}: bad edge ignored (need left/right/top/bottom/any)`);
   if (d.pad !== undefined && normalizePad(d.pad) === null)
     problems.push(`button ${id}: bad pad ignored (need a gamepad button index or "any")`);
   if (!d.action) return problems;
@@ -156,17 +165,21 @@ function entryProblems(d, id) {
 }
 
 /**
- * Edge assignment verdict for one entry — same strings the server produces.
- * @param {Record<string, unknown>} d @param {string} id @param {Set<string>} seen
- * @returns {string | null}
+ * Resets one button to its pristine unused-slot state: no action, hidden,
+ * default label, and every optional field (rect/vibrate/edge/pad) removed.
+ * The slot itself stays — ids b0..b19 are the fixed vocabulary, so "delete"
+ * means "back to factory empty". Unknown per-button fields are dropped on
+ * purpose; unknown config-level keys are untouched.
+ * @param {{ buttons: Array<Record<string, unknown>> }} config
+ * @param {string} id
  */
-function edgeProblem(d, id, seen) {
-  if (d.edge === undefined) return null;
-  const edge = normalizeEdge(d.edge);
-  if (!edge) return `button ${id}: bad edge ignored (need left/right/top/bottom)`;
-  if (seen.has(edge)) return `button ${id}: edge ${edge} already assigned`;
-  seen.add(edge);
-  return null;
+export function resetButton(config, id) {
+  return {
+    ...config,
+    buttons: config.buttons.map((b) =>
+      b.id === id ? { id, label: id.toUpperCase(), action: "", visible: false } : b,
+    ),
+  };
 }
 
 /**
@@ -183,7 +196,6 @@ export function configProblems(config) {
     return ['config must be {"buttons": [...]}'];
   const problems = [];
   const seen = new Set();
-  const edgesSeen = new Set();
   for (const entry of /** @type {unknown[]} */ (c.buttons)) {
     const d = /** @type {Record<string, unknown>} */ (entry ?? {});
     if (typeof d.id !== "string" || !d.id) {
@@ -192,11 +204,114 @@ export function configProblems(config) {
     }
     if (seen.has(d.id)) problems.push(`button ${d.id}: duplicate id`);
     seen.add(d.id);
-    const ep = edgeProblem(d, d.id, edgesSeen);
-    if (ep) problems.push(ep);
     problems.push(...entryProblems(d, d.id));
   }
   return problems;
+}
+
+// ==================== action builder ====================
+// The structured UI composes/decomposes `key:...`/`mouse:...` specs. The
+// stored format is untouched — these are pure translations for the form.
+
+/** The four checkbox modifiers, in the fixed order specs are composed in. */
+const BUILDER_MODS = ["ctrl", "shift", "alt", "win"];
+
+/**
+ * Canonical spelling -> the listKeys INPUT spelling. Built FROM listKeys()
+ * so it can never drift from the vocabulary (and it sidesteps the
+ * canonical-not-reparseable trap by construction).
+ * @returns {Map<string, string>}
+ */
+const canonicalToSpelling = () => {
+  const map = new Map();
+  for (const g of listKeys())
+    for (const k of g.keys) {
+      const c = /** @type {string} */ (normalizeKey(k));
+      if (!map.has(c)) map.set(c, k);
+    }
+  return map;
+};
+
+/**
+ * Builder state -> action spec. `mods` are checkbox names in any order
+ * (composed in the fixed ctrl,shift,alt,win order); `key` is a listKeys
+ * spelling or "" for none. Returns "" (unassigned) when there is nothing
+ * to press.
+ * @param {"none" | "mouse" | "key"} kind
+ * @param {"left" | "right" | "middle"} mouseBtn
+ * @param {string[]} mods
+ * @param {string} key
+ * @returns {string}
+ */
+export function composeAction(kind, mouseBtn, mods, key) {
+  if (kind === "mouse") return `mouse:${mouseBtn}`;
+  if (kind !== "key") return "";
+  const parts = [...BUILDER_MODS.filter((m) => mods.includes(m)), ...(key ? [key] : [])];
+  return parts.length ? `key:${parts.join("+")}` : "";
+}
+
+/**
+ * Sorts a combo's canonical parts into checkbox modifiers + one main key.
+ * Null = not representable by the builder: a non-modifier anywhere but last,
+ * a repeated modifier, or a canonical with no builder spelling (cmd/meta in
+ * a modifier position falls out here — they are main keys to the builder).
+ * @param {string[]} canonicals @param {Map<string, string>} spelling
+ * @returns {{ mods: string[], key: string } | null}
+ */
+function classifyKeyParts(canonicals, spelling) {
+  const modCanon = new Set(["control", "shift", "alt", "win"]);
+  /** @type {string[]} */
+  const mods = [];
+  let key = "";
+  for (let i = 0; i < canonicals.length; i++) {
+    const canon = canonicals[i];
+    const isMod = modCanon.has(canon);
+    if (!isMod && i < canonicals.length - 1) return null; // main key must be last
+    if (isMod) {
+      const m = /** @type {string} */ (spelling.get(canon));
+      if (mods.includes(m)) return null;
+      mods.push(m);
+    } else {
+      key = spelling.get(canon) ?? "";
+      if (!key) return null;
+    }
+  }
+  return { mods, key };
+}
+
+/**
+ * Action spec -> builder state, for populating the form from an existing
+ * action. `kind: "raw"` marks a spec the 4-checkbox + 1-key builder cannot
+ * represent (several main keys, cmd/meta used as a modifier, unknown keys) —
+ * the UI falls back to the advanced text row for those. Aliases normalize to
+ * builder spellings (`control` -> `ctrl`, `pgup` -> `pageup`); modifier
+ * order normalizes on the next edit, the stored string is untouched until
+ * the user actually changes something.
+ * @param {string | undefined} spec
+ * @returns {{ kind: "none" }
+ *   | { kind: "mouse", button: "left" | "right" | "middle" }
+ *   | { kind: "key", mods: string[], key: string }
+ *   | { kind: "raw" }}
+ */
+export function decomposeAction(spec) {
+  if (!spec) return { kind: "none" };
+  const parsed = parseAction(spec);
+  if (!parsed) return { kind: "raw" };
+  if (parsed.kind === "mouse") return { kind: "mouse", button: parsed.button };
+  const result = classifyKeyParts(parsed.keys, canonicalToSpelling());
+  return result ? { kind: "key", ...result } : { kind: "raw" };
+}
+
+/**
+ * Vibrate config value -> the feedback form's state.
+ * @param {unknown} v
+ * @returns {{ mode: "default" | "off" | "custom", ms: number }}
+ */
+export function decomposeVibrate(v) {
+  if (v === undefined || v === true) return { mode: "default", ms: 10 };
+  if (v === false || v === 0) return { mode: "off", ms: 10 };
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return { mode: "custom", ms: v };
+  return { mode: "default", ms: 10 };
 }
 
 /**

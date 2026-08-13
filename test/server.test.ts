@@ -172,9 +172,11 @@ describe("startServer (http only)", () => {
     ws.close();
   });
 
-  it("executes configured buttons: mouse hold, key, fire slot, unknown id", async () => {
+  it("executes configured buttons: mouse hold, key, free-form id, unknown id", async () => {
     // A fixed config, NOT the live public/buttons.json — that file is the
     // user's to edit, and this test must not break when they remap buttons.
+    // The "fire" id here is deliberate: ids are free-form strings server-side
+    // (the default config uses b0..b19, but nothing enforces that shape).
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pb-buttons-"));
     const file = path.join(dir, "buttons.json");
     fs.writeFileSync(

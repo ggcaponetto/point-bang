@@ -14,6 +14,7 @@ export default defineConfig({
         "public/math.js",
         "public/transport.js",
         "public/editor.js",
+        "public/editor-i18n.js",
       ],
       thresholds: {
         lines: 90,

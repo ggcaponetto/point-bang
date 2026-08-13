@@ -173,8 +173,8 @@ What index.html already contains (reuse, don't reinvent):
 - Post-calibration UI: the `visible` buttons from buttons.json (pointerdown/up
   → button down/up messages) — an entry with a `rect` ({x,y,w,h} in % of the
   screen) is absolutely placed in #btnLayer (defaults: big LEFT/RIGHT click
-  buttons + A/B); without one it falls into the scrollable strip, "fire" into
-  the big red slot — and the aim-adjust panel (nudge pad shifting sent u,v by
+  buttons + A/B); without one it falls into the scrollable strip (no special
+  ids — the trigger is just b0) — and the aim-adjust panel (nudge pad shifting sent u,v by
   0.5%/tap — applied AFTER the filter, zeroed on recalibrate — plus the
   smoothing slider, plus — multi-monitor only — the SWAP button that reassigns
   the aimed plane to the next monitor if calibration was done in the wrong
@@ -223,13 +223,16 @@ wobbles on fire. iOS has no vibration API — silent no-op.
 
 Edge + gamepad triggers (2026-08-13, additive buttons.json fields — the wire
 messages are ordinary `button` down/up, so servers need nothing): optional
-per-button `edge` ("left"|"right"|"top"|"bottom") presses the button when aim
-is held past that screen edge >150ms and releases the INSTANT aim comes back
-on screen / is lost / crosses to another edge — the Time Crisis reload/duck,
-generalized to all four edges (`EdgeGesture` in math.js; fed RAW pre-filter
-aim so smoothing lag can never delay the release; margin 0.1 so ordinary
-edge-of-screen play and typical inter-monitor bezels don't false-trigger; one
-button per edge, first wins, duplicates reported at config load). Optional
+per-button `edge` ("left"|"right"|"top"|"bottom"|"any") presses the button
+when aim is held past that screen edge >150ms and releases the INSTANT aim
+comes back on screen / is lost / crosses to another edge — the Time Crisis
+reload/duck, generalized to all four edges ("any" = every edge; `EdgeGesture`
+in math.js; fed RAW pre-filter aim so smoothing lag can never delay the
+release; margin 0.1 so ordinary edge-of-screen play and typical inter-monitor
+bezels don't false-trigger). Several buttons may share an edge and "any"
+fires alongside a specific assignment — the fan-out mirrors the pad model
+exactly (per-edge target arrays + an any-list + held-set bookkeeping); the
+old one-button-per-edge rule was dropped 2026-08-13. Optional
 per-button `pad` (gamepad button index, or "any" for one-button BT clickers)
 presses it from a physical Bluetooth control via the poll-only Gamepad API
 (`diffPressed` in math.js, sampled every XR frame across all connected pads);
@@ -589,10 +592,10 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   (old server, PC unreachable) as "one plane" silently — never an error.
 - Linux WiFi interfaces are `wlp2s0`/`wlx…`, matching neither "wifi" nor
   "wlan" — `lib/net.ts` matches `^wl` for that reason.
-- Overlay controls (FIRE, slider) start hidden via **inline** style, and JS
-  reveals them with `style.display=""`. Never move the hiding into a CSS rule:
-  clearing the inline style falls back to the stylesheet, so a CSS
-  `display:none` can never be un-hidden that way (past bug: FIRE and the
+- Overlay controls (the strip, the aim panel) start hidden via **inline**
+  style, and JS reveals them with `style.display=""`. Never move the hiding
+  into a CSS rule: clearing the inline style falls back to the stylesheet, so
+  a CSS `display:none` can never be un-hidden that way (past bug: FIRE and the
   smoothing slider were unreachable — calibration worked, clicking didn't).
 - Don't add smoothing PC-side on top of One Euro; don't let any queue of aim
   samples build anywhere (always newest-wins).
@@ -600,8 +603,8 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   judged by p95, not p50.
 - Game-input UI must react on pointerDOWN. A `"click"` listener fires on
   finger RELEASE, silently adding the whole tap duration (~100ms) — this was
-  the fire button's hidden latency for a while. Also: the phone no longer
-  sends v1 `{"type":"fire"}` (fire is a buttons.json button now), but the
+  the trigger's hidden latency for a while. Also: the phone no longer
+  sends v1 `{"type":"fire"}` (the trigger is a buttons.json button now), but the
   server still handles it — protocol is additive, old clients stay valid.
 
 ## Working agreement for Claude Code

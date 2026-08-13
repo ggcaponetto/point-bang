@@ -54,7 +54,7 @@ is exactly what point-bang injects.
 1. In DuckStation: **Settings → Controllers → Controller Port 1** → change
    the controller type to **GunCon**.
 2. Set the GunCon's pointer to **Mouse** (Pointer-0). Bind:
-   - **Trigger** → Left Mouse Button — that's the phone's FIRE button.
+   - **Trigger** → Left Mouse Button — that's the phone's big LEFT button (`b0`).
    - **A** and **B** → two keyboard keys (say `Q` and `E`).
 3. In point-bang's `buttons.json`, the phone's `A`/`B` buttons default to
    keyboard keys — align them with what you bound in DuckStation using the

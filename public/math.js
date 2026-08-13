@@ -214,18 +214,20 @@ export function normalizeVibrate(v, defaultMs = 10) {
 
 // ==================== edge & gamepad triggers ====================
 
-/** The four assignable screen edges. */
-const EDGES = new Set(["left", "right", "top", "bottom"]);
+/** The assignable screen edges, plus "any" = every edge triggers the button. */
+const EDGES = new Set(["left", "right", "top", "bottom", "any"]);
 
 /**
  * A button's `edge` config value, canonicalized — or null for anything that
- * is not an assignable edge.
+ * is not an assignable edge. `"any"` is a mapping concept only: the gesture
+ * classifier always reports a concrete edge, and an "any" assignment fires
+ * for whichever one it is.
  * @param {unknown} v
- * @returns {"left" | "right" | "top" | "bottom" | null}
+ * @returns {"left" | "right" | "top" | "bottom" | "any" | null}
  */
 export function normalizeEdge(v) {
   return typeof v === "string" && EDGES.has(v)
-    ? /** @type {"left" | "right" | "top" | "bottom"} */ (v)
+    ? /** @type {"left" | "right" | "top" | "bottom" | "any"} */ (v)
     : null;
 }
 
@@ -423,6 +425,36 @@ export function normalizeKey(raw) {
   if (/^numpad\d$/.test(k)) return `numpad_${k.slice(6)}`;
   if (PUNCTUATION.has(k)) return k;
   return null;
+}
+
+/**
+ * The full main-key vocabulary for the editor's action builder, as INPUT
+ * spellings — each entry round-trips through {@link normalizeKey}. This
+ * matters: canonical spellings like `caps_lock` or `numpad_7` are NOT
+ * re-parseable (no alias, no regex match), so an enumeration of canonicals
+ * would emit specs the parser rejects. One spelling per canonical key,
+ * grouped for `<optgroup>` rendering; group ids are stable (i18n labels live
+ * with the editor, not here).
+ * @returns {Array<{ group: string, keys: string[] }>}
+ */
+export function listKeys() {
+  return [
+    { group: "modifiers", keys: ["ctrl", "shift", "alt", "win", "cmd", "meta"] },
+    { group: "letters", keys: [..."abcdefghijklmnopqrstuvwxyz"] },
+    { group: "digits", keys: [..."0123456789"] },
+    { group: "function", keys: Array.from({ length: 24 }, (_, i) => `f${i + 1}`) },
+    { group: "numpad", keys: Array.from({ length: 10 }, (_, i) => `numpad${i}`) },
+    {
+      group: "navigation",
+      keys: ["up", "down", "left", "right", "home", "end", "pageup", "pagedown"],
+    },
+    {
+      group: "editing",
+      keys: ["enter", "return", "esc", "space", "tab", "backspace", "delete", "insert"],
+    },
+    { group: "punctuation", keys: ["`", "-", "=", "[", "]", "\\", ";", "'", ",", ".", "/"] },
+    { group: "system", keys: ["capslock", "numlock", "scrolllock", "printscreen", "menu"] },
+  ];
 }
 
 /**

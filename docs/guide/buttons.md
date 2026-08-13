@@ -4,7 +4,7 @@
 
 | Field     | Meaning                                                             |
 | --------- | ------------------------------------------------------------------- |
-| `id`      | Stable identifier sent over the wire (`fire`, `b1`…`b20`)           |
+| `id`      | Stable identifier sent over the wire (`b0`…`b19`)                   |
 | `label`   | Text shown on the phone                                             |
 | `action`  | What the PC does — see below                                        |
 | `visible` | Whether the phone shows the button                                  |
@@ -21,11 +21,14 @@ file's ids to actions. One file, both sides.
 You rarely need to edit the JSON by hand: the server hosts a drag-and-drop
 editor — the startup banner prints its URL
 (`Edit: open http://localhost:8443/editor.html …`, open it **on the PC**).
-Drag buttons around a phone-shaped canvas, resize them by their corners,
-remap labels/actions/vibration/edges/gamepad buttons, and turn unused
-(hidden) slots into new buttons with **＋ add button**. Problems are shown
-live with the exact messages the server would log, and Save is disabled
-until the config is clean.
+Drag buttons around a phone-shaped canvas (portrait by default, toggle to
+landscape), build actions from dropdowns — mouse click, or modifier
+checkboxes plus a key picker listing every supported key — assign
+off-screen edges and gamepad buttons from labeled selects, and turn unused
+(hidden) slots into new buttons with **＋ add button**. The editor speaks
+English, German and Italian (switch in the header; it follows your browser
+language on first visit). Problems are shown live with the exact messages
+the server would log, and Save is disabled until the config is clean.
 
 **Save applies everywhere immediately**: the file is rewritten atomically,
 the PC remaps actions without a restart, and a connected phone re-renders
@@ -37,7 +40,7 @@ A button with a `rect` is placed at that position, sized to match:
 
 ```json
 {
-  "id": "fire",
+  "id": "b0",
   "label": "LEFT",
   "action": "mouse:left",
   "visible": true,
@@ -102,9 +105,14 @@ Hold your aim past the edge for ~150ms and the button goes **down**; the
 moment your aim comes back on screen (or is lost) it releases — so
 duck-and-hold mechanics work naturally. The margin is generous enough that
 ordinary shots near the screen border (and the bezels between monitors in
-`--monitor all`) never false-trigger. One button per edge; the button does
-**not** need to be `visible` — an edge-only reload needs no spot on the
-screen. In the editor it's the "off-screen edge" dropdown.
+`--monitor all`) never false-trigger.
+
+`"edge": "any"` fires the button on **every** edge — the classic "point
+anywhere off screen to reload". Several buttons may share an edge (they
+press and release together, exactly like two buttons on the same gamepad
+index), and an `any` button fires alongside a specific-edge one. The button
+does **not** need to be `visible` — an edge-only reload needs no spot on
+the screen. In the editor it's the "off-screen edge" dropdown.
 
 ## Physical triggers (Bluetooth)
 
@@ -123,13 +131,12 @@ reports, it fires. Presses and releases pass through separately, so a held
 physical trigger holds the action. This uses the browser Gamepad API; a
 device that pairs as a _keyboard_ instead of a gamepad won't be seen.
 
-## FIRE is a button too
+## The trigger is just `b0`
 
-The entry with id `"fire"` is the trigger: it keeps its red styling wherever
-its `rect` puts it (by default it IS the big LEFT button), and without a
-`rect` it renders into the big red slot at the bottom of the screen instead
-of the strip — but it's config like everything else. Default action is
-`mouse:left`; remap it, relabel it, or hide it entirely.
+There is no special fire button: the default trigger is simply `b0` — the
+big LEFT half of the screen, action `mouse:left`. Remap it, relabel it,
+resize it, or hide it like any other button; nothing about its id is
+magic.
 
 ::: info Why buttons trigger on touch-down
 A `click` event fires when your finger comes **up**, silently adding your
