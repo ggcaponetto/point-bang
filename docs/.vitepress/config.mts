@@ -7,7 +7,19 @@ export default defineConfig({
   base: "/point-bang/",
   lastUpdated: true,
   ignoreDeadLinks: [/^https?:\/\/localhost/],
-  head: [["link", { rel: "icon", type: "image/svg+xml", href: "/point-bang/logo.svg" }]],
+  head: [
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/point-bang/logo.svg" }],
+    // Google tag (gtag.js)
+    ["script", { async: "", src: "https://www.googletagmanager.com/gtag/js?id=G-9FK3WJXN0E" }],
+    [
+      "script",
+      {},
+      "window.dataLayer = window.dataLayer || [];\n" +
+        "function gtag(){dataLayer.push(arguments);}\n" +
+        "gtag('js', new Date());\n" +
+        "gtag('config', 'G-9FK3WJXN0E');",
+    ],
+  ],
   themeConfig: {
     logo: "/logo.svg",
     nav: [
