@@ -15,8 +15,8 @@ import type { AssetSource } from "./assets.ts";
  *
  * Write target resolution (see `createButtonStore` callers):
  * - dev checkout: `public/buttons.json` — same file the assets serve.
- * - single executable: `buttons.json` next to the exe (the certs/ pattern);
- *   absent = first run, the baked asset copy serves until the first save.
+ * - single executable: `buttons.json` next to the exe; absent = first run,
+ *   the baked asset copy serves until the first save.
  * - explicit `--buttons`: that file, and an unreadable one stays a reported
  *   problem instead of silently falling back — the user named it on purpose.
  *

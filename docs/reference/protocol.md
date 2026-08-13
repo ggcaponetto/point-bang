@@ -6,7 +6,7 @@ forever.
 
 Two transports carry the very same messages, byte for byte:
 
-- **WebSocket** — same-origin flows (USB/localhost, mkcert HTTPS, tunnel).
+- **WebSocket** — same-origin flows (USB/localhost, tunnel).
 - **WebRTC DataChannel** (`ordered: false, maxRetransmits: 0`) — the QR
   flow, and preferred everywhere; the server feeds both into one handler.
 
@@ -48,7 +48,7 @@ never `*`.
 | `aim`   | `u`,`v` proportions of the physical screen, origin top-left; `t` phone `Date.now()`; `q` confidence `1` \| `0.5` | The PC clamps and scales to pixels, so any resolution works. Values outside 0..1 are sent **on purpose** — they become the off-screen reload gesture. |
 | `fire`  | —                                                                                                                | Legacy left click. The phone page now sends `button` messages instead, but the server keeps handling `fire`.                                          |
 | `calib` | `stage`, `i`, `x`,`y`,`z`                                                                                        | Calibration progress, logged PC-side.                                                                                                                 |
-| `state` | `tracking`: `good` \| `limited` \| `lost`                                                                        | Tracking transitions. The server resets aim prediction on `lost`.                                                                                     |
+| `state` | `tracking`: `good` \| `limited` \| `lost`                                                                        | Tracking transitions, logged PC-side; the phone never sends aim while `lost`.                                                                         |
 
 ## v2 (additive)
 
@@ -104,4 +104,3 @@ notifies the phone.
 ## Planned (additive)
 
 - `{"type":"ping","t":…}` / `{"type":"pong",…}` for RTT measurement.
-- Optional `du`,`dv` velocity on `aim` for richer PC-side extrapolation.

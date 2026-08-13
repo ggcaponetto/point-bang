@@ -80,8 +80,7 @@ Notes:
   signaling rides the tunnel, ICE usually can't cross networks, and the
   page falls back to WS over the tunnel — that's the right recipe for
   testing the page UI itself, and the wrong one for testing LNA/CORS.
-- The `#pc=` fragment works from any origin serving the page — you can also
-  hand-type it onto a mkcert HTTPS URL.
+- The `#pc=` fragment works from any origin serving the page.
 
 ## The ngrok tunnel
 
@@ -106,9 +105,9 @@ prints:
 TUNNEL: https://abc123.ngrok-free.app  <-- open this on the phone, from any network
 ```
 
-Because the URL is HTTPS, it is a secure context: WebXR works with no mkcert
-and no Chrome flag, and the aim WebSocket upgrades to `wss://` over the same
-tunnel — the page derives its WebSocket scheme from its own protocol.
+Because the URL is HTTPS, it is a secure context: WebXR works with no Chrome
+flag, and the aim WebSocket upgrades to `wss://` over the same tunnel — the
+page derives its WebSocket scheme from its own protocol.
 `tunnel` exposes port 8443 by default; pass `--port` for another one.
 
 Things to know:
@@ -139,55 +138,23 @@ Things to know:
 - There's no region flag: current agents pick the lowest-latency region
   themselves.
 
-## Fallback phone transports
+## The fallback phone transport: the Chrome flag
 
-These predate the QR flow and are kept for development and odd setups — a
-de-Googled phone, a pinned old Chrome, a network where the phone cannot
-reach the internet even once to load the hosted page. They are deliberately
-absent from the player guide.
+The QR flow needs the phone to reach the internet once (to load the hosted
+page) and a current Chrome. When either is missing — a de-Googled phone, a
+pinned old Chrome, an offline LAN — the fallback is Chrome's insecure-origin
+flag, which makes the PC's plain-HTTP page a secure context. It is
+deliberately absent from the player guide.
 
-Both fallbacks talk to the PC over the network, so both are subject to the
+The fallback talks to the PC over the network, so it is subject to the
 session key: open the URLs exactly as the server prints them — they carry
 `#key=…` — or start with `--key off` on a network you trust.
-
-### Chrome flag (zero setup)
 
 1. On the phone, open `chrome://flags/#unsafe-treat-insecure-origin-as-secure`.
 2. Enable it and add `http://<PC-IP>:8443` — `npm run ip` prints your
    addresses with the Wi-Fi interface marked, and `start:wifi` prints them
    ready-made (with the key appended).
 3. Relaunch Chrome and open the printed URL. No HTTPS involved.
-
-### mkcert HTTPS
-
-1. On the PC, install [mkcert](https://github.com/FiloSottile/mkcert)
-   (`choco install mkcert` / `scoop install mkcert` / `brew install mkcert`),
-   then:
-
-   ```sh
-   mkcert -install
-   mkdir certs
-   mkcert -cert-file certs/cert.pem -key-file certs/key.pem localhost <PC-IP>
-   ```
-
-   Re-run the last command whenever your LAN IP changes — certs are per-IP,
-   and never commit `certs/`.
-
-   The `certs` folder is looked for **next to the program**: the repo root
-   for a checkout, or beside `point-bang.exe` for the single executable.
-   Point somewhere else with `--certs <dir>`. If the files aren't found,
-   HTTPS is silently off.
-
-2. Trust the CA on the phone: copy `rootCA.pem` (find it with
-   `mkcert -CAROOT`) to the phone and install it via Settings → Security →
-   Encryption & credentials → Install a certificate → **CA certificate**.
-
-3. `npm run start:wifi` now also serves **https://\<PC-IP\>:8444** with a
-   WebSocket over TLS. HTTP on :8443 keeps working for the USB flow.
-
-If the HTTPS page loads but the WebSocket stays closed, the phone doesn't
-trust the mkcert CA yet (step 2), or the cert doesn't include the IP you're
-browsing to — re-run mkcert with the current LAN IP.
 
 ## Quality gates
 

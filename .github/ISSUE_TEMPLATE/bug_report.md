@@ -9,7 +9,7 @@ labels: bug
 
 **Setup**
 
-- Transport: (USB adb / QR+WebRTC / mkcert HTTPS / Chrome flag / tunnel)
+- Transport: (USB adb / QR+WebRTC / Chrome flag / tunnel)
 - PC OS + how you run it: (executable vX.Y.Z / `npm start` from source)
 - Phone model + Chrome version:
 - Output of `point-bang check`:

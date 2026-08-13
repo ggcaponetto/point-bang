@@ -13,7 +13,7 @@
 //   HTTPS origin is mixed content, full stop.
 //
 // local — no fragment. The page came from the PC itself (adb/localhost,
-//   mkcert https, tunnel). RTC is tried first via a same-origin fetch, WS is
+//   tunnel). RTC is tried first via a same-origin fetch, WS is
 //   the automatic fallback; a WS drop restarts the ladder RTC-first.
 
 /**

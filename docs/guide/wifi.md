@@ -55,6 +55,6 @@ rubbery.
 ---
 
 _Hacking on point-bang, self-hosting the phone page, or on a phone that
-can't run the QR flow? The developer transports — `--page-url`,
-mkcert HTTPS, the Chrome flag, and the ngrok tunnel — are documented in
+can't run the QR flow? The developer transports — `--page-url`, the Chrome
+flag, and the ngrok tunnel — are documented in
 [Development](/reference/development)._
