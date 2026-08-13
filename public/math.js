@@ -428,6 +428,36 @@ export function normalizeKey(raw) {
 }
 
 /**
+ * The full main-key vocabulary for the editor's action builder, as INPUT
+ * spellings — each entry round-trips through {@link normalizeKey}. This
+ * matters: canonical spellings like `caps_lock` or `numpad_7` are NOT
+ * re-parseable (no alias, no regex match), so an enumeration of canonicals
+ * would emit specs the parser rejects. One spelling per canonical key,
+ * grouped for `<optgroup>` rendering; group ids are stable (i18n labels live
+ * with the editor, not here).
+ * @returns {Array<{ group: string, keys: string[] }>}
+ */
+export function listKeys() {
+  return [
+    { group: "modifiers", keys: ["ctrl", "shift", "alt", "win", "cmd", "meta"] },
+    { group: "letters", keys: [..."abcdefghijklmnopqrstuvwxyz"] },
+    { group: "digits", keys: [..."0123456789"] },
+    { group: "function", keys: Array.from({ length: 24 }, (_, i) => `f${i + 1}`) },
+    { group: "numpad", keys: Array.from({ length: 10 }, (_, i) => `numpad${i}`) },
+    {
+      group: "navigation",
+      keys: ["up", "down", "left", "right", "home", "end", "pageup", "pagedown"],
+    },
+    {
+      group: "editing",
+      keys: ["enter", "return", "esc", "space", "tab", "backspace", "delete", "insert"],
+    },
+    { group: "punctuation", keys: ["`", "-", "=", "[", "]", "\\", ";", "'", ",", ".", "/"] },
+    { group: "system", keys: ["capslock", "numlock", "scrolllock", "printscreen", "menu"] },
+  ];
+}
+
+/**
  * Parses an action spec like `key:ctrl+shift+f` or `mouse:right`.
  * @param {string} spec
  * @returns {ButtonAction | null} The parsed action, or `null` for unknown keys/malformed specs.

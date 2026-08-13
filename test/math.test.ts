@@ -15,6 +15,9 @@ import {
   normalizePad,
   EdgeGesture,
   diffPressed,
+  normalizeKey,
+  parseAction,
+  listKeys,
   OneEuro,
 } from "../public/math.js";
 
@@ -193,6 +196,38 @@ describe("swapMonitorSlots", () => {
       expect(arrays).toEqual(fresh());
     }
     expect(swapMonitorSlots([], 0, 1, 1)).toBe(1); // no arrays at all
+  });
+});
+
+describe("listKeys", () => {
+  const groups = listKeys();
+  const all = groups.flatMap((g) => g.keys);
+
+  it("every spelling round-trips the parser (the canonical-spelling trap)", () => {
+    for (const k of all) {
+      expect(normalizeKey(k), k).not.toBeNull();
+      expect(parseAction(`key:${k}`), k).not.toBeNull();
+    }
+  });
+
+  it("one spelling per canonical key — no duplicates after normalization", () => {
+    const canonicals = all.map((k) => normalizeKey(k));
+    expect(new Set(canonicals).size).toBe(canonicals.length);
+  });
+
+  it("pins the vocabulary size and the stable group ids", () => {
+    expect(all).toHaveLength(108);
+    expect(groups.map((g) => g.group)).toEqual([
+      "modifiers",
+      "letters",
+      "digits",
+      "function",
+      "numpad",
+      "navigation",
+      "editing",
+      "punctuation",
+      "system",
+    ]);
   });
 });
 
