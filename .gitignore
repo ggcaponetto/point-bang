@@ -8,3 +8,5 @@ docs/.vitepress/dist/
 docs/.vitepress/cache/
 site/public/
 .env
+
+.vscode/settings.json
