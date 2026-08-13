@@ -369,15 +369,17 @@
       // The PC's aim targets: >1 (serve --monitor all on a real multi-monitor
       // box) means each monitor is calibrated as its OWN plane — one spanning
       // plane cannot be right, because bezels add physical distance that
-      // contains no pixels (and monitors may be angled). Kicked off at boot,
-      // snapshotted at START; null (old server, PC unreachable) = classic
-      // single-plane flow.
-      let monTargets = null;
-      // Deliberately NOT a top-level await: this must never delay module init
-      // or the START tap — start() snapshots whatever has resolved by then.
-      void (async () => {
-        monTargets = await fetchMonitors(hosts, (u, i) => fetch(u, i));
-      })();
+      // contains no pixels (and monitors may be angled). null (old server,
+      // PC unreachable) = classic single-plane flow.
+      //
+      // The request STARTS here, so it is in flight while the user is still
+      // reading the setup screen — but it is `await`ed only at the very
+      // BOTTOM of this module (see the "module tail" comment there for the
+      // full reasoning). Short version: an await this early would pause the
+      // whole module, and nothing below — not even the START button — would
+      // come alive until the network answered.
+      const monTargetsFetch = fetchMonitors(hosts, (u, i) => fetch(u, i));
+      let monTargets = null; // the resolved list; start() snapshots it as-is
       let targets = null; // frozen at start()
       let numMon = 1;
       let multi = false;
@@ -1078,10 +1080,37 @@
         } else b.textContent = "immersive-ar not supported on this device";
       }
 
-      // Last on purpose: nothing below depends on it, so awaiting the
-      // buttons.json fetch (it can sit behind Chrome's local-network prompt
-      // in remote mode) cannot delay the START button becoming usable.
-      await renderButtons();
+      // ========================== module tail ==========================
+      // The network kickoffs from way above are awaited HERE, at the very
+      // bottom — a deliberate technical decision, not an accident. What a
+      // junior reader needs to know about top-level await:
+      //
+      // 1. A top-level `await` pauses THIS WHOLE MODULE at that line.
+      //    Nothing below it runs until the promise settles. Placed near the
+      //    top, an await on a fetch to an unreachable PC (wrong WiFi,
+      //    firewall — our most common support case) would sit in a TCP
+      //    timeout for tens of seconds with a dead page: no START button,
+      //    no WebXR check, "the app is frozen".
+      // 2. Down HERE, everything above is already wired and LIVE. DOM event
+      //    handlers fire even while the module tail is still awaiting, so
+      //    the user can read the screen and tap START immediately — these
+      //    awaits delay nothing a user can see. That is why the awaits are
+      //    last: not because the results don't matter, but because nothing
+      //    below depends on them.
+      // 3. start() reads `monTargets` WITHOUT awaiting, on purpose. The tap
+      //    that calls requestSession() carries a "transient user
+      //    activation" that Chrome expires after a few seconds; awaiting a
+      //    network fetch inside the tap handler could outlive it and make
+      //    requestSession() throw a SecurityError. So START snapshots
+      //    whatever has resolved by tap time; if the fetch is still in
+      //    flight, the session simply runs the classic single-plane flow —
+      //    the same graceful fallback an old server gets.
+      // 4. Promise.all, not sequential awaits: both requests were kicked
+      //    off earlier and travel in parallel (buttons.json can also sit
+      //    behind Chrome's one-time local-network prompt in remote mode);
+      //    awaiting them jointly never serializes one behind the other.
+      const [fetchedTargets] = await Promise.all([monTargetsFetch, renderButtons()]);
+      monTargets = fetchedTargets;
     </script>
   </body>
 </html>
