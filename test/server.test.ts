@@ -1010,6 +1010,22 @@ describe("startServer port collisions", () => {
     }
   });
 
+  it("no port given: the 8443/8444 defaults apply, fallback-armed either way", async () => {
+    const logs: string[] = [];
+    // Deliberately NO port/httpsPort: binds the real defaults when they are
+    // free, or an OS-assigned port when something (CI neighbor, a dev's own
+    // running server) holds them — deterministic in both worlds.
+    running = await startServer({
+      ...base(logs),
+      certsDir: FIXTURES,
+      portFallback: true,
+      httpsPortFallback: true,
+    });
+    expect(running.httpPort).toBeGreaterThan(0);
+    expect(running.httpsPort).not.toBeNull();
+    expect(logs.join("\n")).toContain(`http+ws on :${running.httpPort}`);
+  });
+
   it("non-EADDRINUSE listen errors pass through untouched", async () => {
     await expect(startServer({ ...base([]), port: 65536 })).rejects.toThrow(
       /^(?!.*already in use).*$/s,
