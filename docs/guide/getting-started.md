@@ -46,7 +46,7 @@ node cli.ts --help
 
 ## Pause to use the real mouse
 
-Press **shift+space** (on the PC keyboard) to pause tracking — the cursor is
+Press **shift+s** (on the PC keyboard) to pause tracking — the cursor is
 yours again — and press it again to resume aiming, no reconnect or
 recalibration needed. The combo is configurable and works the same in the
 single executable:

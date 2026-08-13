@@ -166,7 +166,7 @@ is one Local-Network-Access fetch, and WebRTC brings its own encryption.
   panel fixes the assignment — no recalibration. (X11 multi-monitor
   setups that relied on the old implicit span: that is `--monitor all`
   now.)
-- **Pause hotkey** — `shift+space` pauses tracking so the real mouse
+- **Pause hotkey** — `shift+s` pauses tracking so the real mouse
   works, and resumes right where you left off; configurable, and never
   swallows the combo from the focused game.
 - **Windows and Linux, equally** — one yargs CLI, no bash-only syntax,

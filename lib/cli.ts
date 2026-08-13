@@ -141,7 +141,7 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
           })
           .option("pause-combo", {
             type: "string",
-            default: env.PAUSE_COMBO ?? "shift+space",
+            default: env.PAUSE_COMBO ?? "shift+s",
             describe: "PC key combo that pauses/resumes tracking; 'off' disables it",
           })
           .option("input", {

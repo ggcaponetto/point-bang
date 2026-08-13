@@ -79,11 +79,9 @@ async function checkHotkey(d: CheckDeps, platform: string): Promise<void> {
   // what is being proven here is that the FFI loads and can watch keys at all.
   try {
     const ffi = await (d.loadFfi ?? (() => loadKoffi(VERSION)))();
-    const r = createComboProbe(parseCombo("shift+space")!, { ffi, platform, env: d.env });
+    const r = createComboProbe(parseCombo("shift+s")!, { ffi, platform, env: d.env });
     d.log(
-      r.probe
-        ? "pause hotkey: ready (default shift+space)"
-        : `pause hotkey: unavailable — ${r.reason}`,
+      r.probe ? "pause hotkey: ready (default shift+s)" : `pause hotkey: unavailable — ${r.reason}`,
     );
   } catch (e) {
     d.log(`pause hotkey: unavailable — ${(e as Error).message}`);
