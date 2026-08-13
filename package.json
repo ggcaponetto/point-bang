@@ -4,6 +4,9 @@
   "private": true,
   "description": "Phone WebXR -> PC cursor proof of concept",
   "type": "module",
+  "workspaces": [
+    "site"
+  ],
   "bin": {
     "point-bang": "cli.ts"
   },
