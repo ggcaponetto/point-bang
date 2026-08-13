@@ -246,6 +246,23 @@ describe("startServer (http only)", () => {
     await until(() => logs.includes("phone disconnected"));
   });
 
+  it("tracking lost clears the pending aim so the cursor idles", async () => {
+    const { srv, moves, logs } = await boot();
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0.25, v: 0.25 }));
+    await until(() => moves.length > 0);
+    ws.send(JSON.stringify({ type: "state", tracking: "lost" }));
+    await until(() => logs.includes("tracking: lost"));
+    const applied = moves.length;
+    await new Promise((r) => setTimeout(r, 30)); // a lingering sample would re-apply
+    expect(moves.length).toBe(applied);
+    // …and a fresh sample after recovery moves again
+    ws.send(JSON.stringify({ type: "state", tracking: "good" }));
+    ws.send(JSON.stringify({ type: "aim", u: 0.75, v: 0.75 }));
+    await until(() => moves.length > applied);
+    ws.close();
+  });
+
   it("prints jitter stats once enough timestamped aims arrive", async () => {
     const { srv, logs, moves } = await boot();
     const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
