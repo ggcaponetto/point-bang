@@ -326,7 +326,13 @@
             ><input type="checkbox" id="landscape" />
             <span data-i18n="frame.landscape">landscape phone</span></label
           >
-          <select id="addHidden" hidden data-i18n-title="under.addButtonTitle">
+          <select
+            id="addHidden"
+            hidden
+            aria-label="turn one of the unused slots into a visible button"
+            data-i18n-aria="under.addButtonTitle"
+            data-i18n-title="under.addButtonTitle"
+          >
             <option value="" data-i18n="under.addButton">＋ add button…</option>
           </select>
           <span id="chipLabel" hidden data-i18n="under.place">place on canvas:</span>
