@@ -102,6 +102,37 @@ describe("runCheck", () => {
     expect(logs).toContain("pause hotkey: unavailable — no DISPLAY (headless session)");
   });
 
+  it("darwin: points at Accessibility even when input reports ready", async () => {
+    // TCC silently drops injected events until the permission is granted, so
+    // a passing load check proves nothing about the cursor actually moving.
+    const logs: string[] = [];
+    const code = await runCheck({
+      assets: builtAssets(),
+      log: (l) => logs.push(l),
+      platform: "darwin",
+      env: {},
+      loadNative: okNative,
+      loadFfi: okFfi,
+    });
+    expect(code).toBe(0);
+    expect(logs).toContain("input: ready — screen 1920x1080");
+    expect(logs.some((l) => l.includes("Accessibility"))).toBe(true);
+  });
+
+  it("darwin: points at quarantine when the addon will not load", async () => {
+    const logs: string[] = [];
+    await runCheck({
+      assets: builtAssets(),
+      log: (l) => logs.push(l),
+      platform: "darwin",
+      env: {},
+      loadNative: () => Promise.reject(new Error("dlopen failed")),
+      loadFfi: okFfi,
+    });
+    expect(logs.some((l) => l.includes("UNAVAILABLE"))).toBe(true);
+    expect(logs.some((l) => l.includes("com.apple.quarantine"))).toBe(true);
+  });
+
   it("gives non-Linux platforms a generic hint", async () => {
     const logs: string[] = [];
     await runCheck({

@@ -52,7 +52,7 @@ import {
   type ComboProbe,
   type HotkeyWatcher,
 } from "./lib/hotkey.ts";
-import { loadKoffi } from "./lib/native.ts";
+import { loadKoffi, loadLibNut, type LibNut } from "./lib/native.ts";
 import { VERSION } from "./lib/version.ts";
 import { createRtcHub, type PeerLike } from "./lib/rtc.ts";
 import { corsHeaders } from "./lib/cors.ts";
@@ -140,6 +140,8 @@ export interface ServerOptions {
   log?: (line: string) => void;
   statsIntervalMs?: number;
   input?: InputMode;
+  /** Injected libnut loader for tests — replaces the real addon load. */
+  loadNative?: () => Promise<LibNut>;
   /** Screen assumed in virtual-input mode, where none can be measured. */
   screen?: { w: number; h: number };
   platform?: string;
@@ -176,30 +178,51 @@ type Log = (line: string) => void;
 // Decided before anything is opened: on a display-less Linux box, touching
 // the native addon kills the process outright, so `auto` must route around
 // it rather than try and recover.
+const firstErrorLine = (e: unknown): string => String((e as Error).message).split(/\r?\n/)[0];
+
 async function setupInput(
   opts: ServerOptions,
   log: Log,
 ): Promise<{ mouse: MouseLike; keyboard: KeyboardLike; virtual: boolean }> {
   const input = opts.input ?? "auto";
   const display = hasDisplay(opts.platform ?? process.platform, opts.env ?? process.env);
-  const virtual = input === "none" || (input === "auto" && !display);
+  let virtual = input === "none" || (input === "auto" && !display);
+  const size = opts.screen ?? DEFAULT_SCREEN;
+  const assume = () => log(`input: assuming a ${size.w}x${size.h} screen (--screen WxH to change)`);
   if (virtual) {
-    const size = opts.screen ?? DEFAULT_SCREEN;
     log(
       input === "none"
         ? "input: VIRTUAL (--input none) — aim is printed, the cursor is not moved"
         : "input: VIRTUAL — no DISPLAY (headless); aim is printed, the cursor is not moved",
     );
-    log(`input: assuming a ${size.w}x${size.h} screen (--screen WxH to change)`);
+    assume();
   } else if (!display) {
     // Explicit --input native without a display: their call, but say what is
     // about to happen, because the crash message itself explains nothing.
     log("input: WARNING — no DISPLAY set; the native addon will abort the process");
   }
-  const virtualDeps = { log, size: opts.screen ?? DEFAULT_SCREEN };
-  const mouse = opts.mouse ?? (virtual ? createVirtualMouse(virtualDeps) : await createMouse());
-  const keyboard =
-    opts.keyboard ?? (virtual ? createVirtualKeyboard(virtualDeps) : await createKeyboard());
+  let mouse = opts.mouse;
+  let keyboard = opts.keyboard;
+  if (!virtual && (!mouse || !keyboard)) {
+    try {
+      const lib = await (opts.loadNative ?? (() => loadLibNut(VERSION)))();
+      mouse ??= await createMouse(lib);
+      keyboard ??= await createKeyboard(lib);
+    } catch (e) {
+      // Only `auto` degrades — a platform without a libnut build (macOS until
+      // proven, anything exotic) or a load failure gets the printing devices
+      // and a running server instead of a crash. An explicit --input native
+      // is the user pinning the addon: keep failing loudly.
+      if (input !== "auto") throw e;
+      log(`input: native addon unavailable (${firstErrorLine(e)}) — falling back to VIRTUAL`);
+      log("input: aim is printed, the cursor is not moved (--input native forces the addon)");
+      assume();
+      virtual = true;
+    }
+  }
+  const virtualDeps = { log, size };
+  mouse ??= createVirtualMouse(virtualDeps);
+  keyboard ??= createVirtualKeyboard(virtualDeps);
   return { mouse, keyboard, virtual };
 }
 
