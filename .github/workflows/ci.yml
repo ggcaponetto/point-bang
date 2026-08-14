@@ -10,10 +10,12 @@ jobs:
   validate:
     # Windows is the primary play target and Linux is the primary dev box —
     # both must stay green (CRLF, path separators, native addon loading).
+    # macOS (arm64) is the community-verified tier: same gates, beta-tested
+    # end-to-end (the owner has no Mac hardware).
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     env:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -62,6 +64,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # macos-latest joins this matrix once build/sea.mjs learns the darwin
+        # codesign pass — postject into a signed arm64 Mach-O yields a binary
+        # the kernel kills, so the smoke test cannot pass before that lands.
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
