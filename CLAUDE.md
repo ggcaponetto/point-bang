@@ -441,11 +441,18 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   forwards the internet to loopback). The standalone `tunnel` command cannot
   enforce it and says so. Timing-safe compare; `--key off|auto|<value>`.
 - **Multi-monitor: enumerate via EnumDisplayDevicesW/EnumDisplaySettingsExW
-  (koffi) on Windows, `xrandr --query` on Linux** (2026-08-12). libnut only
+  (koffi) on Windows, `xrandr --query` on Linux** (2026-08-12), **and
+  CoreGraphics (`CGGetActiveDisplayList`/`CGDisplayBounds`) on macOS**
+  (2026-08-14). libnut only
   knows the primary screen; `EnumDisplayMonitors` was rejected because it
   needs a C callback and the minimal `Ffi` type (load+func only) deliberately
   has none — the chosen pair works with Buffer out-params, the same trick as
-  `XQueryKeymap`. Struct offsets in lib/monitors.ts were verified live on a
+  `XQueryKeymap`. The darwin path forced the ONE extension to that type:
+  optional `struct` (koffi.struct), because CGDisplayBounds returns CGRect
+  BY VALUE — still no callbacks, and CI's arm64 runner verified the raw
+  koffi.node exposes it. macOS geometry is POINTS, the same space CGEvent
+  injection uses, so rects and cursor agree with zero scaling (Retina
+  `monitors` output reads half the physical pixels — correct, documented). Struct offsets in lib/monitors.ts were verified live on a
   real negative-origin dual-monitor box, and the fake-Ffi tests write buffers
   at those exact offsets. Selection semantics: default `primary` degrades to
   the old whole-screen behavior when detection fails (never regress, headless
@@ -501,9 +508,9 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
    where the game supports it), config persistence (last calibration method,
    smoothing, aspect), phone haptics on fire (`navigator.vibrate`).
    Distribution is done: `npm run build:sea` ships a single executable for
-   Windows and Linux, built and smoke-tested per-OS in CI, and
-   `npm run release` + a tag push publishes them as GitHub Release
-   artifacts (release.yml, 2026-08-12). Quality tracking: Codecov +
+   Windows, Linux and macOS/arm64 (2026-08-14), built and smoke-tested
+   per-OS in CI, and `npm run release` + a tag push publishes them as
+   GitHub Release artifacts (release.yml, 2026-08-12). Quality tracking: Codecov +
    SonarQube Cloud run in CI once the CODECOV_TOKEN/SONAR_TOKEN secrets
    exist; badges live in README and on /start/.
 
@@ -565,6 +572,17 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   not), and DENYING the prompt writes a permanent Block rule that
   suppresses future prompts for that binary. Troubleshooting documents the
   admin-PowerShell check/fix.
+- macOS SEA + TCC facts (2026-08-14): postject cannot modify a SIGNED
+  Mach-O, so build/sea.mjs strips the copied node binary's signature first,
+  injects with `--macho-segment-name NODE_SEA`, and re-signs AD-HOC — the
+  re-sign is mandatory (the kernel SIGKILLs unsigned arm64 binaries).
+  Consequences to never "fix" silently: downloaded binaries stay
+  Gatekeeper-quarantined (`xattr -d com.apple.quarantine`, documented), and
+  the ad-hoc cdhash changes per build so TCC re-asks for Accessibility
+  after EVERY update — only a paid Apple Developer ID removes that, and the
+  user decided against it. Accessibility is also invisible to code: libnut
+  loads and `check` passes while CGEventPost is silently dropped, which is
+  why `check` prints the permission hint even on success.
 - `--tunnel ngrok` publishes a socket that moves the mouse and presses keys to
   the public internet. Since the session key (2026-08-12) it is authenticated —
   `serve --tunnel ngrok` drops the loopback exemption so tunnel traffic must
@@ -658,6 +676,16 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   goes in `lib/` behind an injectable function (`exec`, `platform`) so both
   paths are unit-testable from either machine — never a bare `process.platform`
   check inline. CI runs the gates on both OSes.
+- **macOS (arm64) is a community-verified tier** (user decision 2026-08-14):
+  all CI gates run on macos-latest and block merges, an ad-hoc-signed SEA
+  binary ships per release, and darwin has full feature parity in code
+  (input via libnut-darwin, monitors via CoreGraphics, hotkey via
+  CGEventSourceKeyState, wifi via system_profiler). BUT the owner has no
+  Mac: end-to-end aim feel and the TCC permission flows are verified by
+  beta users, not locally — so darwin failures must always degrade
+  non-fatally, CI carries the real-hardware smoke (`monitors` runs real
+  CoreGraphics on the arm64 runner in validate AND in the SEA smoke), and
+  mac-only bug reports get a beta-checklist issue, not a blind fix.
 - `npm run validate` must pass before any change is done (husky enforces it
   on push); new logic ships with tests (coverage gate is 90%, don't game it
   with exclusions), prettier owns formatting, knip stays clean.
@@ -688,6 +716,7 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   (`feat:`/`fix:`/`docs:` for work outside a numbered phase).
 - **Trunk-based development (2026-08-12):** `main` is protected by the
   "trunk" GitHub ruleset — changes land through a short-lived branch and a
-  PR with the four CI checks green (`validate`/`sea` × ubuntu/windows);
-  squash-merge, delete the branch. The repo-admin role bypasses the ruleset
-  so `npm run release` (direct commit+tag on main) keeps working.
+  PR with the six CI checks green (`validate`/`sea` ×
+  ubuntu/windows/macos, since 2026-08-14); squash-merge, delete the
+  branch. The repo-admin role bypasses the ruleset so `npm run release`
+  (direct commit+tag on main) keeps working.

@@ -104,6 +104,30 @@ handy for watching what the phone sends without your cursor running away.
 that still ends in the crash above, which is why `auto` is the default. A
 machine with no display cannot drive a real cursor at any price.
 
+## macOS: "zsh: killed" or "cannot be opened because the developer cannot be verified"
+
+Gatekeeper quarantines downloaded binaries, and macOS may kill an ad-hoc
+signed one outright. Clear the quarantine attribute and re-run:
+
+```sh
+xattr -d com.apple.quarantine ./point-bang-*-macos-arm64
+chmod +x ./point-bang-*-macos-arm64
+```
+
+## macOS: `check` says input is ready but the cursor doesn't move
+
+That's TCC: macOS silently drops injected events until you grant
+**Accessibility** to the app that runs point-bang — your terminal (or the
+binary itself) under System Settings → Privacy & Security → Accessibility.
+Because releases are ad-hoc signed, **every update counts as a new app** and
+macOS asks again — expected, not a bug.
+
+## macOS: the pause hotkey does nothing
+
+Grant **Input Monitoring** to your terminal (System Settings → Privacy &
+Security → Input Monitoring) — recent macOS versions gate global key-state
+reads behind it. The general hotkey notes below apply too.
+
 ## Port already in use
 
 The server never fights another program for its port:

@@ -79,10 +79,13 @@ No Node, no build tools, no certificates — three steps:
    your Android phone; it tells you on the spot whether WebXR AR is
    supported (and how to fix it if not).
 2. **Run point-bang on the PC** — download the single executable for
-   Windows or Linux from
+   Windows, Linux or macOS (Apple Silicon) from
    [Releases](https://github.com/ggcaponetto/point-bang/releases) and run
    it. It prints a QR code. (Windows: accept the firewall prompt for
-   private networks.)
+   private networks. macOS: clear the download quarantine and grant
+   Accessibility — the
+   [guide](https://ggcaponetto.github.io/point-bang/guide/getting-started)
+   has the two commands.)
 3. **Scan, allow, play** — scan the QR with the phone, tap **Allow** on
    Chrome's one-time local-network prompt, calibrate on your three screen
    corners, and the PC cursor follows your aim. Aim data flows over a
@@ -187,8 +190,10 @@ is one Local-Network-Access fetch, and WebRTC brings its own encryption.
 - **Pause hotkey** — `shift+s` pauses tracking so the real mouse
   works, and resumes right where you left off; configurable, and never
   swallows the combo from the focused game.
-- **Windows and Linux, equally** — one yargs CLI, no bash-only syntax,
-  CI runs the whole suite on both.
+- **Windows and Linux, equally — and macOS (Apple Silicon)** — one yargs
+  CLI, no bash-only syntax, CI runs the whole suite on all three. macOS is
+  the community-verified tier: built and smoke-tested on Apple Silicon CI
+  every change, end-to-end aim verified by players.
 
 ## Project status
 

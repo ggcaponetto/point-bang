@@ -8,8 +8,8 @@
 //   git push origin main vX.Y.Z
 //
 // The tag push triggers .github/workflows/release.yml, which builds and
-// smoke-tests the Windows and Linux executables and attaches them to a
-// GitHub Release. A Node program, not shell built-ins — cmd/PS-safe.
+// smoke-tests the Windows, Linux and macOS (arm64) executables and attaches
+// them to a GitHub Release. A Node program, not shell built-ins — cmd/PS-safe.
 
 import { execSync } from "node:child_process";
 import fs from "node:fs";
