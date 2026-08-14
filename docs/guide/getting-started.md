@@ -12,7 +12,8 @@ over WiFi with no certificates or flags. See
 
 ## Requirements
 
-- **PC** — Windows or Linux. Either grab the
+- **PC** — Windows, Linux, or macOS (Apple Silicon; community-verified —
+  see the macOS tip below). Either grab the
   [single executable](#no-node-the-single-executable) (nothing else to
   install) or use **Node.js ≥ 23.6** with a checkout — the server is
   TypeScript run natively via type stripping, so there is no build step.
@@ -84,6 +85,30 @@ needs no firewall rule.
 Cursor injection uses X11's XTEST extension: install `libx11` and `libxtst`
 (`libxtst6` on Debian/Ubuntu). A Wayland session needs Xwayland.
 `point-bang check` tells you whether input is available.
+:::
+
+::: tip macOS (Apple Silicon)
+Four things macOS wants from you, all one-time (per update):
+
+1. **Quarantine** — a downloaded binary is blocked by Gatekeeper. Clear it
+   and make it executable:
+   ```sh
+   xattr -d com.apple.quarantine ./point-bang-*-macos-arm64
+   chmod +x ./point-bang-*-macos-arm64
+   ```
+2. **Accessibility** — the first cursor move triggers a prompt; grant it to
+   the terminal app running point-bang (System Settings → Privacy &
+   Security → Accessibility). Without it the cursor silently does not move
+   even though `point-bang check` says input is ready.
+3. **Every update re-asks** — the binaries are ad-hoc signed (no paid Apple
+   Developer account), so macOS treats each release as a new app and asks
+   for the permissions again.
+4. **Pause hotkey** — if `shift+s` does not react, additionally grant
+   **Input Monitoring** to the terminal.
+
+macOS support is community-verified: every release is built and
+smoke-tested on Apple Silicon CI, and end-to-end aim is verified by
+players — [reports welcome](https://github.com/ggcaponetto/point-bang/issues).
 :::
 
 ## Calibrate
