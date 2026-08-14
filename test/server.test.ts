@@ -8,6 +8,7 @@ import WebSocket from "ws";
 import { startServer, type RunningServer } from "../server.ts";
 import type { ChannelLike } from "../lib/rtc.ts";
 import type { MouseLike } from "../lib/cursor.ts";
+import type { LibNut } from "../lib/native.ts";
 import { lanIPv4 } from "../lib/net.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -1246,5 +1247,67 @@ describe("startServer session key", () => {
     expect(srv.key).toBe(KEY);
     expect(logs.join("\n")).toContain(`http://localhost:${srv.httpPort} on the phone`);
     expect(logs.join("\n")).not.toContain(`localhost:${srv.httpPort}#key=`);
+  });
+});
+
+describe("startServer input degrade (native addon unavailable)", () => {
+  // No injected devices here on purpose: these tests exercise the real
+  // setupInput device creation, with loadNative faked so the actual cursor
+  // is never touched and no real addon is ever loaded.
+  const failingLoad = async (): Promise<LibNut> => {
+    throw new Error("Cannot find module '@nut-tree-fork/libnut-darwin'\n  at require (…)");
+  };
+
+  async function bootBare(extra: Partial<Parameters<typeof startServer>[0]> = {}) {
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      publicDir: PUBLIC,
+      log: (l) => logs.push(l),
+      pauseCombo: "off",
+      platform: "darwin",
+      ...extra,
+    });
+    return { logs, srv: running };
+  }
+
+  it("auto input degrades to virtual devices and keeps serving aim", async () => {
+    const { logs, srv } = await bootBare({ loadNative: failingLoad });
+    const joined = logs.join("\n");
+    // the reason is the error's FIRST line only — the stack stays out
+    expect(joined).toContain(
+      "input: native addon unavailable (Cannot find module '@nut-tree-fork/libnut-darwin') — falling back to VIRTUAL",
+    );
+    expect(joined).toContain("assuming a 1920x1080 screen");
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0.5, v: 0.5, t: Date.now(), q: 1 }));
+    await until(() => logs.some((l) => l.startsWith("aim ")));
+    ws.close();
+  });
+
+  it("explicit --input native still fails loudly", async () => {
+    await expect(bootBare({ loadNative: failingLoad, input: "native" })).rejects.toThrow(
+      "Cannot find module '@nut-tree-fork/libnut-darwin'",
+    );
+  });
+
+  it("uses the native devices when the addon loads", async () => {
+    const calls: string[] = [];
+    const lib = {
+      setMouseDelay: () => calls.push("setMouseDelay"),
+      setKeyboardDelay: () => calls.push("setKeyboardDelay"),
+      moveMouse: (x: number, y: number) => calls.push(`move:${x},${y}`),
+      mouseClick: () => calls.push("click"),
+      mouseToggle: () => calls.push("toggle"),
+      keyToggle: () => calls.push("key"),
+      getScreenSize: () => ({ width: 800, height: 600 }),
+    } as LibNut;
+    const { logs, srv } = await bootBare({ loadNative: async () => lib });
+    expect(logs.join("\n")).not.toContain("VIRTUAL");
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0, v: 0, t: Date.now(), q: 1 }));
+    await until(() => calls.some((c) => c.startsWith("move:")));
+    expect(calls).toContain("move:0,0");
+    ws.close();
   });
 });

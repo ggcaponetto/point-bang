@@ -64,13 +64,21 @@ async function checkInput(d: CheckDeps, platform: string): Promise<void> {
     const nut = await (d.loadNative ?? (() => loadLibNut(VERSION)))();
     const s = nut.getScreenSize();
     d.log(`input: ready — screen ${s.width}x${s.height}`);
+    if (platform === "darwin")
+      d.log(
+        "input: macOS asks once for Accessibility permission (System Settings > Privacy & Security) — without it the cursor will not move even though this check passes",
+      );
   } catch (e) {
     d.log(`input: UNAVAILABLE — ${(e as Error).message}`);
-    d.log(
-      platform === "linux"
-        ? "input: Linux needs an X11 session with XTEST (install libx11 and libxtst; Wayland must run Xwayland)."
-        : "input: the native addon could not be loaded — see the troubleshooting guide.",
-    );
+    if (platform === "linux")
+      d.log(
+        "input: Linux needs an X11 session with XTEST (install libx11 and libxtst; Wayland must run Xwayland).",
+      );
+    else if (platform === "darwin")
+      d.log(
+        "input: a downloaded binary may be blocked by macOS quarantine — run: xattr -d com.apple.quarantine <file>",
+      );
+    else d.log("input: the native addon could not be loaded — see the troubleshooting guide.");
   }
 }
 
