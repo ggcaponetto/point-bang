@@ -508,9 +508,9 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
    where the game supports it), config persistence (last calibration method,
    smoothing, aspect), phone haptics on fire (`navigator.vibrate`).
    Distribution is done: `npm run build:sea` ships a single executable for
-   Windows, Linux and macOS/arm64 (2026-08-14), built and smoke-tested
-   per-OS in CI, and `npm run release` + a tag push publishes them as
-   GitHub Release artifacts (release.yml, 2026-08-12). Quality tracking: Codecov +
+   Windows, Linux and macOS (arm64 + x64, 2026-08-14), built and
+   smoke-tested per-OS in CI, and `npm run release` + a tag push publishes
+   them as GitHub Release artifacts (release.yml, 2026-08-12). Quality tracking: Codecov +
    SonarQube Cloud run in CI once the CODECOV_TOKEN/SONAR_TOKEN secrets
    exist; badges live in README and on /start/.
 
@@ -676,15 +676,22 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   goes in `lib/` behind an injectable function (`exec`, `platform`) so both
   paths are unit-testable from either machine — never a bare `process.platform`
   check inline. CI runs the gates on both OSes.
-- **macOS (arm64) is a community-verified tier** (user decision 2026-08-14):
-  all CI gates run on macos-latest and block merges, an ad-hoc-signed SEA
-  binary ships per release, and darwin has full feature parity in code
-  (input via libnut-darwin, monitors via CoreGraphics, hotkey via
-  CGEventSourceKeyState, wifi via system_profiler). BUT the owner has no
+- **macOS (arm64 AND x64) is a community-verified tier** (user decision
+  2026-08-14; x64 added same day — the owner's 2018 i9 Mac): all CI gates
+  run on macos-latest and block merges, ad-hoc-signed SEA binaries ship
+  per release (`macos-arm64` + `macos-x64`), and darwin has full feature
+  parity in code (input via libnut-darwin, monitors via CoreGraphics,
+  hotkey via CGEventSourceKeyState, wifi via system_profiler). Intel is
+  **sea-job-only** in CI: the TS darwin paths are arch-independent and
+  validate on the arm64 leg; what differs per arch (native prebuilds,
+  SEA codesign pipeline) is exactly the sea job, built on
+  `macos-15-intel` — GitHub's LAST x64 image, retired August 2027, when
+  the Intel artifact dies with it. BUT the owner has no
   Mac: end-to-end aim feel and the TCC permission flows are verified by
   beta users, not locally — so darwin failures must always degrade
   non-fatally, CI carries the real-hardware smoke (`monitors` runs real
-  CoreGraphics on the arm64 runner in validate AND in the SEA smoke), and
+  CoreGraphics on the arm64 runner in validate AND in the SEA smoke on
+  both arches), and
   mac-only bug reports get a beta-checklist issue, not a blind fix.
 - `npm run validate` must pass before any change is done (husky enforces it
   on push); new logic ships with tests (coverage gate is 90%, don't game it
@@ -723,7 +730,7 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   (`feat:`/`fix:`/`docs:` for work outside a numbered phase).
 - **Trunk-based development (2026-08-12):** `main` is protected by the
   "trunk" GitHub ruleset — changes land through a short-lived branch and a
-  PR with the six CI checks green (`validate`/`sea` ×
-  ubuntu/windows/macos, since 2026-08-14); squash-merge, delete the
-  branch. The repo-admin role bypasses the ruleset so `npm run release`
-  (direct commit+tag on main) keeps working.
+  PR with the seven CI checks green (`validate` × ubuntu/windows/macos +
+  `sea` × those three and macos-15-intel, since 2026-08-14);
+  squash-merge, delete the branch. The repo-admin role bypasses the
+  ruleset so `npm run release` (direct commit+tag on main) keeps working.

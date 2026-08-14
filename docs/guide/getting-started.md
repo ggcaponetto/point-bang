@@ -12,7 +12,8 @@ over WiFi with no certificates or flags. See
 
 ## Requirements
 
-- **PC** — Windows, Linux, or macOS (Apple Silicon; community-verified —
+- **PC** — Windows, Linux, or macOS (Apple Silicon `macos-arm64` or Intel
+  `macos-x64`; community-verified —
   see the macOS tip below). Either grab the
   [single executable](#no-node-the-single-executable) (nothing else to
   install) or use **Node.js ≥ 23.6** with a checkout — the server is
@@ -87,14 +88,16 @@ Cursor injection uses X11's XTEST extension: install `libx11` and `libxtst`
 `point-bang check` tells you whether input is available.
 :::
 
-::: tip macOS (Apple Silicon)
-Four things macOS wants from you, all one-time (per update):
+::: tip macOS
+Grab `macos-arm64` for Apple Silicon (any Mac since 2020) or `macos-x64`
+for Intel Macs. Four things macOS wants from you, all one-time (per
+update):
 
 1. **Quarantine** — a downloaded binary is blocked by Gatekeeper. Clear it
    and make it executable:
    ```sh
-   xattr -d com.apple.quarantine ./point-bang-*-macos-arm64
-   chmod +x ./point-bang-*-macos-arm64
+   xattr -d com.apple.quarantine ./point-bang-*-macos-*
+   chmod +x ./point-bang-*-macos-*
    ```
 2. **Accessibility** — the first cursor move triggers a prompt; grant it to
    the terminal app running point-bang (System Settings → Privacy &
@@ -107,8 +110,9 @@ Four things macOS wants from you, all one-time (per update):
    **Input Monitoring** to the terminal.
 
 macOS support is community-verified: every release is built and
-smoke-tested on Apple Silicon CI, and end-to-end aim is verified by
-players — [reports welcome](https://github.com/ggcaponetto/point-bang/issues).
+smoke-tested on real macOS CI (arm64 and x64), and end-to-end aim is
+verified by players —
+[reports welcome](https://github.com/ggcaponetto/point-bang/issues).
 :::
 
 ## Calibrate

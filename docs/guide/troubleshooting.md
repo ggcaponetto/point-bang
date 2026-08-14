@@ -110,8 +110,8 @@ Gatekeeper quarantines downloaded binaries, and macOS may kill an ad-hoc
 signed one outright. Clear the quarantine attribute and re-run:
 
 ```sh
-xattr -d com.apple.quarantine ./point-bang-*-macos-arm64
-chmod +x ./point-bang-*-macos-arm64
+xattr -d com.apple.quarantine ./point-bang-*-macos-*
+chmod +x ./point-bang-*-macos-*
 ```
 
 ## macOS: `check` says input is ready but the cursor doesn't move

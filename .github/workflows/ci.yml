@@ -10,8 +10,9 @@ jobs:
   validate:
     # Windows is the primary play target and Linux is the primary dev box —
     # both must stay green (CRLF, path separators, native addon loading).
-    # macOS (arm64) is the community-verified tier: same gates, beta-tested
-    # end-to-end (the owner has no Mac hardware).
+    # macOS (arm64 here; x64 in the sea job) is the community-verified
+    # tier: same gates, beta-tested end-to-end (the owner has no Mac
+    # hardware).
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +73,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macos-15-intel gates the x64 macOS artifact (user's 2018 i9 Mac).
+        # Intel is sea-only: the TS code paths are arch-independent and run
+        # in validate on macos-latest (arm64); what differs per arch is the
+        # native prebuilds + SEA pipeline, which is exactly this job. NOTE:
+        # GitHub retires its last x64 macOS image (macos-15-intel) in
+        # August 2027 — the Intel artifact dies with it.
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
