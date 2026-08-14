@@ -23,7 +23,8 @@ npm run monitors                 # list monitors + the indices --monitor takes
 npm start -- --monitor 2         # aim at monitor 2; 'all' spans every monitor
 npm run format / format:check    # prettier (printWidth 100)
 npm run knip                     # unused files/exports/deps — keep it clean
-npm run validate                 # format:check + typecheck + knip + test + editor validate
+npm run loc                      # LOC budget gate: FAILS above 50k non-blank source lines
+npm run validate                 # format:check + typecheck + knip + loc + test + editor validate
 npm run build:editor             # editor workspace -> public/editor.html (serve auto-runs it)
 npm run -w editor dev            # editor dev server (proxies /buttons* to :8443)
 npm run -w editor test           # editor vitest (jsdom; model/i18n gated at 90%)
@@ -660,6 +661,18 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 - `npm run validate` must pass before any change is done (husky enforces it
   on push); new logic ships with tests (coverage gate is 90%, don't game it
   with exclusions), prettier owns formatting, knip stays clean.
+- **50k LOC budget** (user decision 2026-08-14): the whole repo must stay
+  maintainable by a solo developer, capped at 50,000 non-blank lines across
+  git-tracked source files (ts/tsx/js/mjs/html/css — generated files don't
+  count because they aren't tracked). `npm run loc` (build/loc.mjs) prints
+  the per-directory breakdown and FAILS above the budget; it runs inside
+  `validate`, so CI and the pre-push hook enforce it. Nearing the budget
+  means deleting or simplifying, not raising the number — raising it is a
+  user decision. Don't game the count by moving logic into uncounted
+  extensions (json/md/yml). The README's "Lines of Code" badge is
+  SonarCloud's ncloc measure — a slightly different count (Sonar excludes
+  comments and only counts what it analyzes), fine for display; the gate is
+  the authority.
 - Keep the phone page functional without a build step until Phase 6.
 - Protocol changes are additive only; bump a `"v"` field if semantics change.
 - Prefer measured numbers over assumptions: when touching latency-relevant
