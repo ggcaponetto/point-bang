@@ -93,12 +93,16 @@ Grab `macos-arm64` for Apple Silicon (any Mac since 2020) or `macos-x64`
 for Intel Macs. Four things macOS wants from you, all one-time (per
 update):
 
-1. **Quarantine** — a downloaded binary is blocked by Gatekeeper. Clear it
-   and make it executable:
+1. **Exec bit + quarantine** — downloads lose the executable bit
+   ("permission denied", or "command not found" under `sudo`) and carry
+   Gatekeeper's quarantine ("zsh: killed" / "cannot be verified"). No
+   `sudo` needed for either:
    ```sh
-   xattr -d com.apple.quarantine ./point-bang-*-macos-*
    chmod +x ./point-bang-*-macos-*
+   xattr -d com.apple.quarantine ./point-bang-*-macos-*
    ```
+   ("No such xattr" just means it wasn't quarantined. Still blocked? See
+   [troubleshooting](./troubleshooting#macos-the-downloaded-binary-won-t-start).)
 2. **Accessibility** — the first cursor move triggers a prompt; grant it to
    the terminal app running point-bang (System Settings → Privacy &
    Security → Accessibility). Without it the cursor silently does not move

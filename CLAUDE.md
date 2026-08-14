@@ -576,13 +576,22 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   Mach-O, so build/sea.mjs strips the copied node binary's signature first,
   injects with `--macho-segment-name NODE_SEA`, and re-signs AD-HOC — the
   re-sign is mandatory (the kernel SIGKILLs unsigned arm64 binaries).
-  Consequences to never "fix" silently: downloaded binaries stay
-  Gatekeeper-quarantined (`xattr -d com.apple.quarantine`, documented), and
+  Consequences to never "fix" silently: raw binary downloads lose the exec
+  bit (browsers strip it — "permission denied", and `sudo` misreports it as
+  "command not found"; `chmod +x`, documented — verified by the owner's
+  Intel-Mac download 2026-08-14), they stay Gatekeeper-quarantined
+  (`xattr -d com.apple.quarantine`, documented), and
   the ad-hoc cdhash changes per build so TCC re-asks for Accessibility
   after EVERY update — only a paid Apple Developer ID removes that, and the
   user decided against it. Accessibility is also invisible to code: libnut
   loads and `check` passes while CGEventPost is silently dropped, which is
-  why `check` prints the permission hint even on success.
+  why `check` prints the permission hint even on success. Same silence for
+  the pause hotkey: Input Monitoring denial makes `CGEventSourceKeyState`
+  read false forever with no error, so `serve` AND `check` both print the
+  Input Monitoring hint on darwin (the beta checklist step 7 verifies the
+  hotkey on real hardware — kVK table + FFI signature are unit-tested and
+  the real CoreGraphics binding is exercised by `check` in the CI smoke,
+  but a key actually pressed can only be seen by a human).
 - `--tunnel ngrok` publishes a socket that moves the mouse and presses keys to
   the public internet. Since the session key (2026-08-12) it is authenticated —
   `serve --tunnel ngrok` drops the loopback exemption so tunnel traffic must

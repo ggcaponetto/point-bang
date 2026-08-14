@@ -323,6 +323,13 @@ async function setupPauseHotkey(
     return null;
   }
   log(`pause hotkey: ${pauseCombo} toggles tracking (the game still receives the combo)`);
+  // An armed probe can still read false forever on macOS: TCC gates global
+  // key state behind Input Monitoring and denial is invisible to code — the
+  // combo just never reacts. Say so at serve time, not only in `check`.
+  if ((opts.platform ?? process.platform) === "darwin")
+    log(
+      "pause hotkey: if the combo does not react, grant Input Monitoring to your terminal (System Settings > Privacy & Security)",
+    );
   return watchCombo(probe, onToggle, 25, (e) => log(`pause hotkey: stopped — ${e.message}`));
 }
 

@@ -104,15 +104,32 @@ handy for watching what the phone sends without your cursor running away.
 that still ends in the crash above, which is why `auto` is the default. A
 machine with no display cannot drive a real cursor at any price.
 
-## macOS: "zsh: killed" or "cannot be opened because the developer cannot be verified"
+## macOS: the downloaded binary won't start
 
-Gatekeeper quarantines downloaded binaries, and macOS may kill an ad-hoc
-signed one outright. Clear the quarantine attribute and re-run:
+Two separate blocks stand between a fresh download and a running binary, and
+neither needs `sudo`. Each has its own symptom:
+
+- **"permission denied" — or even `sudo: point-bang-…: command not found`** —
+  browsers don't preserve the executable bit on downloads. (`sudo` reports
+  "command not found" because it can't _exec_ the file, which is misleading.)
+- **"zsh: killed" or "cannot be opened because the developer cannot be
+  verified"** — Gatekeeper's quarantine attribute on downloaded files; macOS
+  may kill an ad-hoc signed binary outright.
+
+Both fixes, in order:
 
 ```sh
-xattr -d com.apple.quarantine ./point-bang-*-macos-*
 chmod +x ./point-bang-*-macos-*
+xattr -d com.apple.quarantine ./point-bang-*-macos-*
+./point-bang-*-macos-*
 ```
+
+If `xattr` says "No such xattr", the file simply wasn't quarantined — move
+on. If macOS still refuses after that, open **System Settings → Privacy &
+Security**, scroll down, and click the **Open Anyway** button naming the
+binary. Still stuck? Confirm you grabbed the right architecture:
+`file ./point-bang-*-macos-*` must say `arm64` on Apple Silicon and
+`x86_64` on an Intel Mac.
 
 ## macOS: `check` says input is ready but the cursor doesn't move
 
@@ -126,7 +143,9 @@ macOS asks again — expected, not a bug.
 
 Grant **Input Monitoring** to your terminal (System Settings → Privacy &
 Security → Input Monitoring) — recent macOS versions gate global key-state
-reads behind it. The general hotkey notes below apply too.
+reads behind it, and a denial is invisible to the server: the hotkey arms
+normally and just never reacts, which is why the startup log carries this
+hint on macOS. The general hotkey notes below apply too.
 
 ## Port already in use
 

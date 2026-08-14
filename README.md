@@ -82,8 +82,8 @@ No Node, no build tools, no certificates — three steps:
    Windows, Linux or macOS (Apple Silicon or Intel) from
    [Releases](https://github.com/ggcaponetto/point-bang/releases) and run
    it. It prints a QR code. (Windows: accept the firewall prompt for
-   private networks. macOS: clear the download quarantine and grant
-   Accessibility — the
+   private networks. macOS: make the download executable, clear its
+   quarantine and grant Accessibility — the
    [guide](https://ggcaponetto.github.io/point-bang/guide/getting-started)
    has the two commands.)
 3. **Scan, allow, play** — scan the QR with the phone, tap **Allow** on
