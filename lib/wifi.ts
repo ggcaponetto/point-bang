@@ -6,7 +6,10 @@
  * translation, the channel label is matched across common locales). Linux
  * prefers `nmcli` (terse mode is locale-independent) and falls back to
  * `iw dev`. Both Linux tools report the frequency in MHz, which pins the band
- * exactly instead of inferring it from the channel number.
+ * exactly instead of inferring it from the channel number. macOS reads
+ * `system_profiler SPAirPortDataType -json` — the JSON keys are stable
+ * identifiers regardless of system language (the legacy `airport -I` tool
+ * was removed in macOS 14.4, and `wdutil info` needs sudo).
  *
  * @module
  */
@@ -108,6 +111,58 @@ export function parseIwDev(output: string): WifiReport {
 }
 
 /**
+ * Parses `system_profiler SPAirPortDataType -json` (macOS). An interface
+ * carrying `spairport_current_network_information` with a `_name` is the
+ * "associated" signal (the status string wording varies across majors, so it
+ * is deliberately not required). The channel value looks like
+ * `"44 (5GHz, 80MHz)"` — the parenthetical pins the band (Apple abbreviates
+ * 2.4 as plain "2" on some versions); a bare channel number falls back to
+ * `bandFromChannel`. Any shape miss degrades to disconnected/unknown, never
+ * a crash — the output format is Apple's to change.
+ */
+export function parseAirportJson(output: string): WifiReport {
+  let root: unknown;
+  try {
+    root = JSON.parse(output);
+  } catch {
+    return { connected: false, error: "unexpected system_profiler output" };
+  }
+  const sections = (root as { SPAirPortDataType?: unknown[] }).SPAirPortDataType;
+  if (!Array.isArray(sections))
+    return { connected: false, error: "unexpected system_profiler output" };
+  for (const section of sections) {
+    const ifaces = (section as { spairport_airport_interfaces?: unknown[] })
+      .spairport_airport_interfaces;
+    if (!Array.isArray(ifaces)) continue;
+    for (const iface of ifaces) {
+      const info = (iface as Record<string, unknown>).spairport_current_network_information as
+        Record<string, unknown> | undefined;
+      if (!info || typeof info._name !== "string") continue;
+      const ssid = info._name;
+      const chanRaw =
+        typeof info.spairport_network_channel === "string" ? info.spairport_network_channel : "";
+      // bounded, anchored: "44 (5GHz, 80MHz)" / "6 (2GHz, 20MHz)" / bare "44"
+      const m = /^(\d{1,5})(?: \((\d{1,2}(?:\.\d)?)GHz)?/.exec(chanRaw);
+      const channel = m ? m[1] : null;
+      const ghz = m?.[2];
+      const band = ghz
+        ? ghz.startsWith("2")
+          ? "2.4 GHz"
+          : `${ghz} GHz`
+        : channel
+          ? bandFromChannel(+channel)
+          : null;
+      const signal =
+        typeof info.spairport_signal_noise === "string"
+          ? (/-\d{1,3} dBm/.exec(info.spairport_signal_noise)?.[0] ?? null)
+          : null;
+      return { connected: true, ssid, band, channel, signal };
+    }
+  }
+  return { connected: false };
+}
+
+/**
  * Runs the right probe for `platform`.
  * @returns The report, or `null` on a platform with no implementation.
  */
@@ -132,6 +187,13 @@ function probeWifi(exec: (cmd: string) => string, platform: string): WifiReport 
       return { connected: false, error: "no WiFi info — install NetworkManager (nmcli) or iw" };
     }
   }
+  if (platform === "darwin") {
+    try {
+      return parseAirportJson(exec("system_profiler SPAirPortDataType -json"));
+    } catch {
+      return { connected: false, error: "system_profiler failed — is there a WiFi adapter?" };
+    }
+  }
   return null;
 }
 
@@ -146,7 +208,7 @@ export function wifiMain(
 ): number {
   const report = probeWifi(exec, platform);
   if (!report) {
-    log("Band check is implemented for Windows and Linux — check your OS WiFi settings.");
+    log("Band check is implemented for Windows, macOS and Linux — check your OS WiFi settings.");
     return 0;
   }
   for (const line of renderWifiReport(report)) log(line);

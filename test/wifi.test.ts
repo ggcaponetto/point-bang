@@ -3,6 +3,7 @@ import {
   parseNetsh,
   parseNmcli,
   parseIwDev,
+  parseAirportJson,
   renderWifiReport,
   bandFromChannel,
   bandFromMHz,
@@ -171,6 +172,56 @@ describe("parseIwDev", () => {
   });
 });
 
+// system_profiler -json shapes: connected 5 GHz, connected 2.4 GHz (Apple
+// abbreviates it "2GHz"), and an interface with no current network.
+const airport = (info: object | undefined) =>
+  JSON.stringify({
+    SPAirPortDataType: [
+      {
+        spairport_airport_interfaces: [
+          { _name: "en0", ...(info ? { spairport_current_network_information: info } : {}) },
+        ],
+      },
+    ],
+  });
+
+describe("parseAirportJson", () => {
+  it("reads ssid, channel, band and signal from a connected interface", () => {
+    expect(
+      parseAirportJson(
+        airport({
+          _name: "HomeNet",
+          spairport_network_channel: "44 (5GHz, 80MHz)",
+          spairport_signal_noise: "-55 dBm / -92 dBm",
+        }),
+      ),
+    ).toEqual({
+      connected: true,
+      ssid: "HomeNet",
+      band: "5 GHz",
+      channel: "44",
+      signal: "-55 dBm",
+    });
+  });
+  it('maps Apple\'s "2GHz" to 2.4 GHz and tolerates a bare channel number', () => {
+    const two = parseAirportJson(
+      airport({ _name: "N", spairport_network_channel: "6 (2GHz, 20MHz)" }),
+    );
+    expect(two.band).toBe("2.4 GHz");
+    const bare = parseAirportJson(airport({ _name: "N", spairport_network_channel: "149" }));
+    expect(bare.band).toBe("5 GHz"); // bandFromChannel fallback
+    expect(bare.signal).toBeNull();
+  });
+  it("reports disconnected when no interface carries network info", () => {
+    expect(parseAirportJson(airport(undefined))).toEqual({ connected: false });
+  });
+  it("degrades on garbage or unexpected shapes, never throws", () => {
+    expect(parseAirportJson("not json").error).toContain("unexpected");
+    expect(parseAirportJson("{}").error).toContain("unexpected");
+    expect(parseAirportJson('{"SPAirPortDataType":[{}]}')).toEqual({ connected: false });
+  });
+});
+
 describe("wifiMain", () => {
   it("says so on a platform with no implementation", () => {
     const out: string[] = [];
@@ -178,10 +229,37 @@ describe("wifiMain", () => {
       wifiMain(
         () => "",
         (l) => out.push(l),
-        "darwin",
+        "freebsd",
       ),
     ).toBe(0);
-    expect(out[0]).toContain("Windows and Linux");
+    expect(out[0]).toContain("Windows, macOS and Linux");
+  });
+  it("uses system_profiler on macOS and reports its failure", () => {
+    const out: string[] = [];
+    const cmds: string[] = [];
+    const code = wifiMain(
+      (c) => {
+        cmds.push(c);
+        return airport({ _name: "HomeNet", spairport_network_channel: "44 (5GHz, 80MHz)" });
+      },
+      (l) => out.push(l),
+      "darwin",
+    );
+    expect(code).toBe(0);
+    expect(cmds[0]).toContain("system_profiler SPAirPortDataType -json");
+    expect(out[0]).toBe("SSID:    HomeNet");
+
+    const failing: string[] = [];
+    expect(
+      wifiMain(
+        () => {
+          throw new Error("spawn failed");
+        },
+        (l) => failing.push(l),
+        "darwin",
+      ),
+    ).toBe(1);
+    expect(failing[0]).toContain("system_profiler failed");
   });
   it("uses nmcli on Linux", () => {
     const out: string[] = [];
