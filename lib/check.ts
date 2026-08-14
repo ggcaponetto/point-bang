@@ -91,6 +91,10 @@ async function checkHotkey(d: CheckDeps, platform: string): Promise<void> {
     d.log(
       r.probe ? "pause hotkey: ready (default shift+s)" : `pause hotkey: unavailable — ${r.reason}`,
     );
+    if (platform === "darwin" && r.probe)
+      d.log(
+        "pause hotkey: if the combo does not react, grant Input Monitoring to your terminal (System Settings > Privacy & Security)",
+      );
   } catch (e) {
     d.log(`pause hotkey: unavailable — ${(e as Error).message}`);
   }
