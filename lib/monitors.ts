@@ -6,13 +6,17 @@ import { VERSION } from "./version.ts";
  * Monitor enumeration: which pixel rectangles exist, so `--monitor` can aim
  * at one of them (or at the bounding box of all of them).
  *
- * libnut only knows the primary screen, so the geometry comes from the two
+ * libnut only knows the primary screen, so the geometry comes from the
  * sanctioned platform channels: on Windows the koffi FFI already loaded for
  * the pause hotkey (`EnumDisplayDevicesW` + `EnumDisplaySettingsExW` with
- * Buffer out-params — no koffi callbacks, unlike `EnumDisplayMonitors`), and
- * on Linux a locale-independent `xrandr --query` shell-out, exactly like
- * `lib/wifi`. Capability absence degrades with a reason, never a crash; the
- * caller decides whether a missing monitor is fatal (see `selectMonitor`).
+ * Buffer out-params — no koffi callbacks, unlike `EnumDisplayMonitors`), on
+ * Linux a locale-independent `xrandr --query` shell-out, exactly like
+ * `lib/wifi`, and on macOS CoreGraphics through the same koffi (see
+ * `detectDarwin` for the units caveat: everything there is POINTS, which is
+ * also the space CGEvent injection uses — consistent, just not physical
+ * pixels on Retina). Capability absence degrades with a reason, never a
+ * crash; the caller decides whether a missing monitor is fatal (see
+ * `selectMonitor`).
  *
  * @module
  */
@@ -211,6 +215,67 @@ export function detectWin32(ffi: Ffi): MonitorRect[] {
   return monitors;
 }
 
+// ---------- macOS: CoreGraphics via koffi ----------
+
+// dyld resolves frameworks from the shared cache — this path has not existed
+// on disk since Big Sur, but dlopen (and therefore koffi's load) still works.
+const CORE_GRAPHICS = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics";
+const MAX_DISPLAYS = 16; // CGGetActiveDisplayList caps its writes at this
+
+/**
+ * Enumerates active displays via CGGetActiveDisplayList + CGDisplayBounds.
+ *
+ * Units: CGDisplayBounds returns POINTS in the global display space (top-left
+ * origin, y-down — same handedness as Windows), and libnut's darwin
+ * `moveMouse`/`getScreenSize` live in that same space, so every rect here is
+ * consistent with injection with no scaling anywhere. On Retina that means
+ * e.g. 1512x982, not the physical 3024x1964 — correct, just surprising in
+ * the `monitors` listing.
+ *
+ * CGRect comes back BY VALUE, which needs a registered koffi struct type —
+ * the one place the minimal `Ffi` surface grew (`struct`, still no
+ * callbacks). The ids buffer is a packed uint32[16] (entry i at byte i*4,
+ * LE), the count a single uint32 at offset 0 — the test fake writes at
+ * exactly these offsets.
+ */
+export function detectDarwin(ffi: Ffi): MonitorRect[] {
+  if (!ffi.struct) throw new Error("FFI cannot register CGRect (koffi.struct missing)");
+  try {
+    ffi.struct("CGPoint", { x: "double", y: "double" });
+    ffi.struct("CGSize", { width: "double", height: "double" });
+    ffi.struct("CGRect", { origin: "CGPoint", size: "CGSize" });
+  } catch {
+    // koffi type names are process-global and re-registering throws — an
+    // earlier call in this process already did the work.
+  }
+  const cg = ffi.load(CORE_GRAPHICS);
+  const list = cg.func("CGGetActiveDisplayList", "int32", ["uint32", "uint8_t *", "uint8_t *"]);
+  const bounds = cg.func("CGDisplayBounds", "CGRect", ["uint32"]);
+  const mainId = cg.func("CGMainDisplayID", "uint32", []);
+  const builtin = cg.func("CGDisplayIsBuiltin", "int32", ["uint32"]);
+  const ids = Buffer.alloc(4 * MAX_DISPLAYS);
+  const count = Buffer.alloc(4);
+  if (list(MAX_DISPLAYS, ids, count) !== 0) return []; // anything but kCGErrorSuccess
+  const main = mainId() as number;
+  const monitors: MonitorRect[] = [];
+  for (let i = 0; i < Math.min(count.readUInt32LE(0), MAX_DISPLAYS); i++) {
+    const id = ids.readUInt32LE(i * 4);
+    const r = bounds(id) as {
+      origin: { x: number; y: number };
+      size: { width: number; height: number };
+    };
+    monitors.push({
+      x: Math.round(r.origin.x), // signed: left of/above the main display < 0
+      y: Math.round(r.origin.y),
+      w: Math.round(r.size.width),
+      h: Math.round(r.size.height),
+      primary: id === main,
+      label: builtin(id) ? "built-in" : `display ${id}`,
+    });
+  }
+  return monitors;
+}
+
 // ---------- dispatch ----------
 
 /** Injection points, mirroring `lib/wifi` (exec) and `lib/check` (loadFfi). */
@@ -247,6 +312,15 @@ export async function detectMonitors(deps: MonitorDeps = {}): Promise<MonitorsRe
         monitors: [],
         reason: `xrandr unavailable (${firstLine(e)}) — an X11/Xwayland session is needed`,
       };
+    }
+  }
+  if (platform === "darwin") {
+    try {
+      const ffi = await (deps.loadFfi ?? (() => loadKoffi(VERSION)))();
+      const monitors = detectDarwin(ffi);
+      return { monitors, reason: monitors.length ? null : "CoreGraphics reported no displays" };
+    } catch (e) {
+      return { monitors: [], reason: `monitor detection failed — ${firstLine(e)}` };
     }
   }
   return { monitors: [], reason: `monitor detection not implemented on ${platform}` };
