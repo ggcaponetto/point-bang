@@ -16,11 +16,12 @@ partial reports are welcome.
 [Releases](https://github.com/ggcaponetto/point-bang/releases), then:
 
 ```sh
-xattr -d com.apple.quarantine ./point-bang-*-macos-*
 chmod +x ./point-bang-*-macos-*
+xattr -d com.apple.quarantine ./point-bang-*-macos-*
 ```
 
-Did the binary start? (If "zsh: killed" or a Gatekeeper dialog, say so.)
+Did the binary start? (If "zsh: killed", "permission denied" or a Gatekeeper
+dialog, say so — and whether Privacy & Security's "Open Anyway" was needed.)
 
 **2. `./point-bang check`** — paste the full output:
 

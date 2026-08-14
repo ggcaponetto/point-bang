@@ -684,6 +684,22 @@ describe("startServer pause hotkey", () => {
     ws.close();
   });
 
+  it("darwin: prints the Input Monitoring hint when the hotkey arms (TCC denial is silent)", async () => {
+    const f = fakeMouse();
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      publicDir: PUBLIC,
+      mouse: f.mouse,
+      keyboard: fakeKeyboard().keyboard,
+      log: (l) => logs.push(l),
+      pauseProbe: { down: () => false },
+      platform: "darwin",
+    });
+    expect(logs.some((l) => l.includes("shift+s toggles tracking"))).toBe(true);
+    expect(logs.some((l) => l.includes("Input Monitoring"))).toBe(true);
+  });
+
   it("disables the hotkey on an unrecognized combo, even with a probe injected", async () => {
     const { logs } = await bootPaused({ down: () => true }, "sift+space");
     expect(logs.some((l) => l.includes('unrecognized combo "sift+space"'))).toBe(true);
