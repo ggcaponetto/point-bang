@@ -49,6 +49,7 @@
     "node": ">=23.6"
   },
   "dependencies": {
+    "@nut-tree-fork/libnut-darwin": "^2.7.5",
     "@nut-tree-fork/libnut-linux": "^2.7.5",
     "@nut-tree-fork/libnut-win32": "^2.7.5",
     "koffi": "^3.1.4",
