@@ -5,6 +5,7 @@ import {
   selectMonitor,
   parseXrandr,
   detectWin32,
+  detectDarwin,
   detectMonitors,
   formatMonitorsReport,
   monitorsMain,
@@ -183,7 +184,117 @@ describe("detectWin32", () => {
   });
 });
 
+// ---------- macOS fake: id/count buffers filled at the documented offsets ----------
+
+interface FakeDisplay {
+  id: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  builtin?: boolean;
+}
+
+/** An Ffi whose CoreGraphics writes the uint32 id array / count like the real one. */
+function darwinFfi(
+  displays: FakeDisplay[],
+  opts: { main?: number; cgError?: boolean; structThrows?: boolean } = {},
+): Ffi & { structs: string[] } {
+  const structs: string[] = [];
+  return {
+    structs,
+    struct: (name: string) => {
+      if (opts.structThrows) throw new Error(`duplicate type name '${name}'`);
+      structs.push(name);
+      return {};
+    },
+    load: (p: string) => {
+      expect(p).toContain("CoreGraphics.framework");
+      return {
+        func: (...spec: Array<string | string[]>) => {
+          const name = spec[0] as string;
+          if (name === "CGGetActiveDisplayList")
+            return (...args: unknown[]) => {
+              const [max, ids, count] = args as [number, Buffer, Buffer];
+              if (opts.cgError) return 1000; // kCGErrorFailure
+              const n = Math.min(displays.length, max);
+              for (let i = 0; i < n; i++) ids.writeUInt32LE(displays[i].id, i * 4);
+              count.writeUInt32LE(n, 0);
+              return 0;
+            };
+          if (name === "CGDisplayBounds") {
+            expect(spec[1]).toBe("CGRect"); // by-value struct return — the point of Ffi.struct
+            return (...args: unknown[]) => {
+              const d = displays.find((x) => x.id === (args[0] as number))!;
+              return { origin: { x: d.x, y: d.y }, size: { width: d.w, height: d.h } };
+            };
+          }
+          if (name === "CGMainDisplayID") return () => opts.main ?? displays[0]?.id ?? 0;
+          if (name === "CGDisplayIsBuiltin")
+            return (...args: unknown[]) =>
+              displays.find((x) => x.id === (args[0] as number))?.builtin ? 1 : 0;
+          throw new Error(`unexpected func ${name}`);
+        },
+      };
+    },
+  };
+}
+
+describe("detectDarwin", () => {
+  // MacBook + external left of it: negative origin, fractional point sizes
+  const LAPTOP: FakeDisplay[] = [
+    { id: 1, x: 0, y: 0, w: 1512.0, h: 982.0, builtin: true },
+    { id: 42, x: -1920.4, y: -0.6, w: 1920.0, h: 1080.0 },
+  ];
+
+  it("lists displays with signed point origins, main = primary, builtin label", () => {
+    const ffi = darwinFfi(LAPTOP, { main: 1 });
+    expect(detectDarwin(ffi)).toEqual([
+      { x: 0, y: 0, w: 1512, h: 982, primary: true, label: "built-in" },
+      { x: -1920, y: -1, w: 1920, h: 1080, primary: false, label: "display 42" },
+    ]);
+    expect(ffi.structs).toEqual(["CGPoint", "CGSize", "CGRect"]);
+  });
+
+  it("tolerates already-registered struct types (process-global names)", () => {
+    expect(detectDarwin(darwinFfi(LAPTOP, { main: 1, structThrows: true }))).toHaveLength(2);
+  });
+
+  it("returns [] on a CGError and throws without struct support", () => {
+    expect(detectDarwin(darwinFfi(LAPTOP, { cgError: true }))).toEqual([]);
+    const noStruct = darwinFfi(LAPTOP) as Partial<Ffi>;
+    delete noStruct.struct;
+    expect(() => detectDarwin(noStruct as Ffi)).toThrow(/koffi.struct missing/);
+  });
+});
+
 describe("detectMonitors", () => {
+  it("darwin: dispatches to CoreGraphics and degrades when the ffi explodes", async () => {
+    const ok = await detectMonitors({
+      platform: "darwin",
+      loadFfi: async () => darwinFfi([{ id: 1, x: 0, y: 0, w: 1512, h: 982 }]),
+    });
+    expect(ok.monitors).toHaveLength(1);
+    expect(ok.reason).toBeNull();
+
+    const empty = await detectMonitors({
+      platform: "darwin",
+      loadFfi: async () => darwinFfi([], { cgError: true }),
+    });
+    expect(empty.monitors).toEqual([]);
+    expect(empty.reason).toContain("CoreGraphics reported no displays");
+
+    const boom = await detectMonitors({
+      platform: "darwin",
+      loadFfi: async () => {
+        throw new Error("koffi missing\nnoise");
+      },
+    });
+    expect(boom.monitors).toEqual([]);
+    expect(boom.reason).toContain("koffi missing");
+    expect(boom.reason).not.toContain("noise");
+  });
+
   it("win32: dispatches to the ffi and degrades when it explodes", async () => {
     const ok = await detectMonitors({
       platform: "win32",
@@ -227,9 +338,9 @@ describe("detectMonitors", () => {
   });
 
   it("names unimplemented platforms instead of guessing", async () => {
-    const r = await detectMonitors({ platform: "darwin" });
+    const r = await detectMonitors({ platform: "freebsd" });
     expect(r.monitors).toEqual([]);
-    expect(r.reason).toContain("darwin");
+    expect(r.reason).toContain("freebsd");
   });
 });
 

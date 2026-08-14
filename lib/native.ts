@@ -148,9 +148,19 @@ interface FfiLib {
   func(...spec: Array<string | string[]>): FfiFunc;
 }
 
-/** The slice of koffi this project calls (see `lib/hotkey`). */
+/** The slice of koffi this project calls (see `lib/hotkey`, `lib/monitors`). */
 export interface Ffi {
   load(path: string): FfiLib;
+  /**
+   * Registers a named struct type (koffi.struct) so `func` specs can RETURN
+   * it by value — CoreGraphics' CGDisplayBounds hands back a CGRect that way,
+   * which the string-only `func` surface cannot express alone. Optional so
+   * every existing fake stays valid; a runtime without it degrades with a
+   * reason (see `lib/monitors.detectDarwin`). The interface deliberately
+   * still has NO callbacks — that constraint is untouched (see the
+   * EnumDisplayMonitors decision in CLAUDE.md).
+   */
+  struct?(name: string, def: Record<string, unknown>): unknown;
 }
 
 let cachedFfi: Ffi | null = null;

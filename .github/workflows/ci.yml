@@ -44,6 +44,14 @@ jobs:
       # the editor workspace gates (tests + vite build) on BOTH OSes —
       # Windows is the primary platform
       - run: npm run -w editor validate
+      # Real-CoreGraphics integration probe (macOS only): proves the raw
+      # koffi struct API, the CGRect-by-value ABI on arm64, and that the
+      # runner's GUI session has a display — facts no injected fake can
+      # prove, and the owner has no Mac to prove them on. If GitHub ever
+      # moves to display-less runners this exits 1 with a clean reason line;
+      # the fix then is demoting it to expected-output-only.
+      - run: node cli.ts monitors
+        if: runner.os == 'macOS'
       # Quality trackers run once (Linux) and are skipped gracefully until
       # the CODECOV_TOKEN / SONAR_TOKEN repo secrets exist.
       - name: Upload coverage to Codecov
