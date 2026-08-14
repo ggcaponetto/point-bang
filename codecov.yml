@@ -1,0 +1,15 @@
+# The ENFORCED coverage gate is vitest's 90%-on-every-metric threshold
+# (vitest.config.ts + the editor workspace's copy), run in `npm test` on every
+# OS and blocking via `validate`. Codecov is the trend tracker and badge, not
+# a second gate: its default patch status demands the diff match overall
+# project coverage (~96%), which red-marks PRs over lines that are honestly
+# uncoverable in unit tests (default-exec arrows that shell to real OS
+# commands). Informational keeps the report and the badge without the noise.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true

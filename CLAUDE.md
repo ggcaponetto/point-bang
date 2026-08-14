@@ -689,6 +689,13 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
 - `npm run validate` must pass before any change is done (husky enforces it
   on push); new logic ships with tests (coverage gate is 90%, don't game it
   with exclusions), prettier owns formatting, knip stays clean.
+- **SonarCloud stays at ZERO open issues** (user directive 2026-08-14).
+  After changes land on main, check the analysis and fix every new issue —
+  refactor honestly, don't suppress; marking one false-positive/accepted
+  needs an argued reason. Codecov is trend/badge only: both its statuses
+  are informational (codecov.yml) because vitest's 90% gate is the
+  enforced one — never treat a codecov mark as a merge blocker, and never
+  "fix" it by excluding files from coverage.
 - **50k LOC budget** (user decision 2026-08-14): the whole repo must stay
   maintainable by a solo developer, capped at 50,000 non-blank lines across
   git-tracked source files (ts/tsx/js/mjs/html/css — generated files don't
