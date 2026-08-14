@@ -31,12 +31,17 @@ jobs:
           - os: windows-latest
             binary: dist/point-bang.exe
             suffix: win-x64.exe
-          # arm64 (Apple Silicon) — every Mac since 2020. SEA cannot
-          # cross-compile and GitHub is sunsetting Intel macOS runners, so
-          # x64 macOS is deliberately not built.
+          # arm64 (Apple Silicon) — every Mac since 2020.
           - os: macos-latest
             binary: dist/point-bang
             suffix: macos-arm64
+          # x64 (Intel Macs; user decision 2026-08-14 — a 2018 i9 to
+          # support). Built on macOS 15 because Intel Macs of that era top
+          # out there, and it's GitHub's LAST x64 image — retired August
+          # 2027, at which point this artifact can no longer be built.
+          - os: macos-15-intel
+            binary: dist/point-bang
+            suffix: macos-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

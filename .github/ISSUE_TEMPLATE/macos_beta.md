@@ -6,8 +6,9 @@ labels: macos-beta
 ---
 
 macOS support is community-verified: every release is built and smoke-tested
-on Apple Silicon CI, but end-to-end aim needs real hands and a real Mac.
-Work through the steps and paste what you see — partial reports are welcome.
+on real macOS CI (Apple Silicon and Intel), but end-to-end aim needs real
+hands and a real Mac. Work through the steps and paste what you see —
+partial reports are welcome.
 
 **Mac model + macOS version:**
 
@@ -15,8 +16,8 @@ Work through the steps and paste what you see — partial reports are welcome.
 [Releases](https://github.com/ggcaponetto/point-bang/releases), then:
 
 ```sh
-xattr -d com.apple.quarantine ./point-bang-*-macos-arm64
-chmod +x ./point-bang-*-macos-arm64
+xattr -d com.apple.quarantine ./point-bang-*-macos-*
+chmod +x ./point-bang-*-macos-*
 ```
 
 Did the binary start? (If "zsh: killed" or a Gatekeeper dialog, say so.)
