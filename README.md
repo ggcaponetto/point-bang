@@ -14,6 +14,7 @@ No custom hardware. No markers. No sensor bars.
 [![Docs](https://github.com/ggcaponetto/point-bang/actions/workflows/docs.yml/badge.svg)](https://ggcaponetto.github.io/point-bang/)
 [![codecov](https://codecov.io/gh/ggcaponetto/point-bang/branch/main/graph/badge.svg)](https://codecov.io/gh/ggcaponetto/point-bang)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ggcaponetto_point-bang&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ggcaponetto_point-bang)
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=ggcaponetto_point-bang&metric=ncloc)](https://sonarcloud.io/summary/overall?id=ggcaponetto_point-bang)
 [![Release](https://img.shields.io/github/v/release/ggcaponetto/point-bang?include_prereleases)](https://github.com/ggcaponetto/point-bang/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node ≥ 23.6](https://img.shields.io/badge/node-%E2%89%A5%2023.6-brightgreen)](https://nodejs.org)
