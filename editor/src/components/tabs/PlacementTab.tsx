@@ -3,11 +3,13 @@ import { useTranslation } from "react-i18next";
 import { normalizeButtonRect } from "../../../../public/math.js";
 import type { ButtonDef, Rect } from "../../types";
 
-export function PlacementTab(props: {
-  btn: ButtonDef;
-  patch: (p: Record<string, unknown>) => void;
-  onPlace: (id: string, extraPatch?: Record<string, unknown>) => void;
-}) {
+export function PlacementTab(
+  props: Readonly<{
+    btn: ButtonDef;
+    patch: (p: Record<string, unknown>) => void;
+    onPlace: (id: string, extraPatch?: Record<string, unknown>) => void;
+  }>,
+) {
   const { t } = useTranslation();
   const rect = normalizeButtonRect(props.btn.rect) as Rect | null;
   return (

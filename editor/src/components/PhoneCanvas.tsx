@@ -20,13 +20,15 @@ interface Drag {
   last: Rect;
 }
 
-export function PhoneCanvas(props: {
-  cfg: ButtonsConfig | null;
-  selected: string | null;
-  landscape: boolean;
-  onSelect: (id: string | null) => void;
-  onRectChange: (id: string, rect: Rect) => void;
-}) {
+export function PhoneCanvas(
+  props: Readonly<{
+    cfg: ButtonsConfig | null;
+    selected: string | null;
+    landscape: boolean;
+    onSelect: (id: string | null) => void;
+    onRectChange: (id: string, rect: Rect) => void;
+  }>,
+) {
   const { t } = useTranslation();
   const frameRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);

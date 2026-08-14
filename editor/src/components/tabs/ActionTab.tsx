@@ -38,7 +38,9 @@ const KEY_OPTIONS: KeyOption[] = listKeys().flatMap((g: { group: string; keys: s
   g.keys.map((key: string) => ({ key, group: g.group })),
 );
 
-export function ActionTab(props: { btn: ButtonDef; patch: (p: Record<string, unknown>) => void }) {
+export function ActionTab(
+  props: Readonly<{ btn: ButtonDef; patch: (p: Record<string, unknown>) => void }>,
+) {
   const { t } = useTranslation();
   const spec = typeof props.btn.action === "string" ? props.btn.action : undefined;
   const dec = decomposeAction(spec);

@@ -28,7 +28,10 @@ export function parseHardwarePorts(output: string): Set<string> {
   const wifi = new Set<string>();
   let port = "";
   for (const line of output.split(/\r?\n/)) {
-    const p = /^Hardware Port:\s*(.+)$/.exec(line);
+    // \S pins the capture start so it cannot overlap the whitespace run —
+    // /\s*(.+)/ backtracks quadratically on long blanks (house rule, see
+    // parseIwDev in lib/wifi.ts).
+    const p = /^Hardware Port:[ \t]*(\S.*)$/.exec(line);
     if (p) {
       port = p[1].trim();
       continue;
@@ -67,7 +70,8 @@ function defaultWifiNames(): Set<string> | null {
 
 /** Lists external IPv4 addresses, flagging Wi-Fi/WLAN interfaces. */
 export function lanIPv4(ifaces?: Interfaces, wifiNames?: Set<string> | null): LanAddress[] {
-  const names = wifiNames !== undefined ? wifiNames : ifaces ? null : defaultWifiNames();
+  let names = wifiNames;
+  if (names === undefined) names = ifaces ? null : defaultWifiNames();
   const list = ifaces ?? (os.networkInterfaces() as Interfaces);
   const out: LanAddress[] = [];
   for (const [name, addrs] of Object.entries(list))

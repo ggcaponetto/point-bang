@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
  * strings themselves are the exact English server verdicts — pinned to
  * lib/buttons.ts and never localized.
  */
-export function ProblemsBar(props: { problems: string[] }) {
+export function ProblemsBar(props: Readonly<{ problems: string[] }>) {
   const { t } = useTranslation();
   if (props.problems.length === 0) return null;
   return (

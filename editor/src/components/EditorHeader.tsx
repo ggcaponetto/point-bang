@@ -1,7 +1,9 @@
 import { Button, Stack, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 
-export function EditorHeader(props: { status: string; saveDisabled: boolean; onSave: () => void }) {
+export function EditorHeader(
+  props: Readonly<{ status: string; saveDisabled: boolean; onSave: () => void }>,
+) {
   const { t, i18n } = useTranslation();
   const lang = (i18n.resolvedLanguage ?? "en").slice(0, 2);
   return (

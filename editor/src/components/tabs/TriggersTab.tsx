@@ -20,14 +20,17 @@ import type { ButtonDef } from "../../types";
 
 const EDGES = ["any", "left", "right", "top", "bottom"] as const;
 
-export function TriggersTab(props: {
-  btn: ButtonDef;
-  patch: (p: Record<string, unknown>) => void;
-}) {
+export function TriggersTab(
+  props: Readonly<{
+    btn: ButtonDef;
+    patch: (p: Record<string, unknown>) => void;
+  }>,
+) {
   const { t } = useTranslation();
   const edge = (normalizeEdge(props.btn.edge) as string | null) ?? "";
   const pad = props.btn.pad;
-  const padMode = pad === undefined ? "" : normalizePad(pad) === "any" ? "any" : "index";
+  let padMode = "";
+  if (pad !== undefined) padMode = normalizePad(pad) === "any" ? "any" : "index";
   const [padDraft, setPadDraft] = useState(typeof pad === "number" ? String(pad) : "0");
   const padDraftBad = parsePadField(padDraft) === null;
 
