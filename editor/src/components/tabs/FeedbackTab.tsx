@@ -12,10 +12,12 @@ import { useTranslation } from "react-i18next";
 import { decomposeVibrate, parseVibrateField } from "../../model";
 import type { ButtonDef } from "../../types";
 
-export function FeedbackTab(props: {
-  btn: ButtonDef;
-  patch: (p: Record<string, unknown>) => void;
-}) {
+export function FeedbackTab(
+  props: Readonly<{
+    btn: ButtonDef;
+    patch: (p: Record<string, unknown>) => void;
+  }>,
+) {
   const { t } = useTranslation();
   const dec = decomposeVibrate(props.btn.vibrate);
   const [msDraft, setMsDraft] = useState(String(dec.ms));

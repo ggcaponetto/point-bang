@@ -120,6 +120,33 @@ export function parseIwDev(output: string): WifiReport {
  * `bandFromChannel`. Any shape miss degrades to disconnected/unknown, never
  * a crash — the output format is Apple's to change.
  */
+/** Band from the channel string's parts: the GHz parenthetical wins (Apple
+ * abbreviates 2.4 as plain "2"), a bare channel number is inferred. */
+function airportBand(ghz: string | undefined, channel: string | null): string | null {
+  if (ghz) return ghz.startsWith("2") ? "2.4 GHz" : `${ghz} GHz`;
+  return channel ? bandFromChannel(+channel) : null;
+}
+
+/** An interface's current-network record, or null when it is not associated. */
+function airportInfo(iface: unknown): Record<string, unknown> | null {
+  const info = (iface as Record<string, unknown>).spairport_current_network_information;
+  return info && typeof info === "object" ? (info as Record<string, unknown>) : null;
+}
+
+/** The connected report for one associated interface's network record. */
+function airportReport(info: Record<string, unknown>, ssid: string): WifiReport {
+  const chanRaw =
+    typeof info.spairport_network_channel === "string" ? info.spairport_network_channel : "";
+  // bounded, anchored: "44 (5GHz, 80MHz)" / "6 (2GHz, 20MHz)" / bare "44"
+  const m = /^(\d{1,5})(?: \((\d{1,2}(?:\.\d)?)GHz)?/.exec(chanRaw);
+  const channel = m ? m[1] : null;
+  const signal =
+    typeof info.spairport_signal_noise === "string"
+      ? (/-\d{1,3} dBm/.exec(info.spairport_signal_noise)?.[0] ?? null)
+      : null;
+  return { connected: true, ssid, band: airportBand(m?.[2], channel), channel, signal };
+}
+
 export function parseAirportJson(output: string): WifiReport {
   let root: unknown;
   try {
@@ -133,30 +160,9 @@ export function parseAirportJson(output: string): WifiReport {
   for (const section of sections) {
     const ifaces = (section as { spairport_airport_interfaces?: unknown[] })
       .spairport_airport_interfaces;
-    if (!Array.isArray(ifaces)) continue;
-    for (const iface of ifaces) {
-      const info = (iface as Record<string, unknown>).spairport_current_network_information as
-        Record<string, unknown> | undefined;
-      if (!info || typeof info._name !== "string") continue;
-      const ssid = info._name;
-      const chanRaw =
-        typeof info.spairport_network_channel === "string" ? info.spairport_network_channel : "";
-      // bounded, anchored: "44 (5GHz, 80MHz)" / "6 (2GHz, 20MHz)" / bare "44"
-      const m = /^(\d{1,5})(?: \((\d{1,2}(?:\.\d)?)GHz)?/.exec(chanRaw);
-      const channel = m ? m[1] : null;
-      const ghz = m?.[2];
-      const band = ghz
-        ? ghz.startsWith("2")
-          ? "2.4 GHz"
-          : `${ghz} GHz`
-        : channel
-          ? bandFromChannel(+channel)
-          : null;
-      const signal =
-        typeof info.spairport_signal_noise === "string"
-          ? (/-\d{1,3} dBm/.exec(info.spairport_signal_noise)?.[0] ?? null)
-          : null;
-      return { connected: true, ssid, band, channel, signal };
+    for (const iface of Array.isArray(ifaces) ? ifaces : []) {
+      const info = airportInfo(iface);
+      if (info && typeof info._name === "string") return airportReport(info, info._name);
     }
   }
   return { connected: false };

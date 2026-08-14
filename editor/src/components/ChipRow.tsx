@@ -17,12 +17,14 @@ import { useTranslation } from "react-i18next";
 import { normalizeButtonRect } from "../../../public/math.js";
 import type { ButtonsConfig } from "../types";
 
-export function ChipRow(props: {
-  cfg: ButtonsConfig | null;
-  landscape: boolean;
-  onLandscape: (v: boolean) => void;
-  onPlace: (id: string, extraPatch?: Record<string, unknown>) => void;
-}) {
+export function ChipRow(
+  props: Readonly<{
+    cfg: ButtonsConfig | null;
+    landscape: boolean;
+    onLandscape: (v: boolean) => void;
+    onPlace: (id: string, extraPatch?: Record<string, unknown>) => void;
+  }>,
+) {
   const { t } = useTranslation();
   const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null);
   const buttons = props.cfg?.buttons ?? [];

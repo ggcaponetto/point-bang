@@ -258,7 +258,7 @@ describe("startServer (http only)", () => {
     await until(() => logs.includes("tracking: lost"));
     const applied = moves.length;
     await new Promise((r) => setTimeout(r, 30)); // a lingering sample would re-apply
-    expect(moves.length).toBe(applied);
+    expect(moves).toHaveLength(applied);
     // …and a fresh sample after recovery moves again
     ws.send(JSON.stringify({ type: "state", tracking: "good" }));
     ws.send(JSON.stringify({ type: "aim", u: 0.75, v: 0.75 }));

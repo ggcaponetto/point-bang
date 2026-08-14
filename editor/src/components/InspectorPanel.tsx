@@ -30,7 +30,7 @@ import { TriggersTab } from "./tabs/TriggersTab";
 import { FeedbackTab } from "./tabs/FeedbackTab";
 import type { ButtonDef, ButtonsConfig } from "../types";
 
-function TabLabel(props: { text: string; marked: boolean }) {
+function TabLabel(props: Readonly<{ text: string; marked: boolean }>) {
   return (
     <Badge color="primary" variant="dot" invisible={!props.marked}>
       <span style={{ paddingRight: 4 }}>{props.text}</span>
@@ -46,14 +46,16 @@ const slotSummary = (b: ButtonDef, hiddenText: string) => {
   return parts.join(" · ");
 };
 
-export function InspectorPanel(props: {
-  cfg: ButtonsConfig | null;
-  selected: string | null;
-  onSelect: (id: string | null) => void;
-  patchSelected: (patch: Record<string, unknown>) => void;
-  onReset: () => void;
-  onPlace: (id: string, extraPatch?: Record<string, unknown>) => void;
-}) {
+export function InspectorPanel(
+  props: Readonly<{
+    cfg: ButtonsConfig | null;
+    selected: string | null;
+    onSelect: (id: string | null) => void;
+    patchSelected: (patch: Record<string, unknown>) => void;
+    onReset: () => void;
+    onPlace: (id: string, extraPatch?: Record<string, unknown>) => void;
+  }>,
+) {
   const { t } = useTranslation();
   const [tab, setTab] = useState(0);
   const btn = props.cfg?.buttons.find((b) => b.id === props.selected) ?? null;

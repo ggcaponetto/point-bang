@@ -2,7 +2,7 @@ import { Box } from "@mui/material";
 import type { Rect } from "../types";
 
 /** One button on the canvas — dumb and pointer-inert; the canvas owns picking. */
-export function ButtonRect(props: { rect: Rect; label: string; selected: boolean }) {
+export function ButtonRect(props: Readonly<{ rect: Rect; label: string; selected: boolean }>) {
   const { rect } = props;
   return (
     <Box

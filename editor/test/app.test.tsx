@@ -35,7 +35,7 @@ beforeEach(() => {
 describe("App", () => {
   it("mounts, loads the config, and renders the canvas + save button", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByText("LEFT")).toBeTruthy());
+    expect(await screen.findByText("LEFT")).toBeTruthy();
     expect(screen.getByRole("button", { name: /save|speichern|salva/i })).toBeTruthy();
   });
   it("lists a problem and disables save when the config is broken", async () => {
