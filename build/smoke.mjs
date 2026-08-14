@@ -46,5 +46,13 @@ run(
   ["check"],
   ["asset index.html", "asset math.js", "asset editor.html", "action(s) mapped", "pause hotkey:"],
 );
+// Real display enumeration from inside the SEA: proves CoreGraphics, the
+// koffi struct API and the CGRect ABI survive extraction on Apple Silicon —
+// the platform the owner cannot test by hand. darwin-only on purpose: Linux
+// CI is headless (`monitors` exits 1 by design) and the Windows path is
+// exercised by real users daily. If GitHub's macOS runners ever lose their
+// virtual display this fails with a clean reason line; the fix then is
+// demoting this line to expected-output-only instead of expecting exit 0.
+if (process.platform === "darwin") run("monitors", ["monitors"], ["PRIMARY"]);
 
 process.exit(failed ? 1 : 0);

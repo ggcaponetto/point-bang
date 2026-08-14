@@ -18,7 +18,11 @@ permissions:
 jobs:
   build:
     strategy:
-      fail-fast: true
+      # false so a transient flake on one OS cannot cancel the other two
+      # builds mid-run; the `release` job still needs ALL legs green, so no
+      # release ever ships with a binary missing. (`continue-on-error` on a
+      # leg would trade that guarantee away — don't.)
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -27,6 +31,12 @@ jobs:
           - os: windows-latest
             binary: dist/point-bang.exe
             suffix: win-x64.exe
+          # arm64 (Apple Silicon) — every Mac since 2020. SEA cannot
+          # cross-compile and GitHub is sunsetting Intel macOS runners, so
+          # x64 macOS is deliberately not built.
+          - os: macos-latest
+            binary: dist/point-bang
+            suffix: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
