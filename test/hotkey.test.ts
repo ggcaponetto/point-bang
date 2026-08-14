@@ -3,6 +3,7 @@ import {
   parseCombo,
   createWin32Probe,
   createX11Probe,
+  createDarwinProbe,
   createComboProbe,
   watchCombo,
 } from "../lib/hotkey.ts";
@@ -116,6 +117,52 @@ describe("createX11Probe", () => {
   });
 });
 
+/** macOS fake: CGEventSourceKeyState with the given kVK codes currently down. */
+function macFfi(downVks: number[]) {
+  const down = new Set(downVks);
+  const specs: Array<Array<string | string[]>> = [];
+  const paths: string[] = [];
+  const ffi: Ffi = {
+    load: (p: string) => {
+      paths.push(p);
+      return {
+        func: (...spec) => {
+          specs.push(spec);
+          // real API: Boolean, keyed by (stateID, keycode); 0 = combined session
+          return (stateId, vk) => stateId === 0 && down.has(vk as number);
+        },
+      };
+    },
+  };
+  return { ffi, down, specs, paths };
+}
+
+describe("createDarwinProbe", () => {
+  it("is down only when EVERY combo key is down; either shift counts", () => {
+    const leftOnly = macFfi([0x38]);
+    expect(createDarwinProbe(leftOnly.ffi, ["shift", "s"]).probe!.down()).toBe(false);
+    const rightAndS = macFfi([0x3c, 0x01]); // kVK_RightShift + kVK_ANSI_S
+    expect(createDarwinProbe(rightAndS.ffi, ["shift", "s"]).probe!.down()).toBe(true);
+  });
+  it("binds CGEventSourceKeyState from the CoreGraphics framework", () => {
+    const { ffi, specs, paths } = macFfi([]);
+    createDarwinProbe(ffi, ["space"]);
+    expect(paths[0]).toContain("CoreGraphics.framework");
+    expect(specs[0]).toEqual(["CGEventSourceKeyState", "bool", ["int32", "uint16"]]);
+  });
+  it("covers letters, digits, f-keys and the numpad (non-contiguous kVK codes)", () => {
+    const { ffi } = macFfi([0x0b, 0x1a, 0x6f, 0x57]); // b, 7, f12, numpad5
+    expect(createDarwinProbe(ffi, ["b", "7", "f12", "numpad_5"]).probe!.down()).toBe(true);
+  });
+  it("rejects punctuation and keys macOS does not have (f21+)", () => {
+    for (const bad of [";", "f21", "f24"]) {
+      const r = createDarwinProbe(macFfi([]).ffi, ["control", bad]);
+      expect(r.probe).toBeNull();
+      expect(r.reason).toContain(`key "${bad}" cannot be watched on macOS`);
+    }
+  });
+});
+
 describe("createComboProbe", () => {
   it("dispatches by platform", () => {
     const win = createComboProbe(["space"], { ffi: winFfi([0x20]).ffi, platform: "win32" });
@@ -126,10 +173,12 @@ describe("createComboProbe", () => {
       env: { DISPLAY: ":0" },
     });
     expect(linux.probe!.down()).toBe(true);
+    const mac = createComboProbe(["space"], { ffi: macFfi([0x31]).ffi, platform: "darwin" });
+    expect(mac.probe!.down()).toBe(true);
   });
   it("has no watcher for other platforms", () => {
-    const r = createComboProbe(["space"], { ffi: winFfi([]).ffi, platform: "darwin" });
-    expect(r.reason).toContain('no key watcher for platform "darwin"');
+    const r = createComboProbe(["space"], { ffi: winFfi([]).ffi, platform: "freebsd" });
+    expect(r.reason).toContain('no key watcher for platform "freebsd"');
   });
   it("turns FFI load failures into a reason, never a throw", () => {
     const ffi: Ffi = {

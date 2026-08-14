@@ -117,6 +117,9 @@ describe("runCheck", () => {
     expect(code).toBe(0);
     expect(logs).toContain("input: ready — screen 1920x1080");
     expect(logs.some((l) => l.includes("Accessibility"))).toBe(true);
+    // the darwin probe exists (M4), so the Input Monitoring caveat prints too
+    expect(logs).toContain("pause hotkey: ready (default shift+s)");
+    expect(logs.some((l) => l.includes("Input Monitoring"))).toBe(true);
   });
 
   it("darwin: points at quarantine when the addon will not load", async () => {
