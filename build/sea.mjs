@@ -25,9 +25,13 @@ const require = createRequire(import.meta.url);
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "dist");
 const isWin = process.platform === "win32";
+// Build scripts are the sanctioned place for direct platform checks: SEA
+// cannot cross-compile, so this always runs on the OS it ships for.
+const isMac = process.platform === "darwin";
 
 /** Native packages stay out of the bundle — they are loaded via dlopen. */
 const EXTERNAL = [
+  "@nut-tree-fork/libnut-darwin",
   "@nut-tree-fork/libnut-linux",
   "@nut-tree-fork/libnut-win32",
   "bindings",
@@ -143,6 +147,18 @@ function main() {
   fs.copyFileSync(process.execPath, exe);
   if (!isWin) fs.chmodSync(exe, 0o755);
 
+  // postject cannot modify a signed Mach-O, so the copied node binary loses
+  // its signature before injection and gets an AD-HOC one back after — on
+  // Apple Silicon the re-sign is mandatory (the kernel SIGKILLs unsigned
+  // arm64 binaries). Ad-hoc means Gatekeeper still quarantines downloads
+  // (documented: xattr -d com.apple.quarantine) and the cdhash changes per
+  // build, so TCC re-asks for Accessibility after every update; fixing that
+  // needs a paid Developer ID, deliberately out of scope.
+  if (isMac) {
+    log("removing the node binary's signature (postject cannot edit a signed Mach-O)");
+    execFileSync("codesign", ["--remove-signature", exe], { stdio: "inherit" });
+  }
+
   log(`injecting into ${path.basename(exe)}`);
   const postject = require.resolve("postject/dist/cli.js");
   const args = [
@@ -153,9 +169,13 @@ function main() {
     "--sentinel-fuse",
     "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2",
   ];
-  // macOS would additionally need --macho-segment-name NODE_SEA plus a
-  // re-signing pass; Windows and Linux need neither.
+  if (isMac) args.push("--macho-segment-name", "NODE_SEA");
   execFileSync(process.execPath, args, { stdio: "inherit" });
+
+  if (isMac) {
+    log("re-signing ad-hoc (unsigned arm64 binaries are killed by the kernel)");
+    execFileSync("codesign", ["--sign", "-", exe], { stdio: "inherit" });
+  }
 
   const mb = (fs.statSync(exe).size / 1024 / 1024).toFixed(1);
   log(`done: ${exe} (${mb} MB)`);
