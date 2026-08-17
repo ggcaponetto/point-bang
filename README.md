@@ -23,6 +23,10 @@ No custom hardware. No markers. No sensor bars.
 [Documentation](https://ggcaponetto.github.io/point-bang/) ·
 [API Reference](https://ggcaponetto.github.io/point-bang/api/)
 
+<a href="https://youtube.com/shorts/lHT1rK_ZIu0"><img src="https://img.youtube.com/vi/lHT1rK_ZIu0/maxresdefault.jpg" alt="Phone as lightgun in Time Crisis on a projector — free, no extra hardware" width="480"></a>
+
+**▶ [Watch: Time Crisis on a projector — the phone is the lightgun](https://youtube.com/shorts/lHT1rK_ZIu0)**
+
 </div>
 
 ---

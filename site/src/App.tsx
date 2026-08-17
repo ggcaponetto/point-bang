@@ -78,6 +78,38 @@ function XrCheck() {
   );
 }
 
+const VIDEO_ID = "lHT1rK_ZIu0";
+
+function Video() {
+  const { t } = useTranslation();
+  return (
+    <Box>
+      <Typography variant="h2" sx={{ mb: 2 }}>
+        {t("video.title")}
+      </Typography>
+      <Box
+        component="iframe"
+        src={`https://www.youtube.com/embed/${VIDEO_ID}`}
+        title={t("video.caption")}
+        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
+        sx={{
+          display: "block",
+          mx: "auto",
+          border: 0,
+          borderRadius: 2,
+          aspectRatio: "9 / 16",
+          height: { xs: 440, sm: 560 },
+          maxWidth: "100%",
+        }}
+      />
+      <Typography color="text.secondary" variant="body2" sx={{ mt: 1, textAlign: "center" }}>
+        {t("video.caption")}
+      </Typography>
+    </Box>
+  );
+}
+
 function Steps() {
   const { t } = useTranslation();
   const steps = ["one", "two", "three"] as const;
@@ -193,6 +225,7 @@ export function App() {
           </Typography>
         </Stack>
 
+        <Video />
         <XrCheck />
         <Steps />
 

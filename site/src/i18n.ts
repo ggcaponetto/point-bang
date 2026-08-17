@@ -19,6 +19,10 @@ const en = {
       "On a desktop? Open this page on your Android phone to run the check. On the phone already? Use Chrome — other browsers may lack WebXR AR.",
     openAim: "Open the aim page",
   },
+  video: {
+    title: "See it in action",
+    caption: "Time Crisis on a projector — the phone is the lightgun, no extra hardware.",
+  },
   steps: {
     title: "Play in three steps",
     one: {
@@ -64,6 +68,10 @@ const de: typeof en = {
       "Am Desktop? Öffne diese Seite auf deinem Android-Handy, um die Prüfung auszuführen. Schon am Handy? Nutze Chrome — anderen Browsern fehlt oft WebXR AR.",
     openAim: "Zur Aim-Seite",
   },
+  video: {
+    title: "In Aktion",
+    caption: "Time Crisis am Projektor — das Handy ist die Lightgun, ohne Zusatzhardware.",
+  },
   steps: {
     title: "In drei Schritten spielen",
     one: {
@@ -108,6 +116,10 @@ const it: typeof en = {
     noWebxrHint:
       "Sei al computer? Apri questa pagina sul tuo telefono Android per eseguire la verifica. Già al telefono? Usa Chrome — altri browser spesso non hanno WebXR AR.",
     openAim: "Apri la pagina di mira",
+  },
+  video: {
+    title: "In azione",
+    caption: "Time Crisis su proiettore — il telefono è la lightgun, senza hardware aggiuntivo.",
   },
   steps: {
     title: "Gioca in tre passi",
