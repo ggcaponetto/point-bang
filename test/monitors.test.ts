@@ -13,6 +13,7 @@ import {
   type MonitorsReport,
 } from "../lib/monitors.ts";
 import type { Ffi } from "../lib/native.ts";
+import { fakeGlib } from "./helpers/fakeglib.ts";
 
 const mon = (over: Partial<MonitorRect> = {}): MonitorRect => ({
   x: 0,
@@ -319,6 +320,7 @@ describe("detectMonitors", () => {
     const cmds: string[] = [];
     const ok = await detectMonitors({
       platform: "linux",
+      env: {},
       exec: (c) => {
         cmds.push(c);
         return "eDP-1 connected primary 1920x1080+0+0 (normal)";
@@ -329,12 +331,52 @@ describe("detectMonitors", () => {
 
     const missing = await detectMonitors({
       platform: "linux",
+      env: {},
       exec: () => {
         throw new Error("xrandr: command not found");
       },
     });
     expect(missing.monitors).toEqual([]);
     expect(missing.reason).toContain("xrandr unavailable");
+  });
+
+  it("linux on Wayland: GNOME's own layout wins over xrandr", async () => {
+    const { ffi } = fakeGlib({
+      layoutMode: 1,
+      monitors: [{ connector: "eDP-1", w: 3840, h: 2160, scale: 2, primary: true }],
+    });
+    const cmds: string[] = [];
+    const r = await detectMonitors({
+      platform: "linux",
+      env: { XDG_SESSION_TYPE: "wayland" },
+      loadFfi: async () => ffi,
+      exec: (c) => {
+        cmds.push(c);
+        return "XWAYLAND0 connected 3840x2160+0+0 (normal)";
+      },
+    });
+    // stage pixels — the space aim is injected in — not Xwayland's view
+    expect(r).toEqual({
+      monitors: [{ x: 0, y: 0, w: 1920, h: 1080, primary: true, label: "eDP-1" }],
+      reason: null,
+    });
+    expect(cmds).toEqual([]);
+  });
+
+  it("linux on Wayland without GNOME: falls back to xrandr via Xwayland", async () => {
+    const exec = () => "DP-1 connected primary 2560x1440+0+0 (normal)";
+    const env = { WAYLAND_DISPLAY: "wayland-1" };
+    for (const loadFfi of [
+      async () => fakeGlib({ display: false }).ffi, // KDE, sway, …
+      async () => fakeGlib({ bus: false }).ffi,
+      async () => {
+        throw new Error("koffi missing");
+      },
+    ]) {
+      const r = await detectMonitors({ platform: "linux", env, loadFfi, exec });
+      expect(r.reason).toBeNull();
+      expect(r.monitors[0].label).toBe("DP-1");
+    }
   });
 
   it("names unimplemented platforms instead of guessing", async () => {
@@ -363,6 +405,7 @@ describe("formatMonitorsReport / monitorsMain", () => {
     const out: string[] = [];
     const code = await monitorsMain({
       platform: "linux",
+      env: {},
       exec: () => "eDP-1 connected primary 1920x1080+0+0 (normal)",
       log: (l) => out.push(l),
     });
@@ -371,6 +414,7 @@ describe("formatMonitorsReport / monitorsMain", () => {
     expect(
       await monitorsMain({
         platform: "linux",
+        env: {},
         exec: () => {
           throw new Error("nope");
         },

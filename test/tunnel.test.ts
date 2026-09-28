@@ -2,7 +2,13 @@ import { describe, it, expect } from "vitest";
 import { EventEmitter } from "node:events";
 import http from "node:http";
 import type { spawn as nodeSpawn } from "node:child_process";
-import { pickTunnel, summarizeNgrokOutput, formatTunnelReport, startNgrok } from "../lib/tunnel.ts";
+import {
+  pickTunnel,
+  summarizeNgrokOutput,
+  formatTunnelReport,
+  tunnelPhoneUrl,
+  startNgrok,
+} from "../lib/tunnel.ts";
 
 /** A stand-in for the ngrok agent process — nothing is ever really spawned. */
 function fakeAgent() {
@@ -161,6 +167,34 @@ describe("formatTunnelReport", () => {
     expect(lines).toMatch(/session key/i);
     expect(lines).toMatch(/share it with nobody/i);
     expect(lines).not.toMatch(/unauthenticated/i);
+  });
+});
+
+describe("tunnelPhoneUrl / the QR in the report", () => {
+  it("puts the key in the fragment, and nothing else anywhere", () => {
+    expect(tunnelPhoneUrl("https://x.app")).toBe("https://x.app");
+    expect(tunnelPhoneUrl("https://x.app", null)).toBe("https://x.app");
+    expect(tunnelPhoneUrl("https://x.app", "k1")).toBe("https://x.app#key=k1");
+  });
+
+  it("places the QR right under the URL it encodes", () => {
+    const lines = formatTunnelReport("https://x.app", false, "k1", ["▄▄▄", "█ █"]);
+    expect(lines.slice(0, 4)).toEqual([
+      "TUNNEL: https://x.app#key=k1  <-- open this on the phone, from any network",
+      "TUNNEL: or scan it:",
+      "▄▄▄",
+      "█ █",
+    ]);
+    // a QR of a keyed URL is a credential on screen — say so
+    expect(lines.join("\n")).toContain("the QR carries that key too");
+  });
+
+  it("stays as before without a QR, and never warns about a key that is not there", () => {
+    expect(formatTunnelReport("https://x.app", false, "k1").join("\n")).not.toMatch(/scan|QR/);
+    const unkeyed = formatTunnelReport("https://x.app", false, null, ["▄▄▄"]).join("\n");
+    expect(unkeyed).toContain("or scan it");
+    expect(unkeyed).not.toContain("the QR carries that key");
+    expect(unkeyed).toMatch(/unauthenticated/i);
   });
 });
 

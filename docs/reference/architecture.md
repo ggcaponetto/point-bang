@@ -44,6 +44,7 @@ camera + white border, Gun4IR/AimTrak's IR beacons) don't use this approach.
 │   ├── jitter.ts      #   p50/p95/max transport jitter stats
 │   ├── native.ts      #   loads libnut.node + koffi (from disk, or out of the SEA blob)
 │   ├── input.ts       #   MouseLike/KeyboardLike over libnut (delays zeroed!)
+│   ├── gnome.ts       #   the same interfaces on GNOME Wayland: Mutter RemoteDesktop over GDBus (koffi)
 │   ├── hotkey.ts      #   pause combo: key-state polling via koffi FFI
 │   ├── assets.ts      #   phone page from disk or from embedded SEA assets
 │   ├── static.ts      #   URL normalization + traversal guard + content types

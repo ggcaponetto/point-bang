@@ -35,6 +35,7 @@ node cli.ts --help               # every option is a flag; npm start -- --port 9
                                  # a busy DEFAULT port falls back to a free one (all
                                  # printed URLs follow); a busy EXPLICIT --port refuses
 npm start -- --input none        # headless: print the aim, never touch the cursor
+npm start -- --input gnome       # force GNOME's remote-control path (auto picks it on Wayland)
 npm start -- --screen 2560x1440  # screen assumed when there is none to measure
 npm start -- --pause-combo alt+p # tracking-pause hotkey (default shift+s; off = none)
 npm start -- --key off           # disable the session key (trusted LAN); --key <v> pins one
@@ -103,6 +104,7 @@ use this approach; the only prior art is a hobbyist native app
 │   ├── assets.ts      #   AssetSource: public/ on disk OR embedded SEA assets
 │   ├── native.ts      #   loads libnut.node AND koffi: require in dev, extract+dlopen in a SEA
 │   ├── input.ts       #   MouseLike/KeyboardLike over raw libnut
+│   ├── gnome.ts       #   the same interfaces on GNOME WAYLAND: Mutter RemoteDesktop via GDBus/koffi
 │   ├── hotkey.ts      #   pause combo: parser + GetAsyncKeyState/XQueryKeymap probes + poller
 │   ├── virtual.ts     #   same interfaces, but PRINT the aim — headless/no-DISPLAY mode
 │   ├── tunnel.ts      #   optional public HTTPS URL via the ngrok agent (opt-in)
@@ -363,6 +365,37 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   If a game rejects synthetic input or needs true absolute injection, add a
   Windows-only path using `koffi` FFI → `SendInput` with
   `MOUSEEVENTF_ABSOLUTE`, behind the same interface.
+- **GNOME Wayland input: Mutter's RemoteDesktop D-Bus API through GDBus via
+  koffi** (2026-09-28, the fix for "works on Windows and Mac, cursor dead on
+  Ubuntu 24"). libnut moves the cursor with `XWarpPointer` and clicks with
+  XTEST; on Wayland both reach only Xwayland's PRIVATE pointer — the X server
+  reads the new position back, `check` said "ready", the compositor never
+  heard of it (reproduced against a headless GNOME 46: X pointer moved, zero
+  Wayland motion events). `lib/gnome.ts` implements MouseLike/KeyboardLike
+  over `org.gnome.Mutter.RemoteDesktop` instead: no root, no permission
+  dialog, true absolute positioning. Absolute motion is addressed relative to
+  a ScreenCast stream, so ONE `RecordArea` stream spanning the desktop exists
+  purely as the coordinate frame (never consumed ⇒ nothing is recorded);
+  GNOME shows its sharing indicator while serving. Rejected: `/dev/uinput`
+  (needs a root-installed udev rule — customers must not need sudo — and
+  could not be verified on the dev box), the xdg RemoteDesktop PORTAL
+  (consent dialog per run, signal-based request flow needs a main loop),
+  a D-Bus npm package (new dependency; libgio is on every GNOME install and
+  koffi was already shipped). `--input auto` picks it on Wayland; when GNOME
+  does not answer (KDE, sway) the server falls back to libnut and WARNS that
+  the cursor cannot move — that silence was the actual bug. Aim moves are
+  fire-and-forget D-Bus messages (never a round trip inside the 2ms loop);
+  one move per 2s waits for its reply as the liveness check and re-creates a
+  session GNOME closed. Buttons/keys always wait. Keys go by KEYSYM (what
+  libnut's XKeysymToKeycode did) except keypad digits, which go by evdev
+  KEYCODE: Mutter reaches a keysym by pressing the level modifiers it needs,
+  and KP_7 sits on a shifted level (observed: spurious Shift around every
+  press). On Wayland `lib/monitors` reads the layout from
+  `org.gnome.Mutter.DisplayConfig` BEFORE trying xrandr, so rects and
+  injection share one pixel space (the stage): with "logical" layout
+  (fractional scaling on) the stage is logical pixels and stream
+  coordinates are stage × the largest monitor scale; with "physical" layout
+  the factor is 1. Both verified live at 200%.
 - **Single executable via Node SEA** (user decision 2026-08-11). `cli.ts` is
   the only entry; `build/sea.mjs` bundles it to CJS with esbuild, lists
   `public/*` and `libnut.node` as SEA assets, and injects with postject. A
@@ -399,7 +432,12 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   fought with, since the free plan allows one session. `--log=stdout` is
   mandatory or the agent's full-screen TUI eats the terminal. Verified against
   agent 3.39: `--region` is deprecated (it auto-picks lowest latency) — hence
-  `--tunnel-url` for a reserved domain instead. This is a setup convenience,
+  `--tunnel-url` for a reserved domain instead. The report prints a QR of
+  the tunnel URL right under it (2026-09-28, user request after testing over
+  ngrok: a random hostname plus a key is untypeable on a phone) — built from
+  `tunnelPhoneUrl`, the SAME string the URL line prints, so the two cannot
+  drift; it encodes the session key, hence its own "keep it out of
+  screenshots" line. This is a setup convenience,
   NOT a play transport: it adds a public-internet round trip, and Phase 4's
   WebRTC plan is unaffected.
 - **Transport:** WebSocket over the adb/USB tunnel is the dev default and a
@@ -557,8 +595,11 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   (Proton/X11 games: fine; native Wayland apps: keys invisible). Headless =
   hotkey off with a logged reason. The combo is NOT swallowed — the focused
   game still receives it, so pick one the game ignores.
-- libnut on Linux needs X11 + the XTEST extension (`libx11`, `libxtst`);
-  Wayland needs Xwayland and a headless box cannot inject at all. Worse, with
+- libnut on Linux needs X11 + the XTEST extension (`libx11`, `libxtst`), and
+  it CANNOT move the cursor of a Wayland session even though Xwayland lets it
+  load and answer (see the GNOME Wayland tech decision — `lib/gnome.ts` is
+  the path there, anything else gets a printed warning); a headless box
+  cannot inject at all. Worse, with
   the libs present but no `DISPLAY`, libnut prints "Could not open main
   display" and **kills the process** — it does not throw, so no try/catch can
   save you. `lib/check.ts` and `startServer` both guard on `hasDisplay()`
@@ -606,6 +647,23 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   unless a reserved one is passed. The agent attaches `err` to routine `info`
   records too, so only `eror`/`crit` levels may be reported as a failure — and
   its real errors are multi-line with CRLF, so flatten before logging.
+- GNOME Wayland test rig (how `lib/gnome.ts` was verified without a Wayland
+  login): `dbus-run-session -- gnome-shell --headless --wayland
+--wayland-display <name> --virtual-monitor 1920x1080`, a native GTK4
+  client logging pointer/key events as the compositor-side witness, and the
+  server started with that bus's `DBUS_SESSION_BUS_ADDRESS`. Three traps:
+  (1) an EMPTY seat drops the first events of a new virtual device — a real
+  PC has a keyboard and mouse, so keep a second RemoteDesktop session alive
+  as the stand-in or you will chase a bug that does not exist; (2) the bus
+  activates its own `dconf-service`, which writes the REAL
+  `~/.config/dconf/user` unless `XDG_CONFIG_HOME` was set BEFORE
+  `dbus-run-session` started — exporting it inside the session script is
+  too late, and a settings write then lands in the developer's profile;
+  (3) Ubuntu's desktop-icons extension opens a desktop-sized window a few
+  seconds after the shell starts — a witness client started before it ends
+  up UNDERNEATH and logs nothing while every call succeeds. Run a control
+  through the same API with no project code first; if that is silent too,
+  restart the client.
 - Static files must be in `public/`; path traversal guard exists in server.
 - Port semantics follow the --monitor precedent (2026-08-13): a busy DEFAULT
   port degrades to an OS-assigned free one (bind 0 — every printed URL/QR uses

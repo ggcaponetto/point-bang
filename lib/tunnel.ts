@@ -118,6 +118,14 @@ export function summarizeNgrokOutput(lines: string[]): string {
 }
 
 /**
+ * What the phone opens: the tunnel URL with the session key in the fragment.
+ * Printed and QR-encoded from this ONE place so the two can never differ.
+ */
+export function tunnelPhoneUrl(url: string, key: string | null = null): string {
+  return key ? `${url}#key=${key}` : url;
+}
+
+/**
  * The lines printed once a tunnel is up. Split out so they can be asserted.
  *
  * The security lines are not decoration: a tunnel puts a socket that moves
@@ -127,15 +135,19 @@ export function summarizeNgrokOutput(lines: string[]): string {
  * key (`--key off`, or the standalone `tunnel` command in front of a server
  * whose loopback exemption is on), the URL alone is enough — whoever opens
  * one deserves to be told plainly.
+ *
+ * `qr` is the rendered QR of {@link tunnelPhoneUrl} (the caller renders it —
+ * that step is async); it encodes the key too, so it gets its own warning.
  */
 export function formatTunnelReport(
   url: string,
   adopted = false,
   key: string | null = null,
+  qr: string[] = [],
 ): string[] {
-  const keyedUrl = key ? `${url}#key=${key}` : url;
   return [
-    `TUNNEL: ${keyedUrl}  <-- open this on the phone, from any network`,
+    `TUNNEL: ${tunnelPhoneUrl(url, key)}  <-- open this on the phone, from any network`,
+    ...(qr.length ? ["TUNNEL: or scan it:", ...qr] : []),
     "TUNNEL: it is HTTPS, so WebXR works with no Chrome flag needed",
     'TUNNEL: the free plan shows a one-time "Visit Site" warning page — tap through it',
     "TUNNEL: expect tens of ms more latency than USB; use it to set up, not to play",
@@ -143,6 +155,9 @@ export function formatTunnelReport(
       ? [
           "TUNNEL: connections must present the session key in this URL's #fragment —",
           "TUNNEL: it IS the key to this PC's mouse and keyboard. Share it with nobody.",
+          ...(qr.length
+            ? ["TUNNEL: the QR carries that key too — keep it out of screenshots and streams."]
+            : []),
         ]
       : [
           "TUNNEL: WARNING — unauthenticated: anyone with this URL can move your mouse and",

@@ -83,8 +83,13 @@ needs no firewall rule.
 :::
 
 ::: tip Linux
-Cursor injection uses X11's XTEST extension: install `libx11` and `libxtst`
-(`libxtst6` on Debian/Ubuntu). A Wayland session needs Xwayland.
+Tested on **Ubuntu 24.04 LTS** — see [Linux support](#linux-support) for
+exactly which sessions. On an **X11** session cursor injection uses the XTEST
+extension: install `libx11` and `libxtst` (`libxtst6` on Debian/Ubuntu). On
+**GNOME Wayland** — the default on Ubuntu and Fedora — the cursor is driven
+through GNOME's own remote-control API instead, with nothing to install;
+GNOME shows its screen-sharing indicator while the server runs. Other
+Wayland desktops (KDE, sway) need an X11 session for now.
 `point-bang check` tells you whether input is available.
 :::
 
@@ -118,6 +123,35 @@ smoke-tested on real macOS CI (arm64 and x64), and end-to-end aim is
 verified by players —
 [reports welcome](https://github.com/ggcaponetto/point-bang/issues).
 :::
+
+## Linux support
+
+Linux is where the way the cursor gets moved depends on your desktop
+session, so this is the honest list of what has been run and how far.
+
+| Setup                                                                | Status                                                                                                                                                     | Cursor is moved by         |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| **Ubuntu 24.04 LTS, GNOME 46, X11 session** ("Ubuntu on Xorg", xrdp) | **Tested end to end** with a phone: calibrate, aim, click                                                                                                  | X11 XTEST                  |
+| **Ubuntu 24.04 LTS, GNOME 46, Wayland session** (the default)        | **Supported since v0.11.3.** Verified by automated end-to-end runs against GNOME Shell 46, at 100% and 200% display scaling; not yet confirmed by a player | GNOME's remote-control API |
+| KDE Plasma, sway and other desktops **on Wayland**                   | Not supported — the server says so at startup. Log in to an X11 session instead                                                                            | —                          |
+| Other distributions                                                  | Untested. Any X11 desktop and any GNOME Wayland desktop (Fedora Workstation) use the same two paths as above                                               | —                          |
+
+Not sure which session you are in? Ask the machine:
+
+```sh
+echo $XDG_SESSION_TYPE   # x11 or wayland
+point-bang check         # what input path this install will use, and whether it works
+```
+
+On Ubuntu the session is chosen on the login screen: click your name, then
+the gear icon in the bottom right corner — "Ubuntu" is Wayland, "Ubuntu on
+Xorg" is X11. Versions up to 0.11.2 moved nothing on Wayland and did not say
+so; if that is what you saw, [update](https://github.com/ggcaponetto/point-bang/releases)
+and see [Troubleshooting](/guide/troubleshooting).
+
+Playing on a GNOME Wayland machine with real hardware? A short note in an
+[issue](https://github.com/ggcaponetto/point-bang/issues) — it works, or it
+does not and what `serve` printed — moves that row to "tested".
 
 ## Calibrate
 

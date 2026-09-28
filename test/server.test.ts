@@ -10,6 +10,7 @@ import type { ChannelLike } from "../lib/rtc.ts";
 import type { MouseLike } from "../lib/cursor.ts";
 import type { LibNut } from "../lib/native.ts";
 import { lanIPv4 } from "../lib/net.ts";
+import { fakeGlib, callLines } from "./helpers/fakeglib.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(HERE, "..", "public");
@@ -1325,5 +1326,181 @@ describe("startServer input degrade (native addon unavailable)", () => {
     await until(() => calls.some((c) => c.startsWith("move:")));
     expect(calls).toContain("move:0,0");
     ws.close();
+  });
+});
+
+describe("startServer on a Wayland session", () => {
+  // The bug behind this block: on Ubuntu 24 (Wayland by default) libnut
+  // loaded, reported a screen size and moved only Xwayland's private pointer.
+  // No devices are injected — the real setupInput runs against a fake GLib
+  // and a fake addon, so neither GNOME nor the cursor is ever touched.
+  const WAYLAND = { DISPLAY: ":0", XDG_SESSION_TYPE: "wayland", WAYLAND_DISPLAY: "wayland-0" };
+
+  function fakeNut() {
+    const calls: string[] = [];
+    const lib = {
+      setMouseDelay: () => {},
+      setKeyboardDelay: () => {},
+      moveMouse: (x: number, y: number) => calls.push(`move:${x},${y}`),
+      mouseClick: () => {},
+      mouseToggle: () => {},
+      keyToggle: () => {},
+      getScreenSize: () => ({ width: 800, height: 600 }),
+    } as LibNut;
+    return { calls, load: async () => lib };
+  }
+
+  async function boot(extra: Partial<Parameters<typeof startServer>[0]> = {}) {
+    const logs: string[] = [];
+    running = await startServer({
+      port: 0,
+      publicDir: PUBLIC,
+      log: (l) => logs.push(l),
+      pauseCombo: "off",
+      platform: "linux",
+      env: WAYLAND,
+      ...extra,
+    });
+    return { logs, srv: running };
+  }
+
+  it("auto drives the cursor through GNOME and never loads the X11 addon", async () => {
+    const { ffi, world } = fakeGlib();
+    const nut = fakeNut();
+    let loaded = false;
+    const { logs, srv } = await boot({
+      loadFfi: async () => ffi,
+      loadNative: () => {
+        loaded = true;
+        return nut.load();
+      },
+    });
+    expect(loaded).toBe(false);
+    expect(logs.join("\n")).toContain("input: GNOME Wayland — the cursor is driven through");
+    expect(logs.join("\n")).not.toContain("WARNING");
+    expect(logs).toContain("Screen: 1920x1080");
+
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 1, v: 1, t: Date.now(), q: 1 }));
+    await until(() => world.calls.some((c) => c.method === "NotifyPointerMotionAbsolute"));
+    expect(callLines(world).at(-1)).toBe(
+      "NotifyPointerMotionAbsolute ('/org/gnome/Mutter/ScreenCast/Stream/u1', 1919, 1079)",
+    );
+    ws.send(JSON.stringify({ type: "fire" }));
+    await until(() => callLines(world).includes("NotifyPointerButton (272, false)"));
+    ws.close();
+
+    // teardown ends the session — GNOME's sharing indicator must not linger
+    await srv.close();
+    running = null;
+    expect(callLines(world).at(-1)).toBe("Stop");
+  });
+
+  it("needs no X display at all when GNOME answers", async () => {
+    const { ffi } = fakeGlib();
+    const { logs } = await boot({
+      loadFfi: async () => ffi,
+      env: { XDG_SESSION_TYPE: "wayland" },
+    });
+    expect(logs.join("\n")).toContain("input: GNOME Wayland");
+    expect(logs.join("\n")).not.toContain("VIRTUAL");
+    expect(logs.join("\n")).not.toContain("no DISPLAY");
+  });
+
+  it("without GNOME it falls back to the addon and SAYS the cursor cannot move", async () => {
+    const nut = fakeNut();
+    const { logs, srv } = await boot({
+      loadFfi: async () => fakeGlib({ display: false }).ffi,
+      loadNative: nut.load,
+    });
+    const joined = logs.join("\n");
+    expect(joined).toContain(
+      "input: GNOME remote control unavailable — GNOME Shell (org.gnome.Mutter.DisplayConfig) did not answer",
+    );
+    expect(joined).toContain(
+      "input: WARNING — Wayland session: the X11 input addon cannot move the real cursor here",
+    );
+    expect(joined).toContain("Ubuntu on Xorg");
+    const ws = await wsOpen(`ws://127.0.0.1:${srv.httpPort}`);
+    ws.send(JSON.stringify({ type: "aim", u: 0, v: 0, t: Date.now(), q: 1 }));
+    await until(() => nut.calls.length > 0);
+    ws.close();
+  });
+
+  it("reports a koffi that will not load as the reason, first line only", async () => {
+    const { logs } = await boot({
+      loadFfi: async () => {
+        throw new Error("koffi.node: wrong ELF class\n  at dlopen (…)");
+      },
+      loadNative: fakeNut().load,
+    });
+    expect(logs).toContain("input: GNOME remote control unavailable — koffi.node: wrong ELF class");
+  });
+
+  it("without GNOME and without a display it prints the aim — the addon would abort", async () => {
+    let loaded = false;
+    const { logs } = await boot({
+      env: { WAYLAND_DISPLAY: "wayland-0" },
+      loadFfi: async () => fakeGlib({ bus: false }).ffi,
+      loadNative: () => {
+        loaded = true;
+        return fakeNut().load();
+      },
+    });
+    expect(loaded).toBe(false);
+    expect(logs.join("\n")).toContain("input: GNOME remote control unavailable — no D-Bus");
+    expect(logs.join("\n")).toContain("input: VIRTUAL — no DISPLAY");
+  });
+
+  it("explicit --input gnome fails loudly when GNOME does not offer it", async () => {
+    await expect(
+      boot({ input: "gnome", loadFfi: async () => fakeGlib({ remote: false }).ffi }),
+    ).rejects.toThrow("--input gnome: GNOME's remote-control service");
+  });
+
+  it("explicit --input gnome also works from an X11 GNOME session", async () => {
+    const { ffi, world } = fakeGlib();
+    const { logs } = await boot({
+      input: "gnome",
+      env: { DISPLAY: ":0", XDG_SESSION_TYPE: "x11" },
+      loadFfi: async () => ffi,
+    });
+    expect(logs.join("\n")).toContain("input: GNOME Wayland");
+    expect(world.sessions).toBe(1);
+  });
+
+  it("explicit --input native is obeyed, with the warning", async () => {
+    const { ffi, world } = fakeGlib();
+    const { logs } = await boot({
+      input: "native",
+      loadFfi: async () => ffi,
+      loadNative: fakeNut().load,
+    });
+    expect(world.calls).toEqual([]);
+    expect(logs.join("\n")).toContain("input: WARNING — Wayland session");
+  });
+
+  it("injected devices win: no GNOME session, no warning", async () => {
+    const { ffi, world } = fakeGlib();
+    const { logs } = await boot({
+      mouse: fakeMouse().mouse,
+      keyboard: fakeKeyboard().keyboard,
+      loadFfi: async () => ffi,
+    });
+    expect(world.calls).toEqual([]);
+    expect(logs.join("\n")).not.toContain("GNOME");
+    expect(logs.join("\n")).not.toContain("WARNING");
+  });
+
+  it("tells where the pause hotkey is blind on Wayland", async () => {
+    const devices = { mouse: fakeMouse().mouse, keyboard: fakeKeyboard().keyboard };
+    const probe = { pauseCombo: "shift+s", pauseProbe: { down: () => false } };
+    const { logs } = await boot({ ...devices, ...probe });
+    expect(logs).toContain(
+      "pause hotkey: on Wayland it only reacts while an X11/Xwayland window has focus",
+    );
+    await running?.close();
+    const x11 = await boot({ ...devices, ...probe, env: { DISPLAY: ":0" } });
+    expect(x11.logs.join("\n")).not.toContain("on Wayland");
   });
 });

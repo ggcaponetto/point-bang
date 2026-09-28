@@ -107,8 +107,13 @@ free authtoken with `ngrok config add-authtoken <token>`. The server then
 prints:
 
 ```
-TUNNEL: https://abc123.ngrok-free.app  <-- open this on the phone, from any network
+TUNNEL: https://abc123.ngrok-free.app#key=…  <-- open this on the phone, from any network
+TUNNEL: or scan it:
 ```
+
+followed by a QR code of that exact URL, session key included — scan it
+with the phone instead of typing a random hostname. The standalone `tunnel`
+command prints one too, of the bare URL (it has no key to add).
 
 Because the URL is HTTPS, it is a secure context: WebXR works with no Chrome
 flag, and the aim WebSocket upgrades to `wss://` over the same tunnel — the
@@ -118,7 +123,8 @@ page derives its WebSocket scheme from its own protocol.
 Things to know:
 
 - ⚠️ **The printed URL ends in `#key=…` — treat the whole thing as a
-  credential.** With the tunnel in-process (`serve --tunnel ngrok`), every
+  credential, and the QR with it:** anyone who can photograph the terminal
+  can scan it. Keep both out of screenshots and streams. With the tunnel in-process (`serve --tunnel ngrok`), every
   connection must present that session key, tunnel traffic included. But
   anyone you hand the full URL can still move your mouse and press keys;
   don't share it, and Ctrl+C when done.
@@ -196,6 +202,10 @@ session key: open the URLs exactly as the server prints them — they carry
   bundling into a single executable. knip is told to ignore the
   `@nut-tree-fork/libnut-*` packages because they are resolved by a computed
   specifier at runtime.
+- On GNOME Wayland input goes through `lib/gnome.ts` instead — Mutter's
+  RemoteDesktop D-Bus API, spoken with GDBus through koffi. X11 injection
+  cannot reach a Wayland cursor; the unit tests run against a fake GLib
+  (`test/helpers/fakeglib.ts`) that answers with the real reply shapes.
 - Latency-relevant changes should be judged by the server's p95 jitter
   print, not by feel alone.
 
