@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { runCheck } from "../lib/check.ts";
 import { diskAssets, PUBLIC_ASSETS } from "../lib/assets.ts";
 import type { LibNut, Ffi } from "../lib/native.ts";
+import { fakeGlib, callLines } from "./helpers/fakeglib.ts";
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 
@@ -78,6 +79,61 @@ describe("runCheck", () => {
     expect(code).toBe(0);
     expect(logs.some((l) => l.includes("UNAVAILABLE"))).toBe(true);
     expect(logs.some((l) => l.includes("XTEST"))).toBe(true);
+  });
+
+  it("Wayland: proves the GNOME path with a real session, never the X11 addon", async () => {
+    const { ffi, world } = fakeGlib();
+    const logs: string[] = [];
+    let called = false;
+    const code = await runCheck({
+      assets: builtAssets(),
+      log: (l) => logs.push(l),
+      platform: "linux",
+      // no DISPLAY on purpose: the GNOME path needs no X at all
+      env: { XDG_SESSION_TYPE: "wayland" },
+      loadNative: () => {
+        called = true;
+        return okNative();
+      },
+      loadFfi: async () => ffi,
+    });
+    expect(code).toBe(0);
+    expect(called).toBe(false);
+    expect(logs).toContain("input: ready — GNOME Wayland remote control, desktop 1920x1080");
+    // opened AND closed again: check must not leave GNOME's indicator on
+    expect(callLines(world).filter((l) => l === "Start" || l === "Stop")).toEqual([
+      "Start",
+      "Stop",
+    ]);
+  });
+
+  it("Wayland without GNOME: says the cursor will not move, and what to do", async () => {
+    for (const loadFfi of [
+      async () => fakeGlib({ display: false }).ffi,
+      async (): Promise<Ffi> => {
+        throw new Error("koffi missing");
+      },
+    ]) {
+      const logs: string[] = [];
+      let called = false;
+      const code = await runCheck({
+        assets: builtAssets(),
+        log: (l) => logs.push(l),
+        platform: "linux",
+        env: { DISPLAY: ":0", WAYLAND_DISPLAY: "wayland-0" },
+        loadNative: () => {
+          called = true;
+          return okNative();
+        },
+        loadFfi,
+      });
+      expect(code).toBe(0);
+      // "ready — screen 1920x1080" was the lie both Ubuntu 24 reports got
+      expect(called).toBe(false);
+      expect(logs.join("\n")).not.toContain("input: ready");
+      expect(logs.join("\n")).toContain("input: UNAVAILABLE — Wayland session without GNOME");
+      expect(logs.join("\n")).toContain("Ubuntu on Xorg");
+    }
   });
 
   it("never calls into libnut on a headless Linux box, and says the hotkey is off", async () => {

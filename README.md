@@ -89,7 +89,9 @@ No Node, no build tools, no certificates — three steps:
    private networks. macOS: make the download executable, clear its
    quarantine and grant Accessibility — the
    [guide](https://ggcaponetto.github.io/point-bang/guide/getting-started)
-   has the two commands.)
+   has the two commands. Linux: tested on Ubuntu 24.04 LTS, X11 and GNOME
+   Wayland sessions — see
+   [Linux support](https://ggcaponetto.github.io/point-bang/guide/getting-started#linux-support).)
 3. **Scan, allow, play** — scan the QR with the phone, tap **Allow** on
    Chrome's one-time local-network prompt, calibrate on your three screen
    corners, and the PC cursor follows your aim. Aim data flows over a
@@ -199,6 +201,13 @@ is one Local-Network-Access fetch, and WebRTC brings its own encryption.
   macOS is the community-verified tier: built and smoke-tested on real
   macOS CI (arm64 and x64) every change, end-to-end aim verified by
   players.
+- **Linux: X11 and GNOME Wayland** — the reference setup is Ubuntu 24.04
+  LTS. On an X11 session the cursor moves through XTEST; on GNOME Wayland,
+  Ubuntu's default, through GNOME's own remote-control API (since v0.11.3 —
+  earlier versions moved nothing there, silently). No root, nothing to
+  install. Other Wayland desktops get a clear message and need an X11
+  session. What exactly has been tested:
+  [Linux support](https://ggcaponetto.github.io/point-bang/guide/getting-started#linux-support).
 
 ## Project status
 

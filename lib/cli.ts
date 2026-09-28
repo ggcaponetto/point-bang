@@ -5,14 +5,14 @@ import { startServer, type ServerMode, type InputMode } from "../server.ts";
 import { parseScreenSize } from "./virtual.ts";
 import { parseMonitorArg, monitorsMain } from "./monitors.ts";
 import type { Ffi, LibNut } from "./native.ts";
-import { startNgrok, formatTunnelReport } from "./tunnel.ts";
+import { startNgrok, formatTunnelReport, tunnelPhoneUrl } from "./tunnel.ts";
 import { diskAssets, seaAssets, type AssetSource } from "./assets.ts";
 import { adbReverse } from "./adb.ts";
 import { ensureEditorBuilt } from "./editorbuild.ts";
 import { runCheck } from "./check.ts";
 import { lanIPv4, formatIpReport } from "./net.ts";
 import { resolveKey } from "./auth.ts";
-import { DEFAULT_PAGE_URL } from "./qr.ts";
+import { DEFAULT_PAGE_URL, qrLines } from "./qr.ts";
 import { wifiMain } from "./wifi.ts";
 import { VERSION } from "./version.ts";
 
@@ -50,6 +50,8 @@ export interface CliDeps {
   loadFfi?: () => Promise<Ffi>;
   /** Public-tunnel starter; tests inject one so no agent is ever spawned. */
   tunnel?: typeof startNgrok;
+  /** QR renderer for the tunnel URL; tests inject one to see what was encoded. */
+  qr?: (text: string) => Promise<string[]>;
   /** Registers teardown; tests inject one to avoid real signal handlers. */
   onShutdown?: (fn: () => void) => void;
   /** Editor auto-build for `serve`; tests inject a noop so npm never runs. */
@@ -145,9 +147,11 @@ export function buildParser(argv: string[], deps: CliDeps = {}) {
             describe: "PC key combo that pauses/resumes tracking; 'off' disables it",
           })
           .option("input", {
-            choices: ["auto", "native", "none"] as const,
+            choices: ["auto", "native", "gnome", "none"] as const,
             default: "auto" as const,
-            describe: "none = print the aim instead of moving the cursor (headless)",
+            describe:
+              "none = print the aim instead of moving the cursor (headless); " +
+              "gnome = GNOME Wayland remote control (auto picks it on Wayland)",
           })
           .option("screen", {
             type: "string",
@@ -225,6 +229,22 @@ export function resolveAssets(deps: CliDeps, publicDir?: string, appDir = "."): 
 
 type Log = (line: string) => void;
 
+/**
+ * Prints the tunnel report with a QR of the very URL it leads with — a
+ * random ngrok hostname plus a session key is nothing anyone wants to type
+ * on a phone. A QR that fails to render costs the QR, never the report.
+ */
+async function reportTunnel(
+  tunnel: { url: string; adopted: boolean },
+  key: string | null,
+  deps: CliDeps,
+  log: Log,
+): Promise<void> {
+  const render = deps.qr ?? ((text: string) => qrLines(text));
+  const qr = await render(tunnelPhoneUrl(tunnel.url, key)).catch(() => []);
+  for (const line of formatTunnelReport(tunnel.url, tunnel.adopted, key, qr)) log(line);
+}
+
 async function runTunnelCommand(
   a: ServeArgs,
   deps: CliDeps,
@@ -241,7 +261,7 @@ async function runTunnelCommand(
   log("TUNNEL: will NOT require its session key; use `serve --tunnel ngrok` for that.");
   try {
     const tunnel = await (deps.tunnel ?? startNgrok)(port, { url: a.url });
-    for (const line of formatTunnelReport(tunnel.url, tunnel.adopted)) log(line);
+    await reportTunnel(tunnel, null, deps, log);
     // The agent's piped stdio keeps this process alive; Ctrl+C reaps it.
     (deps.onShutdown ?? onSignals)(() => tunnel.stop());
     return 0;
@@ -266,7 +286,7 @@ async function openServeTunnel(
   // 502s to the phone.
   try {
     const tunnel = await (deps.tunnel ?? startNgrok)(server.httpPort, { url: a.tunnelUrl });
-    for (const line of formatTunnelReport(tunnel.url, tunnel.adopted, server.key)) log(line);
+    await reportTunnel(tunnel, server.key, deps, log);
     (deps.onShutdown ?? onSignals)(() => tunnel.stop());
   } catch (e) {
     // The server is up and the USB/LAN flows still work — an optional
@@ -380,6 +400,7 @@ export async function runCli(
       platform: deps.platform,
       exec: deps.exec,
       loadFfi: deps.loadFfi,
+      env: deps.env,
       log,
     });
   }
@@ -391,6 +412,7 @@ export async function runCli(
       assets: resolveAssets(deps, a.public, appDir),
       log,
       loadNative: deps.loadNative,
+      loadFfi: deps.loadFfi,
       platform: deps.platform,
       env: deps.env,
     });

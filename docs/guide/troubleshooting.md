@@ -73,9 +73,43 @@ that policy; [USB](/guide/getting-started) is the way through.
 
 ## Linux: "libXtst.so.6: cannot open shared object file"
 
-Cursor injection uses X11's XTEST extension. Install it — `sudo apt install
-libxtst6 libx11-6` on Debian/Ubuntu, `libXtst` on Fedora/Arch. A Wayland
-session additionally needs Xwayland.
+On an X11 session cursor injection uses the XTEST extension. Install it —
+`sudo apt install libxtst6 libx11-6` on Debian/Ubuntu, `libXtst` on
+Fedora/Arch. GNOME Wayland does not use it (see the next entry).
+
+## Linux (Ubuntu, Fedora): the phone connects but the cursor doesn't move
+
+You are on a **Wayland** session — the default since Ubuntu 22.04. X11 input
+injection cannot reach a Wayland desktop: it moves a private pointer inside
+Xwayland, reports success, and the real cursor stays where it is. Versions up
+to 0.11.2 did exactly that, silently.
+
+Check which session you have with `echo $XDG_SESSION_TYPE`, then look at the
+first `input:` line `serve` prints:
+
+```
+input: GNOME Wayland — the cursor is driven through GNOME's remote-control API
+```
+
+means the cursor is driven through GNOME Shell itself — no root, nothing to
+install. GNOME shows its screen-sharing indicator in the top bar for as long
+as the server runs; nothing is recorded, the stream only serves as the
+coordinate frame for absolute aim. Stopping the session from that indicator
+stops the cursor until the server re-creates it a moment later — quit the
+server (or use the pause hotkey) to really stop.
+
+```
+input: WARNING — Wayland session: the X11 input addon cannot move the real cursor here
+```
+
+means your desktop is Wayland but not GNOME (KDE, sway, …), or GNOME's
+service did not answer — the line above it says why. Log out, pick an X11
+session at the login screen (the gear icon; "Ubuntu on Xorg", "Plasma (X11)")
+and start the server again.
+
+`point-bang check` reports the same thing without starting a server, and
+`point-bang monitors` lists the monitors as GNOME lays them out — with display
+scaling these are the scaled sizes, which is the space aim is mapped in.
 
 ## Linux: "Could not open main display" / the server exits immediately
 

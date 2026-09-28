@@ -264,6 +264,55 @@ describe("public tunnel", () => {
     expect(logs.join("\n")).toContain("https://x.ngrok-free.app#key=abc123-XY");
   });
 
+  it("prints a QR of exactly the URL it leads with — key included", async () => {
+    const t = tunnelDeps();
+    const encoded: string[] = [];
+    const { deps, logs } = spyDeps({
+      ...t.deps,
+      qr: async (text) => {
+        encoded.push(text);
+        return ["<qr row 1>", "<qr row 2>"];
+      },
+      start: (async () => ({ httpPort: 12345, key: "abc123-XY", close: async () => {} })) as never,
+    });
+    await runCli(["--tunnel", "ngrok"], deps);
+    expect(encoded).toEqual(["https://x.ngrok-free.app#key=abc123-XY"]);
+    const at = logs.findIndex((l) => l.startsWith("TUNNEL: https://x.ngrok-free.app#key="));
+    expect(logs.slice(at + 1, at + 4)).toEqual(["TUNNEL: or scan it:", "<qr row 1>", "<qr row 2>"]);
+    expect(logs.join("\n")).toContain("the QR carries that key too");
+  });
+
+  it("renders a real, scannable-sized QR by default", async () => {
+    const t = tunnelDeps();
+    const { deps, logs } = spyDeps({
+      ...t.deps,
+      start: (async () => ({
+        httpPort: 12345,
+        key: "e7NGCr_nws_oBx-eGban9g",
+        close: async () => {},
+      })) as never,
+    });
+    await runCli(["--tunnel", "ngrok"], deps);
+    const rows = logs.filter((l) => /^[█▄▀ ]+$/.test(l) && l.length > 10);
+    expect(rows.length).toBeGreaterThan(10);
+    // must fit an 80-column terminal, or the rows wrap and nothing scans
+    expect(Math.max(...rows.map((r) => r.length))).toBeLessThanOrEqual(80);
+  });
+
+  it("a QR that cannot render costs the QR, never the URL", async () => {
+    const t = tunnelDeps();
+    const { deps, logs, errors } = spyDeps({
+      ...t.deps,
+      qr: async () => {
+        throw new Error("bad rs block");
+      },
+    });
+    expect(await runCli(["--tunnel", "ngrok"], deps)).toBe(0);
+    expect(logs.join("\n")).toContain("TUNNEL: https://x.ngrok-free.app");
+    expect(logs.join("\n")).not.toContain("or scan it");
+    expect(errors).toEqual([]);
+  });
+
   it("keeps serving when the tunnel fails, and says why", async () => {
     const t = tunnelDeps("fail");
     const { deps, errors } = spyDeps(t.deps);
@@ -335,6 +384,24 @@ describe("tunnel command", () => {
     const { deps, logs } = spyDeps(t.deps);
     expect(await runCli(["tunnel"], deps)).toBe(0);
     expect(logs.join("\n")).toMatch(/already running/);
+  });
+
+  it("prints the QR too — of the bare URL, it has no key to add", async () => {
+    const t = tunnelDeps();
+    const encoded: string[] = [];
+    const { deps, logs } = spyDeps({
+      ...t.deps,
+      qr: async (text) => {
+        encoded.push(text);
+        return ["<qr>"];
+      },
+    });
+    expect(await runCli(["tunnel"], deps)).toBe(0);
+    expect(encoded).toHaveLength(1);
+    expect(encoded[0]).toMatch(/^https:\/\/[^#]+$/);
+    expect(logs).toContain("TUNNEL: or scan it:");
+    expect(logs).toContain("<qr>");
+    expect(logs.join("\n")).not.toContain("the QR carries that key");
   });
 
   it("fails the command when the tunnel fails — here it is the whole job", async () => {

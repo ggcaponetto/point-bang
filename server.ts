@@ -52,7 +52,8 @@ import {
   type ComboProbe,
   type HotkeyWatcher,
 } from "./lib/hotkey.ts";
-import { loadKoffi, loadLibNut, type LibNut } from "./lib/native.ts";
+import { loadKoffi, loadLibNut, type Ffi, type LibNut } from "./lib/native.ts";
+import { isWayland, openGnomeInput, type GnomeResult } from "./lib/gnome.ts";
 import { VERSION } from "./lib/version.ts";
 import { createRtcHub, type PeerLike } from "./lib/rtc.ts";
 import { corsHeaders } from "./lib/cors.ts";
@@ -99,12 +100,15 @@ export type ServerMode = "adb" | "wifi" | "all";
 /**
  * Where aim ends up:
  * - `native` — the real cursor, via libnut.
+ * - `gnome` — the real cursor on GNOME Wayland, via Mutter's remote-control
+ *   D-Bus API (`lib/gnome`); fails loudly when GNOME does not offer it.
  * - `none` — virtual devices that print the cursor position instead (headless
  *   boxes, containers, SSH; also handy for watching what the phone sends).
- * - `auto` — `native` when a display exists, `none` otherwise. Never reaching
- *   the addon without a display is the point: it aborts the process there.
+ * - `auto` — `gnome` on a Wayland session (libnut cannot move the cursor
+ *   there), else `native` when a display exists, `none` otherwise. Never
+ *   reaching the addon without a display is the point: it aborts the process.
  */
-export type InputMode = "auto" | "native" | "none";
+export type InputMode = "auto" | "native" | "gnome" | "none";
 
 /** Options for {@link startServer}; every device/port is injectable for tests. */
 export interface ServerOptions {
@@ -142,6 +146,8 @@ export interface ServerOptions {
   input?: InputMode;
   /** Injected libnut loader for tests — replaces the real addon load. */
   loadNative?: () => Promise<LibNut>;
+  /** Injected koffi loader for the GNOME Wayland devices — tests pass a fake GLib. */
+  loadFfi?: () => Promise<Ffi>;
   /** Screen assumed in virtual-input mode, where none can be measured. */
   screen?: { w: number; h: number };
   platform?: string;
@@ -180,13 +186,57 @@ type Log = (line: string) => void;
 // it rather than try and recover.
 const firstErrorLine = (e: unknown): string => String((e as Error).message).split(/\r?\n/)[0];
 
-async function setupInput(
-  opts: ServerOptions,
-  log: Log,
-): Promise<{ mouse: MouseLike; keyboard: KeyboardLike; virtual: boolean }> {
+/** What {@link setupInput} hands the server. */
+interface InputDevices {
+  mouse: MouseLike;
+  keyboard: KeyboardLike;
+  virtual: boolean;
+  /** Releases what the devices hold (the GNOME session); a no-op otherwise. */
+  dispose: () => void;
+}
+
+// Said whenever libnut ends up serving a Wayland desktop: it loads, reports a
+// screen size and then moves only Xwayland's private pointer — the one
+// failure that used to be completely silent (both Ubuntu 24 reports).
+function warnWayland(log: Log): void {
+  log("input: WARNING — Wayland session: the X11 input addon cannot move the real cursor here");
+  log('input: log out and pick an X11 session ("Ubuntu on Xorg") at the login screen');
+}
+
+async function openGnome(opts: ServerOptions, log: Log): Promise<GnomeResult> {
+  try {
+    return openGnomeInput({ ffi: await (opts.loadFfi ?? (() => loadKoffi(VERSION)))(), log });
+  } catch (e) {
+    return { input: null, reason: firstErrorLine(e) };
+  }
+}
+
+async function setupInput(opts: ServerOptions, log: Log): Promise<InputDevices> {
   const input = opts.input ?? "auto";
-  const display = hasDisplay(opts.platform ?? process.platform, opts.env ?? process.env);
-  let virtual = input === "none" || (input === "auto" && !display);
+  const platform = opts.platform ?? process.platform;
+  const env = opts.env ?? process.env;
+  const display = hasDisplay(platform, env);
+  const wayland = isWayland(platform, env);
+  let mouse = opts.mouse;
+  let keyboard = opts.keyboard;
+  let dispose = (): void => {};
+  let gnome = false;
+  if ((!mouse || !keyboard) && (input === "gnome" || (input === "auto" && wayland))) {
+    const r = await openGnome(opts, log);
+    if (r.input) {
+      gnome = true;
+      mouse ??= r.input.mouse;
+      keyboard ??= r.input.keyboard;
+      dispose = r.input.close;
+      log("input: GNOME Wayland — the cursor is driven through GNOME's remote-control API");
+      log("input: GNOME shows its screen-sharing indicator in the top bar while this runs");
+    } else if (input === "gnome") {
+      throw new Error(`--input gnome: ${r.reason}`);
+    } else {
+      log(`input: GNOME remote control unavailable — ${r.reason}`);
+    }
+  }
+  let virtual = !gnome && (input === "none" || (input === "auto" && !display));
   const size = opts.screen ?? DEFAULT_SCREEN;
   const assume = () => log(`input: assuming a ${size.w}x${size.h} screen (--screen WxH to change)`);
   if (virtual) {
@@ -196,14 +246,13 @@ async function setupInput(
         : "input: VIRTUAL — no DISPLAY (headless); aim is printed, the cursor is not moved",
     );
     assume();
-  } else if (!display) {
+  } else if (!display && !gnome) {
     // Explicit --input native without a display: their call, but say what is
     // about to happen, because the crash message itself explains nothing.
     log("input: WARNING — no DISPLAY set; the native addon will abort the process");
   }
-  let mouse = opts.mouse;
-  let keyboard = opts.keyboard;
   if (!virtual && (!mouse || !keyboard)) {
+    if (wayland) warnWayland(log);
     try {
       const lib = await (opts.loadNative ?? (() => loadLibNut(VERSION)))();
       mouse ??= await createMouse(lib);
@@ -223,7 +272,7 @@ async function setupInput(
   const virtualDeps = { log, size };
   mouse ??= createVirtualMouse(virtualDeps);
   keyboard ??= createVirtualKeyboard(virtualDeps);
-  return { mouse, keyboard, virtual };
+  return { mouse, keyboard, virtual, dispose };
 }
 
 // ---------- monitor selection (where aim lands) ----------
@@ -323,6 +372,8 @@ async function setupPauseHotkey(
     return null;
   }
   log(`pause hotkey: ${pauseCombo} toggles tracking (the game still receives the combo)`);
+  if (isWayland(opts.platform ?? process.platform, opts.env ?? process.env))
+    log("pause hotkey: on Wayland it only reacts while an X11/Xwayland window has focus");
   // An armed probe can still read false forever on macOS: TCC gates global
   // key state behind Input Monitoring and denial is invisible to code — the
   // combo just never reacts. Say so at serve time, not only in `check`.
@@ -734,7 +785,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const mode = opts.mode ?? "all";
   const assets = opts.assets ?? diskAssets(opts.publicDir ?? path.join(ROOT, "public"));
 
-  const { mouse, keyboard, virtual } = await setupInput(opts, log);
+  const { mouse, keyboard, virtual, dispose } = await setupInput(opts, log);
 
   // The session key: CORS only constrains browsers — curl and any device on
   // the LAN send no Origin. Both aim intakes end at the mouse and keyboard,
@@ -949,6 +1000,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const close = (): Promise<void> => {
     cursor.stop();
     hotkey?.stop();
+    dispose();
     clearInterval(statsTimer);
     for (const t of notifyTimers) clearTimeout(t);
     for (const c of wss.clients) c.terminate();

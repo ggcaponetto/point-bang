@@ -2,6 +2,7 @@ import { PUBLIC_ASSETS, type AssetSource } from "./assets.ts";
 import { parseButtonConfig } from "./buttons.ts";
 import { parseCombo, createComboProbe } from "./hotkey.ts";
 import { loadLibNut, loadKoffi, type LibNut, type Ffi } from "./native.ts";
+import { isWayland, openGnomeInput } from "./gnome.ts";
 import { VERSION } from "./version.ts";
 
 /**
@@ -51,7 +52,34 @@ async function checkAssets(d: CheckDeps): Promise<number> {
   return missing;
 }
 
+/**
+ * Wayland: libnut loading proves nothing there (it moves Xwayland's private
+ * pointer and reports success), so what is checked is the path that actually
+ * reaches the cursor — a real remote-control session, opened and closed.
+ */
+async function checkWaylandInput(d: CheckDeps): Promise<void> {
+  let reason: string;
+  try {
+    const ffi = await (d.loadFfi ?? (() => loadKoffi(VERSION)))();
+    const r = openGnomeInput({ ffi, log: d.log });
+    if (r.input) {
+      r.input.close();
+      d.log(
+        `input: ready — GNOME Wayland remote control, desktop ${r.input.size.w}x${r.input.size.h}`,
+      );
+      return;
+    }
+    reason = r.reason;
+  } catch (e) {
+    reason = (e as Error).message;
+  }
+  d.log(`input: UNAVAILABLE — Wayland session without GNOME remote control (${reason})`);
+  d.log("input: the X11 addon cannot move the cursor on Wayland — log out and pick an");
+  d.log('input: X11 session ("Ubuntu on Xorg") at the login screen.');
+}
+
 async function checkInput(d: CheckDeps, platform: string): Promise<void> {
+  if (isWayland(platform, d.env ?? process.env)) return checkWaylandInput(d);
   // libnut does not throw when X11 has no display to open — it prints
   // "Could not open main display" and kills the process. Nothing downstream
   // can catch that, so the only defense is not to call it.

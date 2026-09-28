@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { loadKoffi, type Ffi } from "./native.ts";
 import { VERSION } from "./version.ts";
+import { isWayland, detectGnomeMonitors } from "./gnome.ts";
 
 /**
  * Monitor enumeration: which pixel rectangles exist, so `--monitor` can aim
@@ -283,6 +284,7 @@ export interface MonitorDeps {
   platform?: string;
   exec?: (cmd: string) => string;
   loadFfi?: () => Promise<Ffi>;
+  env?: Record<string, string | undefined>;
 }
 
 const firstLine = (e: unknown): string => String((e as Error).message).split(/\r?\n/)[0];
@@ -303,6 +305,16 @@ export async function detectMonitors(deps: MonitorDeps = {}): Promise<MonitorsRe
     }
   }
   if (platform === "linux") {
+    if (isWayland(platform, deps.env ?? process.env)) {
+      // GNOME's own layout is the space aim is injected in (lib/gnome); any
+      // other compositor — or a failure — falls through to xrandr/Xwayland.
+      try {
+        const ffi = await (deps.loadFfi ?? (() => loadKoffi(VERSION)))();
+        return { monitors: detectGnomeMonitors(ffi), reason: null };
+      } catch {
+        // not GNOME, or no session bus: xrandr below
+      }
+    }
     try {
       const exec = deps.exec ?? ((cmd: string) => execSync(cmd, { encoding: "utf8" }));
       const monitors = parseXrandr(exec("xrandr --query"));
