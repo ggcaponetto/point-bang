@@ -53,7 +53,7 @@ import {
   type HotkeyWatcher,
 } from "./lib/hotkey.ts";
 import { loadKoffi, loadLibNut, type Ffi, type LibNut } from "./lib/native.ts";
-import { isWayland, openGnomeInput, type GnomeResult } from "./lib/gnome.ts";
+import { isWayland, openGnomeInput, type GnomeInput, type GnomeResult } from "./lib/gnome.ts";
 import { VERSION } from "./lib/version.ts";
 import { createRtcHub, type PeerLike } from "./lib/rtc.ts";
 import { corsHeaders } from "./lib/cors.ts";
@@ -211,34 +211,72 @@ async function openGnome(opts: ServerOptions, log: Log): Promise<GnomeResult> {
   }
 }
 
+/**
+ * The GNOME attempt: the devices, or null — because this run does not call
+ * for it, or after saying why GNOME is not available. An explicit
+ * `--input gnome` is the user pinning that path: it fails loudly.
+ */
+async function tryGnome(
+  opts: ServerOptions,
+  input: InputMode,
+  wayland: boolean,
+  log: Log,
+): Promise<GnomeInput | null> {
+  if (input !== "gnome" && !(input === "auto" && wayland)) return null;
+  const r = await openGnome(opts, log);
+  if (r.input) {
+    log("input: GNOME Wayland — the cursor is driven through GNOME's remote-control API");
+    log("input: GNOME shows its screen-sharing indicator in the top bar while this runs");
+    return r.input;
+  }
+  if (input === "gnome") throw new Error(`--input gnome: ${r.reason}`);
+  log(`input: GNOME remote control unavailable — ${r.reason}`);
+  return null;
+}
+
+/**
+ * The libnut devices, or null when `auto` has to give up on the addon — a
+ * platform without a libnut build or a load failure gets the printing
+ * devices and a running server instead of a crash. An explicit
+ * `--input native` is the user pinning the addon: keep failing loudly.
+ */
+async function loadNativeDevices(
+  opts: ServerOptions,
+  input: InputMode,
+  wayland: boolean,
+  log: Log,
+): Promise<{ mouse: MouseLike; keyboard: KeyboardLike } | null> {
+  if (wayland) warnWayland(log);
+  try {
+    const lib = await (opts.loadNative ?? (() => loadLibNut(VERSION)))();
+    return { mouse: await createMouse(lib), keyboard: await createKeyboard(lib) };
+  } catch (e) {
+    if (input !== "auto") throw e;
+    log(`input: native addon unavailable (${firstErrorLine(e)}) — falling back to VIRTUAL`);
+    log("input: aim is printed, the cursor is not moved (--input native forces the addon)");
+    return null;
+  }
+}
+
 async function setupInput(opts: ServerOptions, log: Log): Promise<InputDevices> {
   const input = opts.input ?? "auto";
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
   const display = hasDisplay(platform, env);
   const wayland = isWayland(platform, env);
-  let mouse = opts.mouse;
-  let keyboard = opts.keyboard;
-  let dispose = (): void => {};
-  let gnome = false;
-  if ((!mouse || !keyboard) && (input === "gnome" || (input === "auto" && wayland))) {
-    const r = await openGnome(opts, log);
-    if (r.input) {
-      gnome = true;
-      mouse ??= r.input.mouse;
-      keyboard ??= r.input.keyboard;
-      dispose = r.input.close;
-      log("input: GNOME Wayland — the cursor is driven through GNOME's remote-control API");
-      log("input: GNOME shows its screen-sharing indicator in the top bar while this runs");
-    } else if (input === "gnome") {
-      throw new Error(`--input gnome: ${r.reason}`);
-    } else {
-      log(`input: GNOME remote control unavailable — ${r.reason}`);
-    }
-  }
-  let virtual = !gnome && (input === "none" || (input === "auto" && !display));
   const size = opts.screen ?? DEFAULT_SCREEN;
   const assume = () => log(`input: assuming a ${size.w}x${size.h} screen (--screen WxH to change)`);
+  // Injected devices always win; every source below only fills what is missing.
+  let { mouse, keyboard } = opts;
+  const fill = (from: { mouse: MouseLike; keyboard: KeyboardLike }): void => {
+    mouse ??= from.mouse;
+    keyboard ??= from.keyboard;
+  };
+  const complete = (): boolean => Boolean(mouse && keyboard);
+
+  const gnome = complete() ? null : await tryGnome(opts, input, wayland, log);
+  if (gnome) fill(gnome);
+  let virtual = !gnome && (input === "none" || (input === "auto" && !display));
   if (virtual) {
     log(
       input === "none"
@@ -251,28 +289,19 @@ async function setupInput(opts: ServerOptions, log: Log): Promise<InputDevices> 
     // about to happen, because the crash message itself explains nothing.
     log("input: WARNING — no DISPLAY set; the native addon will abort the process");
   }
-  if (!virtual && (!mouse || !keyboard)) {
-    if (wayland) warnWayland(log);
-    try {
-      const lib = await (opts.loadNative ?? (() => loadLibNut(VERSION)))();
-      mouse ??= await createMouse(lib);
-      keyboard ??= await createKeyboard(lib);
-    } catch (e) {
-      // Only `auto` degrades — a platform without a libnut build (macOS until
-      // proven, anything exotic) or a load failure gets the printing devices
-      // and a running server instead of a crash. An explicit --input native
-      // is the user pinning the addon: keep failing loudly.
-      if (input !== "auto") throw e;
-      log(`input: native addon unavailable (${firstErrorLine(e)}) — falling back to VIRTUAL`);
-      log("input: aim is printed, the cursor is not moved (--input native forces the addon)");
-      assume();
-      virtual = true;
-    }
+  if (!virtual && !complete()) {
+    const native = await loadNativeDevices(opts, input, wayland, log);
+    if (native) fill(native);
+    else assume();
+    virtual = !native;
   }
   const virtualDeps = { log, size };
-  mouse ??= createVirtualMouse(virtualDeps);
-  keyboard ??= createVirtualKeyboard(virtualDeps);
-  return { mouse, keyboard, virtual, dispose };
+  return {
+    mouse: mouse ?? createVirtualMouse(virtualDeps),
+    keyboard: keyboard ?? createVirtualKeyboard(virtualDeps),
+    virtual,
+    dispose: gnome ? gnome.close : () => {},
+  };
 }
 
 // ---------- monitor selection (where aim lands) ----------

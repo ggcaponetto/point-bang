@@ -302,7 +302,7 @@ describe("openGnomeInput — a session GNOME closed", () => {
     // between checks: nothing is sent into the void, nothing is retried
     const before = world.calls.length;
     await input.mouse.setPosition(2, 2);
-    expect(world.calls.length).toBe(before);
+    expect(world.calls).toHaveLength(before);
     // the next check fails again — silently
     clock.t += 2000;
     await input.mouse.setPosition(3, 3);

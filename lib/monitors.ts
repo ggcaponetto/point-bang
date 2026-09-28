@@ -289,52 +289,53 @@ export interface MonitorDeps {
 
 const firstLine = (e: unknown): string => String((e as Error).message).split(/\r?\n/)[0];
 
+type LoadFfi = () => Promise<Ffi>;
+
+/** FFI-backed detection (Windows, macOS): load koffi, enumerate, name the empty case. */
+async function detectViaFfi(
+  loadFfi: LoadFfi,
+  detect: (ffi: Ffi) => MonitorRect[],
+  empty: string,
+): Promise<MonitorsReport> {
+  try {
+    const monitors = detect(await loadFfi());
+    return { monitors, reason: monitors.length ? null : empty };
+  } catch (e) {
+    return { monitors: [], reason: `monitor detection failed — ${firstLine(e)}` };
+  }
+}
+
+async function detectLinux(deps: MonitorDeps, loadFfi: LoadFfi): Promise<MonitorsReport> {
+  if (isWayland("linux", deps.env ?? process.env)) {
+    // GNOME's own layout is the space aim is injected in (lib/gnome); any
+    // other compositor — or a failure — falls through to xrandr/Xwayland.
+    try {
+      return { monitors: detectGnomeMonitors(await loadFfi()), reason: null };
+    } catch {
+      // not GNOME, or no session bus: xrandr below
+    }
+  }
+  try {
+    const exec = deps.exec ?? ((cmd: string) => execSync(cmd, { encoding: "utf8" }));
+    const monitors = parseXrandr(exec("xrandr --query"));
+    return { monitors, reason: monitors.length ? null : "xrandr reported no connected monitors" };
+  } catch (e) {
+    return {
+      monitors: [],
+      reason: `xrandr unavailable (${firstLine(e)}) — an X11/Xwayland session is needed`,
+    };
+  }
+}
+
 /** Detects the connected monitors for this platform; never throws. */
 export async function detectMonitors(deps: MonitorDeps = {}): Promise<MonitorsReport> {
   const platform = deps.platform ?? process.platform;
-  if (platform === "win32") {
-    try {
-      const ffi = await (deps.loadFfi ?? (() => loadKoffi(VERSION)))();
-      const monitors = detectWin32(ffi);
-      return {
-        monitors,
-        reason: monitors.length ? null : "EnumDisplayDevices found no active monitors",
-      };
-    } catch (e) {
-      return { monitors: [], reason: `monitor detection failed — ${firstLine(e)}` };
-    }
-  }
-  if (platform === "linux") {
-    if (isWayland(platform, deps.env ?? process.env)) {
-      // GNOME's own layout is the space aim is injected in (lib/gnome); any
-      // other compositor — or a failure — falls through to xrandr/Xwayland.
-      try {
-        const ffi = await (deps.loadFfi ?? (() => loadKoffi(VERSION)))();
-        return { monitors: detectGnomeMonitors(ffi), reason: null };
-      } catch {
-        // not GNOME, or no session bus: xrandr below
-      }
-    }
-    try {
-      const exec = deps.exec ?? ((cmd: string) => execSync(cmd, { encoding: "utf8" }));
-      const monitors = parseXrandr(exec("xrandr --query"));
-      return { monitors, reason: monitors.length ? null : "xrandr reported no connected monitors" };
-    } catch (e) {
-      return {
-        monitors: [],
-        reason: `xrandr unavailable (${firstLine(e)}) — an X11/Xwayland session is needed`,
-      };
-    }
-  }
-  if (platform === "darwin") {
-    try {
-      const ffi = await (deps.loadFfi ?? (() => loadKoffi(VERSION)))();
-      const monitors = detectDarwin(ffi);
-      return { monitors, reason: monitors.length ? null : "CoreGraphics reported no displays" };
-    } catch (e) {
-      return { monitors: [], reason: `monitor detection failed — ${firstLine(e)}` };
-    }
-  }
+  const loadFfi = deps.loadFfi ?? (() => loadKoffi(VERSION));
+  if (platform === "win32")
+    return detectViaFfi(loadFfi, detectWin32, "EnumDisplayDevices found no active monitors");
+  if (platform === "linux") return detectLinux(deps, loadFfi);
+  if (platform === "darwin")
+    return detectViaFfi(loadFfi, detectDarwin, "CoreGraphics reported no displays");
   return { monitors: [], reason: `monitor detection not implemented on ${platform}` };
 }
 

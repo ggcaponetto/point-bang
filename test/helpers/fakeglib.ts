@@ -93,24 +93,33 @@ function currentState(w: FakeWorld): V {
   return new V([1, physical, logical, props]);
 }
 
-function answer(w: FakeWorld, c: FakeCall): V | null {
-  const n = w.sessions;
-  if (c.method === "GetCurrentState") return w.display ? currentState(w) : null;
-  if (c.iface === "org.gnome.Mutter.RemoteDesktop" && c.method === "CreateSession") {
+const REMOTE = "org.gnome.Mutter.RemoteDesktop";
+const CAST = "org.gnome.Mutter.ScreenCast";
+const sessionPath = (n: number): string => `/org/gnome/Mutter/RemoteDesktop/Session/u${n}`;
+
+/** Replies by `interface.method`; anything else is a call ON the session. */
+const SERVICES: Record<string, (w: FakeWorld) => V | null> = {
+  "org.gnome.Mutter.DisplayConfig.GetCurrentState": (w) => (w.display ? currentState(w) : null),
+  [`${REMOTE}.CreateSession`]: (w) => {
     if (!w.remote) return null;
     w.sessions++;
     w.alive = true;
-    return new V([`/org/gnome/Mutter/RemoteDesktop/Session/u${w.sessions}`]);
-  }
-  if (c.method === "GetAll") return new V([w.sessionId === null ? {} : { SessionId: w.sessionId }]);
-  if (c.iface === "org.gnome.Mutter.ScreenCast" && c.method === "CreateSession")
-    return w.cast ? new V([`/org/gnome/Mutter/ScreenCast/Session/u${n}`]) : null;
-  if (c.method === "RecordArea")
-    return w.area ? new V([`/org/gnome/Mutter/ScreenCast/Stream/u${n}`]) : null;
-  if (c.method === "Start") return w.start ? new V([]) : null;
+    return new V([sessionPath(w.sessions)]);
+  },
+  "org.freedesktop.DBus.Properties.GetAll": (w) =>
+    new V([w.sessionId === null ? {} : { SessionId: w.sessionId }]),
+  [`${CAST}.CreateSession`]: (w) =>
+    w.cast ? new V([`/org/gnome/Mutter/ScreenCast/Session/u${w.sessions}`]) : null,
+  [`${CAST}.Session.RecordArea`]: (w) =>
+    w.area ? new V([`/org/gnome/Mutter/ScreenCast/Stream/u${w.sessions}`]) : null,
+  [`${REMOTE}.Session.Start`]: (w) => (w.start ? new V([]) : null),
+};
+
+function answer(w: FakeWorld, c: FakeCall): V | null {
+  const service = SERVICES[`${c.iface}.${c.method}`];
+  if (service) return service(w);
   // Stop and every Notify*: only the CURRENT, still-open session answers
-  const current = c.path === `/org/gnome/Mutter/RemoteDesktop/Session/u${n}`;
-  if (!current || !w.alive) return null;
+  if (c.path !== sessionPath(w.sessions) || !w.alive) return null;
   if (c.method === "Stop") w.alive = false;
   return new V([]);
 }

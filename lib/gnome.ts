@@ -99,7 +99,8 @@ export function gnomeKey(key: string): GnomeKey | null {
 
 /** A string as a GVariant text-format literal (session ids are random printables). */
 export function gvString(s: string): string {
-  return `'${s.replaceAll("\\", "\\\\").replaceAll("'", String.raw`\'`)}'`;
+  const escaped = s.replaceAll("\\", "\\\\").replaceAll("'", String.raw`\'`);
+  return `'${escaped}'`;
 }
 
 // evdev button codes (linux/input-event-codes.h) — what NotifyPointerButton takes.
@@ -226,6 +227,69 @@ interface Stage {
 
 const DISPLAY_CONFIG: Target = { name: DC, path: "/org/gnome/Mutter/DisplayConfig", iface: DC };
 
+type Reader = ReturnType<typeof reader>;
+type Size = { w: number; h: number };
+
+/** The connector name — first field of a `(ssss)` monitor spec. */
+const connectorOf = (g: G, r: Reader, spec: unknown): string =>
+  g.str(r.child(spec, 0), null) as string;
+
+/** The mode flagged `is-current` in one monitor's `a(siiddada{sv})` list. */
+function currentMode(g: G, r: Reader, list: unknown): Size | null {
+  let found: Size | null = null;
+  for (let j = 0; j < r.count(list); j++) {
+    const mode = r.child(list, j);
+    const current = r.lookup(r.child(mode, 6), "is-current");
+    if (current && g.bool(current))
+      found = { w: g.i32(r.child(mode, 1)) as number, h: g.i32(r.child(mode, 2)) as number };
+  }
+  return found;
+}
+
+/** Connector → current mode, for every monitor that has one. */
+function readModes(g: G, r: Reader, physical: unknown): Map<string, Size> {
+  const modes = new Map<string, Size>();
+  for (let i = 0; i < r.count(physical); i++) {
+    const monitor = r.child(physical, i);
+    const mode = currentMode(g, r, r.child(monitor, 1));
+    if (mode) modes.set(connectorOf(g, r, r.child(monitor, 0)), mode);
+  }
+  return modes;
+}
+
+/**
+ * One `(iiduba(ssss)a{sv})` logical monitor as a stage rect plus its scale;
+ * null when it shows nothing we know a mode for.
+ */
+function readLogicalMonitor(
+  g: G,
+  r: Reader,
+  lm: unknown,
+  modes: Map<string, Size>,
+  logical: boolean,
+): { rect: MonitorRect; scale: number } | null {
+  const members = r.child(lm, 5);
+  if (!r.count(members)) return null;
+  const label = connectorOf(g, r, r.child(members, 0));
+  const mode = modes.get(label);
+  if (!mode) return null;
+  const scale = g.f64(r.child(lm, 2)) as number;
+  // transforms 1/3/5/7 are the quarter turns: width and height trade places
+  const turned = Number(g.u32(r.child(lm, 3))) % 2 === 1;
+  const div = logical ? scale : 1;
+  return {
+    rect: {
+      x: g.i32(r.child(lm, 0)) as number,
+      y: g.i32(r.child(lm, 1)) as number,
+      w: Math.round((turned ? mode.h : mode.w) / div),
+      h: Math.round((turned ? mode.w : mode.h) / div),
+      primary: Boolean(g.bool(r.child(lm, 4))),
+      label,
+    },
+    scale,
+  };
+}
+
 /**
  * Reads the stage from `DisplayConfig.GetCurrentState`:
  * `(u serial, a((ssss) a(siiddada{sv}) a{sv}) monitors,
@@ -235,50 +299,19 @@ function readStage(g: G, conn: unknown): Stage {
   const reply = invoke(g, conn, DISPLAY_CONFIG, "GetCurrentState", null, true);
   if (!reply) throw new Error(`GNOME Shell (${DC}) did not answer`);
   const r = reader(g);
-  const connectorOf = (spec: unknown): string => g.str(r.child(spec, 0), null) as string;
   try {
-    const modes = new Map<string, { w: number; h: number }>();
-    const physical = r.child(reply, 1);
-    for (let i = 0; i < r.count(physical); i++) {
-      const monitor = r.child(physical, i);
-      const list = r.child(monitor, 1);
-      for (let j = 0; j < r.count(list); j++) {
-        const mode = r.child(list, j);
-        const current = r.lookup(r.child(mode, 6), "is-current");
-        if (current && g.bool(current))
-          modes.set(connectorOf(r.child(monitor, 0)), {
-            w: g.i32(r.child(mode, 1)) as number,
-            h: g.i32(r.child(mode, 2)) as number,
-          });
-      }
-    }
+    const modes = readModes(g, r, r.child(reply, 1));
     const layoutMode = r.lookup(r.child(reply, 3), "layout-mode");
-    const logical = layoutMode ? Number(g.u32(layoutMode)) === 1 : false;
+    const logical = Boolean(layoutMode) && Number(g.u32(layoutMode)) === 1;
     const stage: Stage = { monitors: [], w: 0, h: 0, scale: 1 };
     const layout = r.child(reply, 2);
     for (let i = 0; i < r.count(layout); i++) {
-      const lm = r.child(layout, i);
-      const members = r.child(lm, 5);
-      if (!r.count(members)) continue;
-      const label = connectorOf(r.child(members, 0));
-      const mode = modes.get(label);
-      if (!mode) continue;
-      const scale = g.f64(r.child(lm, 2)) as number;
-      // transforms 1/3/5/7 are the quarter turns: width and height trade places
-      const turned = Number(g.u32(r.child(lm, 3))) % 2 === 1;
-      const div = logical ? scale : 1;
-      const rect: MonitorRect = {
-        x: g.i32(r.child(lm, 0)) as number,
-        y: g.i32(r.child(lm, 1)) as number,
-        w: Math.round((turned ? mode.h : mode.w) / div),
-        h: Math.round((turned ? mode.w : mode.h) / div),
-        primary: Boolean(g.bool(r.child(lm, 4))),
-        label,
-      };
-      stage.monitors.push(rect);
-      stage.w = Math.max(stage.w, rect.x + rect.w);
-      stage.h = Math.max(stage.h, rect.y + rect.h);
-      if (logical) stage.scale = Math.max(stage.scale, scale);
+      const m = readLogicalMonitor(g, r, r.child(layout, i), modes, logical);
+      if (!m) continue;
+      stage.monitors.push(m.rect);
+      stage.w = Math.max(stage.w, m.rect.x + m.rect.w);
+      stage.h = Math.max(stage.h, m.rect.y + m.rect.h);
+      if (logical) stage.scale = Math.max(stage.scale, m.scale);
     }
     if (!stage.monitors.length) throw new Error("GNOME reported no active monitor");
     return stage;
