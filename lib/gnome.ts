@@ -1,5 +1,6 @@
 import type { MouseButton, MouseLike } from "./cursor.ts";
 import type { KeyboardLike } from "./buttons.ts";
+import { attempt } from "./attempt.ts";
 import type { Ffi } from "./native.ts";
 import type { MonitorRect } from "./monitors.ts";
 
@@ -502,37 +503,29 @@ export function openGnomeInput(deps: GnomeDeps): GnomeResult {
   };
 
   const mouse: MouseLike = {
-    async setPosition(x, y) {
-      const text = motion(x, y);
-      if (now() - checkedAt >= healthMs) {
-        checkedAt = now();
-        deliver("NotifyPointerMotionAbsolute", "(sdd)", text);
-      } else if (!lost) {
-        const args = { sig: "(sdd)", text: text() };
-        invoke(g, conn, session.rd, "NotifyPointerMotionAbsolute", args, false);
-      }
-    },
-    async click() {
-      button("left", true);
-      button("left", false);
-    },
-    async press(b) {
-      button(b, true);
-    },
-    async release(b) {
-      button(b, false);
-    },
-    async screenSize() {
-      return size;
-    },
+    setPosition: (x, y) =>
+      attempt(() => {
+        const text = motion(x, y);
+        if (now() - checkedAt >= healthMs) {
+          checkedAt = now();
+          deliver("NotifyPointerMotionAbsolute", "(sdd)", text);
+        } else if (!lost) {
+          const args = { sig: "(sdd)", text: text() };
+          invoke(g, conn, session.rd, "NotifyPointerMotionAbsolute", args, false);
+        }
+      }),
+    click: () =>
+      attempt(() => {
+        button("left", true);
+        button("left", false);
+      }),
+    press: (b) => attempt(() => button(b, true)),
+    release: (b) => attempt(() => button(b, false)),
+    screenSize: () => Promise.resolve(size),
   };
   const keyboard: KeyboardLike = {
-    async pressKeys(names) {
-      keys(names, true);
-    },
-    async releaseKeys(names) {
-      keys(names, false);
-    },
+    pressKeys: (names) => attempt(() => keys(names, true)),
+    releaseKeys: (names) => attempt(() => keys(names, false)),
   };
   return {
     input: {

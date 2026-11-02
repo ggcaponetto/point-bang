@@ -1,5 +1,6 @@
 import type { MouseButton, MouseLike } from "./cursor.ts";
 import type { KeyboardLike } from "./buttons.ts";
+import { attempt } from "./attempt.ts";
 
 /**
  * Virtual input devices: the MouseLike/KeyboardLike pair used when there is no
@@ -89,24 +90,17 @@ export function createVirtualMouse(d: VirtualDeps = {}): MouseLike {
   const throttleMs = d.throttleMs ?? 100;
   let last = -Infinity;
   return {
-    async setPosition(x, y) {
-      const t = now();
-      if (t - last < throttleMs) return;
-      last = t;
-      log(renderAimLine(x / (size.w - 1), y / (size.h - 1), x, y));
-    },
-    async click() {
-      log("click  left");
-    },
-    async press(button: MouseButton) {
-      log(`press  ${button}`);
-    },
-    async release(button: MouseButton) {
-      log(`release ${button}`);
-    },
-    async screenSize() {
-      return size;
-    },
+    setPosition: (x, y) =>
+      attempt(() => {
+        const t = now();
+        if (t - last < throttleMs) return;
+        last = t;
+        log(renderAimLine(x / (size.w - 1), y / (size.h - 1), x, y));
+      }),
+    click: () => attempt(() => log("click  left")),
+    press: (button: MouseButton) => attempt(() => log(`press  ${button}`)),
+    release: (button: MouseButton) => attempt(() => log(`release ${button}`)),
+    screenSize: () => Promise.resolve(size),
   };
 }
 
@@ -114,11 +108,7 @@ export function createVirtualMouse(d: VirtualDeps = {}): MouseLike {
 export function createVirtualKeyboard(d: VirtualDeps = {}): KeyboardLike {
   const log = d.log ?? console.log;
   return {
-    async pressKeys(keys) {
-      log(`keys down ${keys.join("+")}`);
-    },
-    async releaseKeys(keys) {
-      log(`keys up   ${keys.join("+")}`);
-    },
+    pressKeys: (keys) => attempt(() => log(`keys down ${keys.join("+")}`)),
+    releaseKeys: (keys) => attempt(() => log(`keys up   ${keys.join("+")}`)),
   };
 }

@@ -33,8 +33,10 @@ export interface CheckDeps {
 /** @returns The number of missing phone-page assets, logging each one. */
 async function checkAssets(d: CheckDeps): Promise<number> {
   let missing = 0;
-  for (const name of PUBLIC_ASSETS) {
-    const data = await d.assets.read(name);
+  // Read concurrently, report in list order.
+  const all = await Promise.all(PUBLIC_ASSETS.map((name) => d.assets.read(name)));
+  for (const [i, name] of PUBLIC_ASSETS.entries()) {
+    const data = all[i];
     if (!data) {
       d.log(`asset ${name}: MISSING`);
       if (name === "editor.html")
