@@ -63,17 +63,16 @@ export function diskAssets(dir: string): AssetSource {
  * @param get A `sea.getRawAsset`-shaped lookup; it throws for unknown keys.
  */
 export function seaAssets(get: (key: string) => ArrayBuffer): AssetSource {
-  return {
-    async read(name) {
-      // Asset keys are flat file names, so strip the leading slash a request
-      // path carries. Anything with a directory component cannot be an asset.
-      const key = name.replace(/^[/\\]+/, "");
-      if (!PUBLIC_ASSETS.includes(key)) return null;
-      try {
-        return Buffer.from(get(key));
-      } catch {
-        return null;
-      }
-    },
+  const lookup = (name: string): Buffer | null => {
+    // Asset keys are flat file names, so strip the leading slash a request
+    // path carries. Anything with a directory component cannot be an asset.
+    const key = name.replace(/^[/\\]+/, "");
+    if (!PUBLIC_ASSETS.includes(key)) return null;
+    try {
+      return Buffer.from(get(key));
+    } catch {
+      return null;
+    }
   };
+  return { read: (name) => Promise.resolve(lookup(name)) };
 }

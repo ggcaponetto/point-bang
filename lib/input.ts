@@ -1,5 +1,6 @@
 import type { MouseButton, MouseLike } from "./cursor.ts";
 import type { KeyboardLike } from "./buttons.ts";
+import { attempt } from "./attempt.ts";
 import { loadLibNut, type LibNut } from "./native.ts";
 import { VERSION } from "./version.ts";
 
@@ -34,22 +35,15 @@ export async function createMouse(lib?: LibNut): Promise<MouseLike> {
   const n = lib ?? (await loadLibNut(VERSION));
   n.setMouseDelay(0);
   return {
-    async setPosition(x, y) {
-      n.moveMouse(x, y);
-    },
-    async click() {
-      n.mouseClick("left");
-    },
-    async press(button) {
-      n.mouseToggle("down", BUTTONS[button]);
-    },
-    async release(button) {
-      n.mouseToggle("up", BUTTONS[button]);
-    },
-    async screenSize() {
-      const s = n.getScreenSize();
-      return { w: s.width, h: s.height };
-    },
+    setPosition: (x, y) => attempt(() => n.moveMouse(x, y)),
+    click: () => attempt(() => n.mouseClick("left")),
+    press: (button) => attempt(() => n.mouseToggle("down", BUTTONS[button])),
+    release: (button) => attempt(() => n.mouseToggle("up", BUTTONS[button])),
+    screenSize: () =>
+      attempt(() => {
+        const s = n.getScreenSize();
+        return { w: s.width, h: s.height };
+      }),
   };
 }
 
@@ -63,11 +57,7 @@ export async function createKeyboard(lib?: LibNut): Promise<KeyboardLike> {
   const n = lib ?? (await loadLibNut(VERSION));
   n.setKeyboardDelay(0);
   return {
-    async pressKeys(names) {
-      for (const k of names) n.keyToggle(k, "down");
-    },
-    async releaseKeys(names) {
-      for (const k of names) n.keyToggle(k, "up");
-    },
+    pressKeys: (names) => attempt(() => names.forEach((k) => n.keyToggle(k, "down"))),
+    releaseKeys: (names) => attempt(() => names.forEach((k) => n.keyToggle(k, "up"))),
   };
 }
