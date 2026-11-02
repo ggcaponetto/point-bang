@@ -19,4 +19,12 @@ describe("attempt", () => {
     }).not.toThrow();
     await expect(p).rejects.toThrow("boom");
   });
+
+  it("wraps a non-Error throw in an Error", async () => {
+    await expect(
+      attempt(() => {
+        throw JSON.parse('"raw"'); // a non-Error value, as foreign code may throw
+      }),
+    ).rejects.toThrow("raw");
+  });
 });
