@@ -462,7 +462,7 @@ for RTT, aim gains optional `du,dv` velocity for PC-side extrapolation.
   142+ LNA exempts it from mixed content behind a one-tap permission prompt;
   **LNA covers fetch only, never WebSockets**, so from the Pages origin
   there is no WS and no fallback, and the failure message says what to
-  check. The PC answers via `werift` (0.24.4 EXACT pin, pure TS — a native
+  check. The PC answers via `werift` (0.25.2 EXACT pin, pure TS — a native
   WebRTC addon cannot live in the SEA), vanilla ICE, `iceServers: []`
   (werift's default is a Google STUN — never dial out to talk across the
   room). CORS is an allowlist of the `--page-url` origin + same-origin, 403
