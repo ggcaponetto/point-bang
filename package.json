@@ -52,7 +52,7 @@
     "@nut-tree-fork/libnut-darwin": "^2.7.5",
     "@nut-tree-fork/libnut-linux": "^2.7.5",
     "@nut-tree-fork/libnut-win32": "^2.7.5",
-    "koffi": "^3.1.4",
+    "koffi": "^3.3.6",
     "qrcode-terminal": "^0.12.0",
     "werift": "0.25.2",
     "ws": "^8.17.0",
